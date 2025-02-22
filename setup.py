@@ -11,5 +11,5 @@ setup(
     packages=["cloud_optimized_dicom"],
     install_requires=[
         "pydicom",
-    ]
+    ],
 )
