@@ -1,5 +1,6 @@
 import os
 import tarfile
+import tempfile
 import unittest
 
 import pydicom
@@ -63,5 +64,6 @@ class TestInstance(unittest.TestCase):
 
     def test_append_to_series_tar(self):
         instance = Instance(os.path.join(self.test_data_dir, "small_multiframe.dcm"))
-        with tarfile.open("series.tar", "w") as tar:
-            instance.append_to_series_tar(tar)
+        with tempfile.NamedTemporaryFile(suffix=".tar") as tar_file:
+            with tarfile.open(tar_file.name, "w") as tar:
+                instance.append_to_series_tar(tar)
