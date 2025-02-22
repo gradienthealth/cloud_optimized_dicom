@@ -70,3 +70,15 @@ class TestInstance(unittest.TestCase):
                     tar.getmember(f"instances/{self.test_instance_uid}.dcm").size,
                     instance.size,
                 )
+
+    def test_extract_metadata(self):
+        instance = Instance(self.local_instance_path)
+        self.assertIsNone(instance._metadata)
+        self.assertIsNone(instance._custom_offset_tables)
+        instance.extract_metadata(
+            output_uri="gs://some_series.tar://instances/some_instance.dcm"
+        )
+        self.assertEqual(
+            instance.metadata["00080018"]["Value"][0], self.test_instance_uid
+        )
+        self.assertEqual(instance._custom_offset_tables, {})
