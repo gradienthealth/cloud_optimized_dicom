@@ -54,7 +54,6 @@ class TestInstance(unittest.TestCase):
         self.assertEqual(instance.study_uid, instance._study_uid)
 
     def test_append_to_series_tar(self):
-        # TODO get a better local test so that you can use local here
         instance = Instance(self.local_instance_path)
         with tempfile.TemporaryDirectory() as temp_dir:
             tar_file = os.path.join(temp_dir, "series.tar")
