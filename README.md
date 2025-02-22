@@ -2,6 +2,12 @@
 
 A library for efficiently storing and interacting with DICOM files in the cloud.
 
-## Testing
+## Concepts
 
-Test data is sourced from Rubo Medical's [DICOM-test-data](https://rubomedical.com/dicom_files/index.html).
+### dicom_uri
+Where the actual DICOM file lives. Requried argument for instantiation of an instance.
+
+### dependencies
+(OPTIONAL) Files that were required to generate `dicom_uri`.
+Intelerad instances, for example, may have `.dcm` and `.j2c` files that needed to be combined in order to create the true dicom P10 file.
+
