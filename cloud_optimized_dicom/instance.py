@@ -44,7 +44,7 @@ class Instance:
         # read remote file into local temp file
         with open(self._local_path, "wb") as local_file:
             with smart_open(
-                self.dicom_uri, transport_params=self.transport_params
+                uri=self.dicom_uri, mode="rb", transport_params=self.transport_params
             ) as source:
                 local_file.write(source.read())
 
