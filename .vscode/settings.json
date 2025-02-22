@@ -2,9 +2,9 @@
     "python.testing.unittestArgs": [
         "-v",
         "-s",
-        "./cloud_optimized_dicom",
+        "./cloud_optimized_dicom/tests",
         "-p",
-        "*_test.py"
+        "test_*.py"
     ],
     "python.testing.pytestEnabled": false,
     "python.testing.unittestEnabled": true
