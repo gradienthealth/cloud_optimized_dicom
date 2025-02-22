@@ -9,5 +9,12 @@ setup(
     author_email="cal@gradienthealth.io",
     license="MIT",
     packages=["cloud_optimized_dicom"],
-    install_requires=["pydicom", "smart-open", "ratarmountcore", "numpy"],
+    install_requires=[
+        "pydicom",
+        "smart-open",
+        "ratarmountcore",
+        "numpy",
+        "google-cloud-storage",
+        "apache-beam[gcp]",
+    ],
 )
