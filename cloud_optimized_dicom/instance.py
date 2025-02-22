@@ -8,6 +8,7 @@ from typing import Callable
 import pydicom
 from smart_open import open as smart_open
 
+from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 from cloud_optimized_dicom.utils import DICOM_PREAMBLE, find_pattern
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,10 @@ class Instance:
     dicom_uri: str
     transport_params: dict = field(default_factory=dict)
 
-    # private/cached internal fields
+    # private internal fields
+    _metadata: dict = None
+    _custom_offset_tables: dict = None
+    # uids/cached values
     _instance_uid: str = None
     _series_uid: str = None
     _study_uid: str = None
@@ -78,6 +82,15 @@ class Instance:
                 if hasattr(ds, "StudyInstanceUID"):
                     self._study_uid = ds.StudyInstanceUID
         self._size = os.path.getsize(self.local_path)
+
+    @property
+    def metadata(self):
+        """
+        Getter for self._metadata. Populates by calling self.extract_metadata() if necessary.
+        """
+        if self._metadata is None:
+            self.extract_metadata()
+        return self._metadata
 
     @property
     def local_path(self):
@@ -176,6 +189,53 @@ class Instance:
             os.remove(self._local_path)
         # point local_origin_file within the local tar
         self._local_path = f"{tar.name}://instances/{uid_for_uri}.dcm"
+
+    def extract_metadata(self, output_uri: str):
+        """
+        Extract metadata from the instance, populating self._metadata and self._custom_offset_tables
+        """
+        with self.open() as f:
+            with pydicom.dcmread(f, defer_size=1024) as ds:
+                # set custom offset tables
+                self._custom_offset_tables = get_multiframe_offset_tables(ds)
+
+                # define custom bulk data handler to include the head 512 bytes of overlarge elements
+                def bulk_data_handler(el: pydicom.DataElement) -> str:
+                    """Given a bulk data element, return a dict containing this instance's output_uri
+                    and the head 512 bytes of the element"""
+                    # TODO would be nice to find a way to include the tail 512 bytes as well
+                    with self.open() as dcm_file:
+                        dcm_file.seek(el.file_tell)
+                        element_head = dcm_file.read(512)
+                    return {
+                        "uri": output_uri,
+                        "head": element_head.decode("utf-8", errors="replace"),
+                    }
+
+                # extract json dict using custom bulk data handler
+                try:
+                    ds_dict = ds.to_json_dict(
+                        bulk_data_element_handler=bulk_data_handler
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Instance {self.as_log} metadata extraction error: {e}\nRetrying with suppress_invalid_tags=True"
+                    )
+                    # TODO: check if supress will still provide bad tags in utf-8 encoded binary (this way we still can preview something)
+                    # Will likely be related to pydicom 3.0; sometimes we get birthday in MMDDYYYY rather than YYYYMMDD as per spec
+                    # So suppression should ideally still provide back the binary data just in utf8 encoded data.
+                    ds_dict = ds.to_json_dict(
+                        bulk_data_element_handler=bulk_data_handler,
+                        suppress_invalid_tags=True,
+                    )
+                # make sure to include file_meta
+                ds_dict.update(
+                    ds.file_meta.to_json_dict(
+                        bulk_data_element_handler=bulk_data_handler
+                    )
+                )
+                # populate self._metadata
+                self._metadata = ds_dict
 
     def cleanup(self):
         """
