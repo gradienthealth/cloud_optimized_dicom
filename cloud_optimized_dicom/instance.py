@@ -8,21 +8,34 @@ from typing import Callable
 import pydicom
 from smart_open import open as smart_open
 
+import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
-from cloud_optimized_dicom.utils import DICOM_PREAMBLE, find_pattern
+from cloud_optimized_dicom.utils import (
+    DICOM_PREAMBLE,
+    _delete_gcs_dep,
+    find_pattern,
+    is_remote,
+)
 
 logger = logging.getLogger(__name__)
 
-REMOTE_IDENTIFIERS = ["http", "s3://", "gs://"]
+TAR_IDENTIFIER = ".tar://"
+ZIP_IDENTIFIER = ".zip://"
 
 
 @dataclass
 class Instance:
-    """
-    Object representing a single DICOM instance.
+    """Object representing a single DICOM instance.
+
+    Required args:
+        `dicom_uri: str` - The URI of the DICOM file.
+    Optional args:
+        `dependencies: list[str]` - A list of URIs of files that were required to generate `dicom_uri`.
+        `transport_params: dict` - A smart_open transport_params dict.
     """
 
     dicom_uri: str
+    dependencies: list[str] = field(default_factory=list)
     transport_params: dict = field(default_factory=dict)
 
     # private internal fields
@@ -43,10 +56,9 @@ class Instance:
     def is_remote(self) -> bool:
         """
         Return whether self.dicom_uri begins with any of the `REMOTE_IDENTIFIERS`.
+        TODO deprecate or make property
         """
-        return any(
-            self.dicom_uri.startswith(identifier) for identifier in REMOTE_IDENTIFIERS
-        )
+        return is_remote(self.dicom_uri)
 
     def fetch(self):
         """
@@ -236,6 +248,52 @@ class Instance:
                 )
                 # populate self._metadata
                 self._metadata = ds_dict
+
+    @property
+    def as_log(self):
+        """
+        Return a string representation of the instance for logging purposes.
+        """
+        return f"(uri={self.dicom_uri}, instance_uid={self._instance_uid}, dependencies={self.dependencies})"
+
+    def delete_dependencies(
+        self, dryrun: bool = False, validate_blob_hash: bool = True
+    ) -> list[str]:
+        """Delete all dependencies. If `validate_blob_hash==True` and an instance has only one dependency (must be the dcm P10),
+        validate the crc32c of the blob before deleting. This costs us a GET per instance, which could be expensive,
+        so this check can be disabled by setting `validate_blob_hash=False`.
+        Returns a list of dependencies that were deleted (or would have been deleted if in dryrun mode).
+        """
+        if dryrun:
+            logger.info(f"COD_STATE_LOGS:DRYRUN:WOULD_DELETE:{self.dependencies}")
+            return self.dependencies
+        deleted_dependencies = []
+        for uri in self.dependencies:
+            # we do not handle nested dependencies (e.g. a dcm within a zip)
+            if TAR_IDENTIFIER in uri or ZIP_IDENTIFIER in uri:
+                raise NotImplementedError("Nested dependency deletion is not supported")
+            if uri.startswith("gs://"):
+                assert (
+                    "client" in self.transport_params
+                ), "client must be provided for GCS dependencies"
+                client = self.transport_params["client"]
+                # If only 1 dep, assume it's a dicom p10 -> check hash, ensure it matches
+                # TODO: turn deps list into {uri: crc32c} dict. Then this assumption can be avoided
+                # and we can check the hash of any dependency
+                if validate_blob_hash and len(self.dependencies) == 1:
+                    _delete_gcs_dep(uri=uri, client=client, expected_crc32c=self.crc32c)
+                else:
+                    _delete_gcs_dep(uri=uri, client=client)
+                deleted_dependencies.append(uri)
+            elif os.path.exists(uri):
+                os.remove(uri)
+                deleted_dependencies.append(uri)
+            else:
+                logger.warning(f"DEPENDENCY_DELETION:SKIP:FILE_DOES_NOT_EXIST:{uri}")
+                continue
+        # We don't want to spend GET requests to calculate exact deleted size. Instead we estimate with instance size
+        metrics.BYTES_DELETED_COUNTER.inc(self.size)
+        return deleted_dependencies
 
     def cleanup(self):
         """

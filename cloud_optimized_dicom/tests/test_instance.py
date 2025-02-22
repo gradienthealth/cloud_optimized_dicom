@@ -82,3 +82,16 @@ class TestInstance(unittest.TestCase):
             instance.metadata["00080018"]["Value"][0], self.test_instance_uid
         )
         self.assertEqual(instance._custom_offset_tables, {})
+
+    def test_delete_local_dependencies(self):
+        temp_file = tempfile.NamedTemporaryFile(delete=False)
+        self.assertTrue(os.path.exists(temp_file.name))
+        instance = Instance(
+            dicom_uri=self.local_instance_path, dependencies=[temp_file.name]
+        )
+        instance.delete_dependencies()
+        self.assertFalse(os.path.exists(temp_file.name))
+
+    def test_delete_remote_dependencies(self):
+        # TODO: implement
+        pass
