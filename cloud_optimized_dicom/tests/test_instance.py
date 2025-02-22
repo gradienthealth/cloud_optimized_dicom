@@ -12,50 +12,41 @@ class TestInstance(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
-        cls.remote_dicom_uri = (
-            "https://github.com/dangom/sample-dicom/raw/refs/heads/master/MR000000.dcm"
-        )
-        cls.remote_instance_uid = (
-            "1.2.276.0.7230010.3.1.4.2927855660.2552.1497110443.461491"
-        )
+        cls.remote_dicom_uri = "https://code.oak-tree.tech/oak-tree/medical-imaging/dcmjs/-/raw/master/test/sample-dicom.dcm?ref_type=heads&inline=false"
+        cls.test_instance_uid = "1.2.276.0.50.192168001092.11156604.14547392.313"
+        cls.local_instance_path = os.path.join(cls.test_data_dir, "valid.dcm")
 
     def test_remote_detection(self):
         self.assertTrue(Instance("s3://bucket/path/to/file.dcm").is_remote())
         self.assertTrue(Instance("gs://bucket/path/to/file.dcm").is_remote())
         self.assertTrue(Instance(self.remote_dicom_uri).is_remote())
-        self.assertFalse(
-            Instance(
-                os.path.join(self.test_data_dir, "small_multiframe.dcm")
-            ).is_remote()
-        )
+        self.assertFalse(Instance(self.local_instance_path).is_remote())
 
     def test_local_open(self):
-        instance = Instance(os.path.join(self.test_data_dir, "small_multiframe.dcm"))
+        instance = Instance(self.local_instance_path)
         with instance.open() as f:
             ds = pydicom.dcmread(f)
-            self.assertEqual(ds.PatientName, "Rubo DEMO")
+            self.assertEqual(ds.SOPInstanceUID, self.test_instance_uid)
 
     def test_remote_open(self):
         instance = Instance(self.remote_dicom_uri)
         with instance.open() as f:
             ds = pydicom.dcmread(f)
-            self.assertEqual(ds.SOPInstanceUID, self.remote_instance_uid)
+            self.assertEqual(ds.SOPInstanceUID, self.test_instance_uid)
 
     def test_validate(self):
-        instance = Instance(os.path.join(self.test_data_dir, "small_multiframe.dcm"))
+        instance = Instance(self.local_instance_path)
         self.assertIsNone(instance._instance_uid)
         self.assertIsNone(instance._series_uid)
         self.assertIsNone(instance._study_uid)
         instance.validate()
         # after validation, the internal fields should be populated
+        self.assertEqual(instance._instance_uid, self.test_instance_uid)
         self.assertEqual(
-            instance._instance_uid, "1.3.12.2.1107.5.4.3.284980.19951129.170916.11"
+            instance._series_uid, "1.2.276.0.50.192168001092.11156604.14547392.303"
         )
         self.assertEqual(
-            instance._series_uid, "1.3.12.2.1107.5.4.3.4975316777216.19951114.94101.17"
-        )
-        self.assertEqual(
-            instance._study_uid, "1.3.12.2.1107.5.4.3.4975316777216.19951114.94101.16"
+            instance._study_uid, "1.2.276.0.50.192168001092.11156604.14547392.4"
         )
         # getter methods should return the same values
         self.assertEqual(instance.instance_uid, instance._instance_uid)
@@ -64,7 +55,7 @@ class TestInstance(unittest.TestCase):
 
     def test_append_to_series_tar(self):
         # TODO get a better local test so that you can use local here
-        instance = Instance(self.remote_dicom_uri)
+        instance = Instance(self.local_instance_path)
         with tempfile.TemporaryDirectory() as temp_dir:
             tar_file = os.path.join(temp_dir, "series.tar")
             with tarfile.open(tar_file, "w") as tar:
@@ -74,9 +65,9 @@ class TestInstance(unittest.TestCase):
             with tarfile.open(tar_file) as tar:
                 self.assertEqual(len(tar.getnames()), 1)
                 self.assertEqual(
-                    tar.getnames()[0], f"instances/{self.remote_instance_uid}.dcm"
+                    tar.getnames()[0], f"instances/{self.test_instance_uid}.dcm"
                 )
                 self.assertEqual(
-                    tar.getmember(f"instances/{self.remote_instance_uid}.dcm").size,
+                    tar.getmember(f"instances/{self.test_instance_uid}.dcm").size,
                     instance.size,
                 )
