@@ -1,6 +1,6 @@
-import io
-
 DICOM_PREAMBLE = b"\x00" * 128 + b"DICM"
+
+import io
 
 
 def find_pattern(f: io.BufferedReader, pattern: bytes, buffer_size=8192):
@@ -16,7 +16,7 @@ def find_pattern(f: io.BufferedReader, pattern: bytes, buffer_size=8192):
     # Read the initial buffer
     while num_bytes := f.readinto(windowed_bytes):
         # Search for the pattern in the current byte window
-        index = windowed_bytes.find(DICOM_PREAMBLE)
+        index = windowed_bytes.find(pattern)
         if index != -1:
             # found the index, return the relative position
             return f.tell() - start_position - num_bytes + index

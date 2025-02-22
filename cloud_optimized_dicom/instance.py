@@ -3,6 +3,7 @@ import os
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
+from typing import Callable
 
 import pydicom
 from smart_open import open as smart_open
@@ -27,6 +28,7 @@ class Instance:
     _instance_uid: str = None
     _series_uid: str = None
     _study_uid: str = None
+    _size: int = None
 
     def __post_init__(self):
         if self.is_remote():
@@ -71,8 +73,29 @@ class Instance:
         with self.open() as f:
             with pydicom.dcmread(f) as ds:
                 self._instance_uid = ds.SOPInstanceUID
-                self._series_uid = ds.SeriesInstanceUID
-                self._study_uid = ds.StudyInstanceUID
+                if hasattr(ds, "SeriesInstanceUID"):
+                    self._series_uid = ds.SeriesInstanceUID
+                if hasattr(ds, "StudyInstanceUID"):
+                    self._study_uid = ds.StudyInstanceUID
+        self._size = os.path.getsize(self.local_path)
+
+    @property
+    def local_path(self):
+        """
+        Getter for self._local_path. Populates by calling self.fetch() if necessary.
+        """
+        if self._local_path is None:
+            self.fetch()
+        return self._local_path
+
+    @property
+    def size(self):
+        """
+        Getter for self._size. Populates by calling self.validate() if necessary.
+        """
+        if self._size is None:
+            self.validate()
+        return self._size
 
     @property
     def instance_uid(self):
@@ -110,7 +133,10 @@ class Instance:
         return open(self._local_path, "rb")
 
     def append_to_series_tar(
-        self, tar: tarfile.TarFile, delete_local_on_completion: bool = False
+        self,
+        tar: tarfile.TarFile,
+        uid_generator: Callable[[str], str] = lambda x: x,
+        delete_local_on_completion: bool = False,
     ):
         """
         Append the instance to a series tar file. Intended use case:
@@ -120,12 +146,14 @@ class Instance:
         ```
         Args:
             tar: tarfile.TarFile to append to
+            uid_generator: function to call on instance UIDs to generate tar path (e.g. to anonymize)
             delete_local_on_completion: if True and dicom_uri is local, delete the local instance file on completion
         """
+        uid_for_uri = uid_generator(self.instance_uid)
         # do actual appending
         f = tar.fileobj
         begin_offset = f.tell()
-        tar.add(self._local_path, arcname=f"/instances/{self.deid_instance_uid}.dcm")
+        tar.add(self.local_path, arcname=f"/instances/{uid_for_uri}.dcm")
         end_offset = f.tell()
         f.seek(begin_offset)
         # TODO: if index is always 1536, we can skip the find pattern
@@ -147,7 +175,7 @@ class Instance:
         if delete_local_on_completion and not self.is_remote:
             os.remove(self._local_path)
         # point local_origin_file within the local tar
-        self._local_path = f"{tar.name}://instances/{self.deid_instance_uid}.dcm"
+        self._local_path = f"{tar.name}://instances/{uid_for_uri}.dcm"
 
     def cleanup(self):
         """

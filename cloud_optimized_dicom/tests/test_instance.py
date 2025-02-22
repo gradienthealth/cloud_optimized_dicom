@@ -15,6 +15,9 @@ class TestInstance(unittest.TestCase):
         cls.remote_dicom_uri = (
             "https://github.com/dangom/sample-dicom/raw/refs/heads/master/MR000000.dcm"
         )
+        cls.remote_instance_uid = (
+            "1.2.276.0.7230010.3.1.4.2927855660.2552.1497110443.461491"
+        )
 
     def test_remote_detection(self):
         self.assertTrue(Instance("s3://bucket/path/to/file.dcm").is_remote())
@@ -36,10 +39,7 @@ class TestInstance(unittest.TestCase):
         instance = Instance(self.remote_dicom_uri)
         with instance.open() as f:
             ds = pydicom.dcmread(f)
-            self.assertEqual(
-                ds.SOPInstanceUID,
-                "1.2.276.0.7230010.3.1.4.2927855660.2552.1497110443.461491",
-            )
+            self.assertEqual(ds.SOPInstanceUID, self.remote_instance_uid)
 
     def test_validate(self):
         instance = Instance(os.path.join(self.test_data_dir, "small_multiframe.dcm"))
@@ -63,7 +63,20 @@ class TestInstance(unittest.TestCase):
         self.assertEqual(instance.study_uid, instance._study_uid)
 
     def test_append_to_series_tar(self):
-        instance = Instance(os.path.join(self.test_data_dir, "small_multiframe.dcm"))
-        with tempfile.NamedTemporaryFile(suffix=".tar") as tar_file:
-            with tarfile.open(tar_file.name, "w") as tar:
+        # TODO get a better local test so that you can use local here
+        instance = Instance(self.remote_dicom_uri)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tar_file = os.path.join(temp_dir, "series.tar")
+            with tarfile.open(tar_file, "w") as tar:
+                pass
+            with tarfile.open(tar_file, "a") as tar:
                 instance.append_to_series_tar(tar)
+            with tarfile.open(tar_file) as tar:
+                self.assertEqual(len(tar.getnames()), 1)
+                self.assertEqual(
+                    tar.getnames()[0], f"instances/{self.remote_instance_uid}.dcm"
+                )
+                self.assertEqual(
+                    tar.getmember(f"instances/{self.remote_instance_uid}.dcm").size,
+                    instance.size,
+                )
