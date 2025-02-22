@@ -48,6 +48,13 @@ class Instance:
             ) as source:
                 local_file.write(source.read())
 
+    def open(self):
+        """
+        Open an instance and return a file pointer to its bytes, which can be given to pydicom.dcmread()
+        """
+        self.fetch()
+        return open(self._local_path, "rb")
+
     def cleanup(self):
         """
         Delete the temporary file, if it exists.
