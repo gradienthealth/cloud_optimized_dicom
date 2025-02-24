@@ -2,9 +2,12 @@ DICOM_PREAMBLE = b"\x00" * 128 + b"DICM"
 REMOTE_IDENTIFIERS = ["http", "s3://", "gs://"]
 
 
+import collections
 import io
 import logging
+from base64 import b64encode
 
+import google_crc32c
 from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
 
@@ -74,3 +77,18 @@ def _delete_gcs_dep(uri: str, client: storage.Client, expected_crc32c: str = Non
     blob.delete(retry=DEFAULT_RETRY)
     metrics.NUM_DELETES.inc()
     return True
+
+
+def generate_ptr_crc32c(ptr: io.BufferedReader, blocksize: int = 2**20) -> str:
+    """
+    Modified from stackoverflow: https://stackoverflow.com/questions/37367741/difficulty-comparing-generated-and-google-cloud-storage-provided-crc32c-checksum
+    Generate a base64 encoded crc32c checksum for a file to compare with google cloud storage.
+
+    Returns a string like "4jvPnQ=="
+
+    Compare with a google storage blob instance:
+      blob.crc32c == generate_ptr_crc32c(open("path/to/local/file.txt", "rb"))
+    """
+    crc = google_crc32c.Checksum()
+    collections.deque(crc.consume(ptr, blocksize), maxlen=0)
+    return b64encode(crc.digest()).decode("utf-8")
