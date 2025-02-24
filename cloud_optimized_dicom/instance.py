@@ -3,6 +3,7 @@ import os
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
+from io import BufferedReader
 from typing import Callable
 
 import pydicom
@@ -10,10 +11,12 @@ from smart_open import open as smart_open
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
+from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.utils import (
     DICOM_PREAMBLE,
     _delete_gcs_dep,
     find_pattern,
+    generate_ptr_crc32c,
     is_remote,
 )
 
@@ -29,13 +32,16 @@ class Instance:
 
     Required args:
         `dicom_uri: str` - The URI of the DICOM file.
+        `hints: Hints` - values already known or suspected about the instance (size, hash, etc. - see hints.py).
     Optional args:
         `dependencies: list[str]` - A list of URIs of files that were required to generate `dicom_uri`.
         `transport_params: dict` - A smart_open transport_params dict.
     """
 
+    # public fields that the user might provide
     dicom_uri: str
     dependencies: list[str] = field(default_factory=list)
+    hints: Hints = field(default_factory=Hints)
     transport_params: dict = field(default_factory=dict)
 
     # private internal fields
@@ -46,6 +52,7 @@ class Instance:
     _series_uid: str = None
     _study_uid: str = None
     _size: int = None
+    _crc32c: str = None
 
     def __post_init__(self):
         if self.is_remote():
@@ -83,17 +90,32 @@ class Instance:
         self.validate()
 
     def validate(self):
+        """Open the instance, read the internal fields, and (TODO) validate they match hints if provided.
+
+        Returns:
+            bool - True if the instance is valid
+        Raises:
+            AssertionError if the instance is invalid.
         """
-        Open the instance, read the internal fields, and (TODO) validate they match hints if provided
-        """
+        # populate all true values
         with self.open() as f:
             with pydicom.dcmread(f) as ds:
-                self._instance_uid = ds.SOPInstanceUID
-                if hasattr(ds, "SeriesInstanceUID"):
-                    self._series_uid = ds.SeriesInstanceUID
-                if hasattr(ds, "StudyInstanceUID"):
-                    self._study_uid = ds.StudyInstanceUID
+                self._instance_uid = getattr(ds, "SOPInstanceUID")
+                self._series_uid = getattr(ds, "SeriesInstanceUID")
+                self._study_uid = getattr(ds, "StudyInstanceUID")
+            # seek back to beginning of file to calculate crc32c
+            f.seek(0)
+            self._crc32c = generate_ptr_crc32c(f)
         self._size = os.path.getsize(self.local_path)
+        # validate hints
+        self.hints.validate(
+            true_size=self._size,
+            true_crc32c=self._crc32c,
+            true_instance_uid=self._instance_uid,
+            true_series_uid=self._series_uid,
+            true_study_uid=self._study_uid,
+        )
+        return True
 
     @property
     def metadata(self):
@@ -150,7 +172,7 @@ class Instance:
             self.validate()
         return self._study_uid
 
-    def open(self):
+    def open(self) -> BufferedReader:
         """
         Open an instance and return a file pointer to its bytes, which can be given to pydicom.dcmread()
         """
