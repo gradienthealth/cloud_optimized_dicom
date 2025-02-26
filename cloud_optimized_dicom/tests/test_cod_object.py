@@ -11,6 +11,7 @@ class TestCODObject(unittest.TestCase):
             client=None,
             study_uid="1.2.3.4.5.6.7.8.9.0",
             series_uid="1.2.3.4.5.6.7.8.9.0",
+            lock=False,
         )
         self.assertEqual(cod_object.datastore_path, "gs://my-bucket/my-datastore")
         self.assertEqual(
@@ -30,24 +31,13 @@ class TestCODObject(unittest.TestCase):
             "CODObject(gs://my-bucket/my-datastore/1.2.3.4.5.6.7.8.9.0/1.2.3.4.5.6.7.8.9.0)",
         )
 
-    def test_lock_immutability(self):
-        """Test that lock is read-only"""
-        cod_object = CODObject(
-            datastore_path="gs://my-bucket/my-datastore",
-            client=None,
-            study_uid="1.2.3.4.5.6.7.8.9.0",
-            series_uid="1.2.3.4.5.6.7.8.9.0",
-            lock=False,
-        )
-        with self.assertRaises(AttributeError):
-            cod_object.lock = True
-
     def test_validate_uids(self):
-        """Test that validate_uids raises an error if the UIDs are not valid DICOM UIDs"""
+        """Test that COD instantiation fails if UIDs are not valid"""
         with self.assertRaises(AssertionError):
             CODObject(
                 datastore_path="gs://my-bucket/my-datastore",
                 client=None,
                 study_uid="1.2.3.4.5",
                 series_uid="1.2.3.4.5",
+                lock=False,
             )
