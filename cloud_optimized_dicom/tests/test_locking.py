@@ -1,0 +1,249 @@
+import logging
+import unittest
+
+from google.api_core.client_options import ClientOptions
+from google.cloud import storage
+
+from cloud_optimized_dicom.cod_object import CODObject
+from cloud_optimized_dicom.errors import (
+    CleanOpOnUnlockedCODObjectError,
+    LockAcquisitionError,
+    LockVerificationError,
+)
+
+
+def _delete_uploaded_blobs(client: storage.Client, uris_to_delete: list[str]):
+    """
+    Helper method used by tests to delete blobs they have created, resetting the test
+    environment for a subsequent test. Takes a GCS client and a list of GCS uris to delete.
+    These URIs should be folders (e.g. 'gs://siskin-172863-test-data/concat-output'), and
+    this method will delete everything in the folder
+    """
+    for gcs_uri in uris_to_delete:
+        bucket_name, folder_name = gcs_uri.replace("gs://", "").split("/", 1)
+        for blob in client.list_blobs(bucket_name, prefix=f"{folder_name}/"):
+            blob.delete()
+
+
+class TestLocking(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        logging.basicConfig(level=logging.INFO)
+        logging.getLogger().setLevel(logging.INFO)
+        cls.client = storage.Client(
+            project="gradient-pacs-siskin-172863",
+            client_options=ClientOptions(
+                quota_project_id="gradient-pacs-siskin-172863"
+            ),
+        )
+        cls.datastore_path = "gs://siskin-172863-temp/cod_tests/dicomweb"
+        cls.study_uid = "1.2.3.4.5.6.7.8.9.10"
+        cls.series_uid = "1.2.3.4.5.6.7.8.9.10"
+        _delete_uploaded_blobs(cls.client, [cls.datastore_path])
+
+    def test_lock_unspecified(self):
+        """Test that not specifying lock raises an error"""
+        with self.assertRaises(TypeError):
+            CODObject(
+                datastore_path=self.datastore_path,
+                client=self.client,
+                study_uid=self.study_uid,
+                series_uid=self.series_uid,
+            )
+
+    def test_lock_immutability(self):
+        """Test that the lock flag is immutable"""
+        with CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.study_uid,
+            series_uid=self.series_uid,
+            lock=False,
+        ) as cod:
+            with self.assertRaises(AttributeError):
+                cod.lock = True
+
+    def test_lock_uniqueness(self):
+        """Test that you cannot have two CODObjects with the same lock"""
+        with CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.study_uid,
+            series_uid=self.series_uid,
+            lock=True,
+        ) as cod1:
+            with self.assertRaises(LockAcquisitionError):
+                with CODObject(
+                    client=self.client,
+                    datastore_path=self.datastore_path,
+                    study_uid=self.study_uid,
+                    series_uid=self.series_uid,
+                    lock=True,
+                ) as cod2:
+                    pass
+
+    def test_dirty_read(self):
+        """Test that you can read dirty metadata"""
+        with CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.study_uid,
+            series_uid=self.series_uid,
+            lock=False,
+        ) as cod:
+            metadata = cod.get_metadata(dirty=True)
+            self.assertEqual(metadata.study_uid, self.study_uid)
+            self.assertEqual(metadata.series_uid, self.series_uid)
+
+    def test_concurrent_dirty_read(self):
+        """Test that you can dirty read while another cod has a lock"""
+        with CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.study_uid,
+            series_uid=self.series_uid,
+            lock=True,
+        ) as cod1:
+            locked_metadata = cod1.get_metadata()
+            with CODObject(
+                client=self.client,
+                datastore_path=self.datastore_path,
+                study_uid=self.study_uid,
+                series_uid=self.series_uid,
+                lock=False,
+            ) as cod2:
+                dirty_metadata = cod2.get_metadata(dirty=True)
+                self.assertEqual(dirty_metadata.study_uid, self.study_uid)
+                self.assertEqual(dirty_metadata.series_uid, self.series_uid)
+                self.assertEqual(locked_metadata.study_uid, self.study_uid)
+                self.assertEqual(locked_metadata.series_uid, self.series_uid)
+
+    def test_unlocked_clean_fail(self):
+        """Test that you cannot do a clean operation on an unlocked CODObject"""
+        with CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.study_uid,
+            series_uid=self.series_uid,
+            lock=False,
+        ) as cod:
+            with self.assertRaises(CleanOpOnUnlockedCODObjectError):
+                cod.get_metadata()
+
+    def test_warn_dirty_on_locked(self):
+        """Test that we warn about dirty operations on locked CODObjects"""
+        with CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.study_uid,
+            series_uid=self.series_uid,
+            lock=True,
+        ) as cod:
+            with self.assertLogs(level="WARNING") as cm:
+                cod.get_metadata(dirty=True)
+            print(cm.output)
+            self.assertTrue(
+                any(
+                    "Performing dirty operation on locked CODObject" in log
+                    for log in cm.output
+                )
+            )
+
+    def test_lock_gone_on_cleanup(self):
+        """Test that we get an error if the lock disappears while the COD is active"""
+        with self.assertRaises(LockVerificationError):
+            with CODObject(
+                client=self.client,
+                datastore_path=self.datastore_path,
+                study_uid=self.study_uid,
+                series_uid=self.series_uid,
+                lock=True,
+            ) as cod:
+                cod.get_lock_blob().delete()
+            # when the with block exits, cod will attempt to release the lock and will find it missing
+
+    @unittest.skip("skipping until we have a sync method")
+    def test_lock_gone_on_sync(self):
+        """Test that we get an error if the lock disappears while the COD is syncing"""
+        # don't use a with block so we can delete the lock blob manually
+        cod_obj = CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.study_uid,
+            series_uid=self.series_uid,
+            lock=True,
+        )
+        cod_obj.get_lock_blob().delete()
+        with self.assertRaises(LockVerificationError):
+            cod_obj.sync()
+
+    def test_lock_changes(self):
+        """Test that we get an error if the lock changes while the COD is active"""
+        with self.assertRaises(LockVerificationError):
+            with CODObject(
+                client=self.client,
+                datastore_path=self.datastore_path,
+                study_uid=self.study_uid,
+                series_uid=self.series_uid,
+                lock=True,
+            ) as cod:
+                # simulate some other cod somehow stealing the lock
+                cod.get_lock_blob().upload_from_string(
+                    "", content_type="application/octet-stream"
+                )
+            # when the with block exits, cod will attempt to release the lock and will find it changed
+        # cod will have failed to delete the lock since it assumes it belongs to another cod, so we need to clean up after ourselves
+        _delete_uploaded_blobs(self.client, [self.datastore_path])
+
+    def test_lock_stolen_during_metadata_fetch(self):
+        """Test that we get an error if another process creates the lock while we're fetching metadata"""
+
+        original_get_metadata = CODObject.get_metadata
+
+        def mock_get_metadata(self: CODObject, dirty=False, create_new=True):
+            # First get the metadata normally
+            result = original_get_metadata(self, dirty=dirty, create_new=create_new)
+            # Then simulate another process creating the lock file
+            self.get_lock_blob().upload_from_string(
+                "competing lock", content_type="application/json", if_generation_match=0
+            )
+            return result
+
+        # Patch the get_metadata method temporarily for this test.
+        # Now in acquire_lock, it will now get_metadata, upload a lock, and then attempt to upload the lock again
+        # We expect this to raise our assertion error about a stolen lock
+        CODObject.get_metadata = mock_get_metadata
+
+        try:
+            with self.assertRaisesRegex(
+                LockAcquisitionError,
+                "COD:LOCK:ACQUISITION_FAILED:STOLEN_DURING_METADATA_FETCH",
+            ):
+                CODObject(
+                    client=self.client,
+                    datastore_path=self.datastore_path,
+                    study_uid=self.study_uid,
+                    series_uid=self.series_uid,
+                    lock=True,
+                )
+        finally:
+            # Restore the original method
+            CODObject.get_metadata = original_get_metadata
+            # Clean up any locks that might have been created
+            _delete_uploaded_blobs(self.client, [self.datastore_path])
+
+    def test_lock_persists_after_exception(self):
+        """Test that the lock persists after an exception is raised"""
+        with self.assertRaises(ValueError):
+            with CODObject(
+                client=self.client,
+                datastore_path=self.datastore_path,
+                study_uid=self.study_uid,
+                series_uid=self.series_uid,
+                lock=True,
+            ) as cod:
+                raise ValueError("test")
+        # The lock should still exist
+        self.assertTrue(cod.get_lock_blob().exists())
+        # Clean up any locks that might have been created
+        _delete_uploaded_blobs(self.client, [self.datastore_path])
