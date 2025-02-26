@@ -32,6 +32,12 @@ class CODObject:
         self.series_uid = series_uid
         self.create_if_missing = create_if_missing
         self._lock = lock
+        self._validate_uids()
+
+    def _validate_uids(self):
+        """Validate the UIDs are valid DICOM UIDs (TODO make this more robust, for now just check length)"""
+        assert len(self.study_uid) >= 10, "Study UID must be 10 characters long"
+        assert len(self.series_uid) >= 10, "Series UID must be 10 characters long"
 
     @property
     def lock(self) -> bool:

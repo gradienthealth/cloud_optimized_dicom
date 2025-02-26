@@ -9,23 +9,25 @@ class TestCODObject(unittest.TestCase):
         cod_object = CODObject(
             datastore_path="gs://my-bucket/my-datastore",
             client=None,
-            study_uid="1.2.3.4",
-            series_uid="5.6.7.8",
+            study_uid="1.2.3.4.5.6.7.8.9.0",
+            series_uid="1.2.3.4.5.6.7.8.9.0",
         )
         self.assertEqual(cod_object.datastore_path, "gs://my-bucket/my-datastore")
         self.assertEqual(
-            cod_object.tar_uri, "gs://my-bucket/my-datastore/1.2.3.4/5.6.7.8.tar"
+            cod_object.tar_uri,
+            "gs://my-bucket/my-datastore/1.2.3.4.5.6.7.8.9.0/1.2.3.4.5.6.7.8.9.0.tar",
         )
         self.assertEqual(
             cod_object.metadata_uri,
-            "gs://my-bucket/my-datastore/1.2.3.4/5.6.7.8/metadata.json",
+            "gs://my-bucket/my-datastore/1.2.3.4.5.6.7.8.9.0/1.2.3.4.5.6.7.8.9.0/metadata.json",
         )
         self.assertEqual(
             cod_object.index_uri,
-            "gs://my-bucket/my-datastore/1.2.3.4/5.6.7.8/index.sqlite",
+            "gs://my-bucket/my-datastore/1.2.3.4.5.6.7.8.9.0/1.2.3.4.5.6.7.8.9.0/index.sqlite",
         )
         self.assertEqual(
-            str(cod_object), "CODObject(gs://my-bucket/my-datastore/1.2.3.4/5.6.7.8)"
+            str(cod_object),
+            "CODObject(gs://my-bucket/my-datastore/1.2.3.4.5.6.7.8.9.0/1.2.3.4.5.6.7.8.9.0)",
         )
 
     def test_lock_immutability(self):
@@ -33,9 +35,19 @@ class TestCODObject(unittest.TestCase):
         cod_object = CODObject(
             datastore_path="gs://my-bucket/my-datastore",
             client=None,
-            study_uid="1.2.3.4",
-            series_uid="5.6.7.8",
+            study_uid="1.2.3.4.5.6.7.8.9.0",
+            series_uid="1.2.3.4.5.6.7.8.9.0",
             lock=False,
         )
         with self.assertRaises(AttributeError):
             cod_object.lock = True
+
+    def test_validate_uids(self):
+        """Test that validate_uids raises an error if the UIDs are not valid DICOM UIDs"""
+        with self.assertRaises(AssertionError):
+            CODObject(
+                datastore_path="gs://my-bucket/my-datastore",
+                client=None,
+                study_uid="1.2.3.4.5",
+                series_uid="1.2.3.4.5",
+            )
