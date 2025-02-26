@@ -31,7 +31,12 @@ class CODObject:
         self.study_uid = study_uid
         self.series_uid = series_uid
         self.create_if_missing = create_if_missing
-        self.lock = lock
+        self._lock = lock
+
+    @property
+    def lock(self) -> bool:
+        """Read-only property for lock status."""
+        return self._lock
 
     @property
     def tar_uri(self) -> str:

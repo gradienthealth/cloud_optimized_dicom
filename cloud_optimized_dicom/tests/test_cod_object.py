@@ -27,3 +27,15 @@ class TestCODObject(unittest.TestCase):
         self.assertEqual(
             str(cod_object), "CODObject(gs://my-bucket/my-datastore/1.2.3.4/5.6.7.8)"
         )
+
+    def test_lock_immutability(self):
+        """Test that lock is read-only"""
+        cod_object = CODObject(
+            datastore_path="gs://my-bucket/my-datastore",
+            client=None,
+            study_uid="1.2.3.4",
+            series_uid="5.6.7.8",
+            lock=False,
+        )
+        with self.assertRaises(AttributeError):
+            cod_object.lock = True
