@@ -13,6 +13,8 @@ class CODObject:
         client: storage.Client - The client to use to interact with the datastore.
         study_uid: str - The study_uid of the series.
         series_uid: str - The series_uid of the series.
+        create_if_missing: bool - If `False`, raise an error if series does not yet exist in the datastore.
+        lock: bool - If `True`, acquire a lock on initialization. If `False`, no changes made on this object will be synced to the datastore.
     """
 
     def __init__(
@@ -21,11 +23,15 @@ class CODObject:
         client: storage.Client,
         study_uid: str,
         series_uid: str,
+        create_if_missing: bool = True,
+        lock: bool = True,
     ):
         self.datastore_path = datastore_path
         self.client = client
         self.study_uid = study_uid
         self.series_uid = series_uid
+        self.create_if_missing = create_if_missing
+        self.lock = lock
 
     @property
     def tar_uri(self) -> str:
