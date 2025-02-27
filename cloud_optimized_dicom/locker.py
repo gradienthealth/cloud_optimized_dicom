@@ -18,7 +18,12 @@ LOCK_FILE_NAME = ".cod.lock"
 
 
 class CODLocker:
-    """Class for managing the lock file for a COD object."""
+    """Class for managing the lock file for a COD object.
+
+    Args:
+        cod_object (CODObject): The COD object to lock.
+        lock_generation (int): (optional) The generation of the lock file to re-acquire if the lock was already known.
+    """
 
     def __init__(self, cod_object: "CODObject", lock_generation: int = None):
         self.cod_object = cod_object
