@@ -1,21 +1,15 @@
 import logging
 
-from google.api_core.exceptions import PreconditionFailed
 from google.cloud import storage
 
 from cloud_optimized_dicom.cod_locker import CODLocker
 from cloud_optimized_dicom.errors import (
     CleanOpOnUnlockedCODObjectError,
     CODObjectNotFoundError,
-    LockAcquisitionError,
-    LockVerificationError,
 )
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 
 logger = logging.getLogger(__name__)
-
-# TODO this should be generic for cod library, but for our existing codebase we need .gradient.lock... what to do?
-LOCK_FILE_NAME = ".cod.lock"
 
 
 def public_method(func):

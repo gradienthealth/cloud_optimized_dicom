@@ -13,8 +13,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from cloud_optimized_dicom.cod_object import CODObject
 
+# TODO this should be generic for cod library, but for our existing codebase we need .gradient.lock... what to do?
+LOCK_FILE_NAME = ".cod.lock"
+
 
 class CODLocker:
+    """Class for managing the lock file for a COD object."""
+
     def __init__(self, cod_object: "CODObject"):
         self.cod_object = cod_object
         self._lock_generation = None
@@ -84,6 +89,6 @@ class CODLocker:
     def get_lock_blob(self) -> storage.Blob:
         """Get the lock blob for this series."""
         return storage.Blob.from_string(
-            uri=f"{self.cod_object.datastore_path}/{self.cod_object.study_uid}/{self.cod_object.series_uid}/.cod.lock",
+            uri=f"{self.cod_object.datastore_path}/{self.cod_object.study_uid}/{self.cod_object.series_uid}/{LOCK_FILE_NAME}",
             client=self.cod_object.client,
         )
