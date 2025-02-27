@@ -3,34 +3,13 @@ import logging
 from google.cloud import storage
 
 from cloud_optimized_dicom.appender import CODAppender
-from cloud_optimized_dicom.errors import (
-    CleanOpOnUnlockedCODObjectError,
-    CODObjectNotFoundError,
-)
+from cloud_optimized_dicom.errors import CODObjectNotFoundError
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
+from cloud_optimized_dicom.utils import public_method
 
 logger = logging.getLogger(__name__)
-
-
-def public_method(func):
-    """Decorator for public CODObject methods.
-    Enforces that clean operations require a lock, and warns about dirty operations on locked objects.
-    """
-
-    def wrapper(self, *args, **kwargs):
-        dirty = kwargs.get("dirty", False)
-        if not dirty:
-            if not self.lock:
-                raise CleanOpOnUnlockedCODObjectError(
-                    "Cannot perform clean operation on unlocked CODObject"
-                )
-        elif self.lock:
-            logger.warning(f"Performing dirty operation on locked CODObject: {self}")
-        return func(self, *args, **kwargs)
-
-    return wrapper
 
 
 class CODObject:

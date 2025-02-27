@@ -12,6 +12,7 @@ from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
 
 import cloud_optimized_dicom.metrics as metrics
+from cloud_optimized_dicom.errors import CleanOpOnUnlockedCODObjectError
 
 logger = logging.getLogger(__name__)
 
@@ -92,3 +93,22 @@ def generate_ptr_crc32c(ptr: io.BufferedReader, blocksize: int = 2**20) -> str:
     crc = google_crc32c.Checksum()
     collections.deque(crc.consume(ptr, blocksize), maxlen=0)
     return b64encode(crc.digest()).decode("utf-8")
+
+
+def public_method(func):
+    """Decorator for public CODObject methods.
+    Enforces that clean operations require a lock, and warns about dirty operations on locked objects.
+    """
+
+    def wrapper(self, *args, **kwargs):
+        dirty = kwargs.get("dirty", False)
+        if not dirty:
+            if not self.lock:
+                raise CleanOpOnUnlockedCODObjectError(
+                    "Cannot perform clean operation on unlocked CODObject"
+                )
+        elif self.lock:
+            logger.warning(f"Performing dirty operation on locked CODObject: {self}")
+        return func(self, *args, **kwargs)
+
+    return wrapper
