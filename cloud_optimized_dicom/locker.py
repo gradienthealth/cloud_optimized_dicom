@@ -20,21 +20,21 @@ LOCK_FILE_NAME = ".cod.lock"
 class CODLocker:
     """Class for managing the lock file for a COD object."""
 
-    def __init__(self, cod_object: "CODObject"):
+    def __init__(self, cod_object: "CODObject", lock_generation: int = None):
         self.cod_object = cod_object
-        self._lock_generation = None
+        self.lock_generation = lock_generation
 
     def acquire(self):
         """Upload a lock file (to prevent concurrent access to the COD object)."""
         # if the lock already exists, assert generation matches (re-acquisition case)
         if (lock_blob := self.get_lock_blob()).exists():
             lock_blob.reload()
-            if lock_blob.generation != self._lock_generation:
+            if lock_blob.generation != self.lock_generation:
                 raise LockAcquisitionError(
                     "COD:LOCK:ACQUISITION_FAILED:DIFF_GEN_LOCK_ALREADY_EXISTS"
                 )
             logger.info(
-                f"COD:LOCK:REACQUIRED:gs://{lock_blob.bucket.name}/{lock_blob.name} (generation: {self._lock_generation})"
+                f"COD:LOCK:REACQUIRED:gs://{lock_blob.bucket.name}/{lock_blob.name} (generation: {self.lock_generation})"
             )
             return
 
@@ -55,9 +55,9 @@ class CODLocker:
             )
 
         # Step 3: record lock generation
-        self._lock_generation = lock_blob.generation
+        self.lock_generation = lock_blob.generation
         logger.info(
-            f"COD:LOCK:ACQUIRED:gs://{lock_blob.bucket.name}/{lock_blob.name} (generation: {self._lock_generation})"
+            f"COD:LOCK:ACQUIRED:gs://{lock_blob.bucket.name}/{lock_blob.name} (generation: {self.lock_generation})"
         )
 
     def verify(self) -> storage.Blob:
@@ -67,8 +67,8 @@ class CODLocker:
             logger.critical(msg)
             raise LockVerificationError(msg)
         lock_blob.reload()
-        if lock_blob.generation != self._lock_generation:
-            msg = f"COD:LOCK:GEN_MISMATCH_ON_VERIFY:FOUND:{lock_blob.generation} != EXPECTED:{self._lock_generation}"
+        if lock_blob.generation != self.lock_generation:
+            msg = f"COD:LOCK:GEN_MISMATCH_ON_VERIFY:FOUND:{lock_blob.generation} != EXPECTED:{self.lock_generation}"
             logger.critical(msg)
             raise LockVerificationError(msg)
         return lock_blob

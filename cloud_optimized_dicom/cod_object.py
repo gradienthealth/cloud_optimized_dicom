@@ -46,12 +46,10 @@ class CODObject:
         self.client = client
         self.study_uid = study_uid
         self.series_uid = series_uid
+        self._validate_uids()
         self.create_if_missing = create_if_missing
         self._metadata = metadata
-        self._locker = CODLocker(self) if lock else None
-        if lock_generation:
-            self._locker._lock_generation = lock_generation
-        self._validate_uids()
+        self._locker = CODLocker(self, lock_generation) if lock else None
         if self.lock:
             self._locker.acquire()
 
