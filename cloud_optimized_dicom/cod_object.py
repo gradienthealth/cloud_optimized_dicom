@@ -3,6 +3,7 @@ import logging
 from google.api_core.exceptions import PreconditionFailed
 from google.cloud import storage
 
+from cloud_optimized_dicom.cod_locker import CODLocker
 from cloud_optimized_dicom.errors import (
     CleanOpOnUnlockedCODObjectError,
     CODObjectNotFoundError,
@@ -72,89 +73,23 @@ class CODObject:
         self.series_uid = series_uid
         self.create_if_missing = create_if_missing
         self._lock = lock
-        self._lock_generation = lock_generation
         self._metadata = metadata
+        self._locker = CODLocker(self)
+        if lock_generation:
+            self._locker._lock_generation = lock_generation
         self._validate_uids()
         if self._lock:
-            self._acquire_lock()
+            self._locker.acquire()
 
     def _validate_uids(self):
         """Validate the UIDs are valid DICOM UIDs (TODO make this more robust, for now just check length)"""
         assert len(self.study_uid) >= 10, "Study UID must be 10 characters long"
         assert len(self.series_uid) >= 10, "Series UID must be 10 characters long"
 
-    def _acquire_lock(self):
-        """Upload a lock file (to prevent concurrent access to the COD object).
-        Store the lock's generation for future verification"""
-        # if the lock already exists, assert generation matches (re-acquisition case)
-        if (lock_blob := self.get_lock_blob()).exists():
-            lock_blob.reload()
-            if lock_blob.generation != self._lock_generation:
-                raise LockAcquisitionError(
-                    "COD:LOCK:ACQUISITION_FAILED:DIFF_GEN_LOCK_ALREADY_EXISTS"
-                )
-            logger.info(
-                f"COD:LOCK:REACQUIRED:gs://{lock_blob.bucket.name}/{lock_blob.name} (generation: {self._lock_generation})"
-            )
-            return
-        # if lock doesn't exist, we are free to make a new one
-        # Step 1: fetch metadata
-        self.get_metadata()
-
-        # Step 2: Try to create the lock file with a precondition that it must not exist
-        lock_blob.content_encoding = "gzip"
-        try:
-            lock_blob.upload_from_string(
-                self._metadata.to_gzipped_json(),
-                content_type="application/json",
-                if_generation_match=0,  # Only upload if the blob doesn't exist
-            )
-        except PreconditionFailed:
-            # we specified a precondition of gen=0 (blob doesn't exist). Therefore, if we get a PreconditionFailed
-            # exception, another process must have created the lock file while we were fetching metadata
-            raise LockAcquisitionError(
-                "COD:LOCK:ACQUISITION_FAILED:STOLEN_DURING_METADATA_FETCH"
-            )
-
-        # Step 3: record lock generation
-        self._lock_generation = lock_blob.generation
-        logger.info(
-            f"COD:LOCK:ACQUIRED:gs://{lock_blob.bucket.name}/{lock_blob.name} (generation: {self._lock_generation})"
-        )
-
-    def _verify_lock(self) -> storage.Blob:
-        """Verify that the lock file still exists and has the same generation.
-        Returns the lock blob on successful verification"""
-        if not (lock_blob := self.get_lock_blob()).exists():
-            msg = "COD:LOCK:MISSING_ON_VERIFY"
-            logger.critical(msg)
-            raise LockVerificationError(msg)
-        lock_blob.reload()
-        if lock_blob.generation != self._lock_generation:
-            msg = f"COD:LOCK:GEN_MISMATCH_ON_VERIFY:FOUND:{lock_blob.generation} != EXPECTED:{self._lock_generation}"
-            logger.critical(msg)
-            raise LockVerificationError(msg)
-        return lock_blob
-
-    def _release_lock(self):
-        """Release the lock by deleting the lock file"""
-        try:
-            lock_blob = self._verify_lock()
-        except LockVerificationError as e:
-            logger.critical(f"COD:LOCK:RELEASE:VERIFICATION_ERROR:{e}")
-            raise e
-        lock_blob.delete()
-        self._lock_generation = None
-        logger.info(
-            f"COD:LOCK:RELEASE:SUCCESS:gs://{lock_blob.bucket.name}/{lock_blob.name}"
-        )
-
-    def get_lock_blob(self) -> storage.Blob:
-        """Get the lock blob for this series."""
-        return storage.Blob.from_string(
-            uri=f"{self.datastore_path}/{self.study_uid}/{self.series_uid}/{LOCK_FILE_NAME}",
-            client=self.client,
-        )
+    @property
+    def lock(self) -> bool:
+        """Read-only property for lock status."""
+        return self._lock
 
     @public_method
     def get_metadata(self, **kwargs) -> SeriesMetadata:
@@ -178,11 +113,6 @@ class CODObject:
                 f"COD:OBJECT_NOT_FOUND:{self.metadata_uri} (create_if_missing=False)"
             )
         return self._metadata
-
-    @property
-    def lock(self) -> bool:
-        """Read-only property for lock status."""
-        return self._lock
 
     @property
     def tar_uri(self) -> str:
@@ -211,7 +141,7 @@ class CODObject:
         if self.lock:
             # If no exception occurred, release the lock
             if exc_type is None:
-                self._release_lock()
+                self._locker.release()
             # If an exception occurred, log it and leave the lock hanging
             else:
                 logger.warning(

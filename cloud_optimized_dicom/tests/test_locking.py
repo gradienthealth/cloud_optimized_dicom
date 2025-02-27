@@ -159,7 +159,7 @@ class TestLocking(unittest.TestCase):
                 series_uid=self.series_uid,
                 lock=True,
             ) as cod:
-                cod.get_lock_blob().delete()
+                cod._locker.get_lock_blob().delete()
             # when the with block exits, cod will attempt to release the lock and will find it missing
 
     @unittest.skip("skipping until we have a sync method")
@@ -188,7 +188,7 @@ class TestLocking(unittest.TestCase):
                 lock=True,
             ) as cod:
                 # simulate some other cod somehow stealing the lock
-                cod.get_lock_blob().upload_from_string(
+                cod._locker.get_lock_blob().upload_from_string(
                     "", content_type="application/octet-stream"
                 )
             # when the with block exits, cod will attempt to release the lock and will find it changed
@@ -204,7 +204,7 @@ class TestLocking(unittest.TestCase):
             # First get the metadata normally
             result = original_get_metadata(self, dirty=dirty, create_new=create_new)
             # Then simulate another process creating the lock file
-            self.get_lock_blob().upload_from_string(
+            self._locker.get_lock_blob().upload_from_string(
                 "competing lock", content_type="application/json", if_generation_match=0
             )
             return result
@@ -244,6 +244,6 @@ class TestLocking(unittest.TestCase):
             ) as cod:
                 raise ValueError("test")
         # The lock should still exist
-        self.assertTrue(cod.get_lock_blob().exists())
+        self.assertTrue(cod._locker.get_lock_blob().exists())
         # Clean up any locks that might have been created
         _delete_uploaded_blobs(self.client, [self.datastore_path])
