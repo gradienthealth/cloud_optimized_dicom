@@ -2,10 +2,12 @@ import logging
 
 from google.cloud import storage
 
+from cloud_optimized_dicom.appender import CODAppender
 from cloud_optimized_dicom.errors import (
     CleanOpOnUnlockedCODObjectError,
     CODObjectNotFoundError,
 )
+from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 
@@ -107,6 +109,21 @@ class CODObject:
                 f"COD:OBJECT_NOT_FOUND:{self.metadata_uri} (create_if_missing=False)"
             )
         return self._metadata
+
+    @public_method
+    def append(
+        self, instances: list[Instance], delete_local_origin: bool = False, **kwargs
+    ):
+        """Append a list of instances to the COD object.
+
+        Args:
+            instances: list[Instance] - The instances to append.
+            delete_local_origin: bool - If `True`, delete the local origin of the instances after appending.
+            dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+        """
+        CODAppender(self).append(
+            instances=instances, delete_local_origin=delete_local_origin
+        )
 
     @property
     def tar_uri(self) -> str:
