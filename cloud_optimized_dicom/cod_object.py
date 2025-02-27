@@ -47,13 +47,12 @@ class CODObject:
         self.study_uid = study_uid
         self.series_uid = series_uid
         self.create_if_missing = create_if_missing
-        self._lock = lock
         self._metadata = metadata
-        self._locker = CODLocker(self)
+        self._locker = CODLocker(self) if lock else None
         if lock_generation:
             self._locker._lock_generation = lock_generation
         self._validate_uids()
-        if self._lock:
+        if self.lock:
             self._locker.acquire()
 
     def _validate_uids(self):
@@ -64,7 +63,7 @@ class CODObject:
     @property
     def lock(self) -> bool:
         """Read-only property for lock status."""
-        return self._lock
+        return self._locker is not None
 
     @public_method
     def get_metadata(self, **kwargs) -> SeriesMetadata:
