@@ -2,11 +2,11 @@ import logging
 
 from google.cloud import storage
 
-from cloud_optimized_dicom.cod_locker import CODLocker
 from cloud_optimized_dicom.errors import (
     CleanOpOnUnlockedCODObjectError,
     CODObjectNotFoundError,
 )
+from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 
 logger = logging.getLogger(__name__)
