@@ -3,6 +3,7 @@ import os
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
+from datetime import datetime
 from io import BufferedReader
 from typing import Callable
 
@@ -47,6 +48,8 @@ class Instance:
     # private internal fields
     _metadata: dict = None
     _custom_offset_tables: dict = None
+    _diff_hash_dupe_paths: list[str] = field(default_factory=list)
+    _modified_datetime: str = datetime.now().isoformat()
     # uids/cached values
     _instance_uid: str = None
     _series_uid: str = None
@@ -90,7 +93,7 @@ class Instance:
         self.validate()
 
     def validate(self):
-        """Open the instance, read the internal fields, and (TODO) validate they match hints if provided.
+        """Open the instance, read the internal fields, and validate they match hints if provided.
 
         Returns:
             bool - True if the instance is valid
@@ -327,6 +330,11 @@ class Instance:
         # We don't want to spend GET requests to calculate exact deleted size. Instead we estimate with instance size
         metrics.BYTES_DELETED_COUNTER.inc(self.size)
         return deleted_dependencies
+
+    def append_diff_hash_dupe(self, dupe_uri: str):
+        """Append a diff hash dupe and update modified_datetime"""
+        self._diff_hash_dupe_paths.append(dupe_uri)
+        self._modified_datetime = datetime.now().isoformat()
 
     def cleanup(self):
         """
