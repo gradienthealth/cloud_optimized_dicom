@@ -14,5 +14,7 @@ INSTANCE_BLOB_CRC32C_MISMATCH = Metrics.counter(
 # append metrics
 APPEND_NAMESPACE = f"{NAMESPACE}:append"
 SERIES_DUPE_COUNTER = Metrics.counter(APPEND_NAMESPACE, "num_duplicate_series")
+TRUE_DUPE_COUNTER = Metrics.counter(APPEND_NAMESPACE, "num_true_duplicates")
+DIFFHASH_DUPE_COUNTER = Metrics.counter(APPEND_NAMESPACE, "num_diffhash_duplicates")
 TAR_SUCCESS_COUNTER = Metrics.counter(APPEND_NAMESPACE, "tar_success")
 TAR_BYTES_PROCESSED = Metrics.counter(APPEND_NAMESPACE, "tar_bytes_processed")
