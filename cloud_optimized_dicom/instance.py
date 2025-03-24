@@ -60,10 +60,10 @@ class Instance:
         else:
             self._local_path = self.dicom_uri
 
+    @property
     def is_remote(self) -> bool:
         """
         Return whether self.dicom_uri begins with any of the `REMOTE_IDENTIFIERS`.
-        TODO deprecate or make property
         """
         return is_remote(self.dicom_uri)
 
@@ -145,12 +145,22 @@ class Instance:
             self.validate()
         return self._size
 
-    @property
-    def instance_uid(self):
+    def crc32c(self, trust_hints_if_available: bool = False):
+        """
+        Getter for self._crc32c. Populates by calling self.validate() if necessary.
+        """
+        if trust_hints_if_available and self.hints.crc32c is not None:
+            return self.hints.crc32c
+        if self._crc32c is None:
+            self.validate()
+        return self._crc32c
+
+    def instance_uid(self, trust_hints_if_available: bool = False):
         """
         Getter for self._instance_uid. Populates by calling self.validate() if necessary.
         """
-        # fetch if necessary
+        if trust_hints_if_available and self.hints.instance_uid is not None:
+            return self.hints.instance_uid
         if self._instance_uid is None:
             self.validate()
         return self._instance_uid
@@ -197,7 +207,7 @@ class Instance:
             uid_generator: function to call on instance UIDs to generate tar path (e.g. to anonymize)
             delete_local_on_completion: if True and dicom_uri is local, delete the local instance file on completion
         """
-        uid_for_uri = uid_generator(self.instance_uid)
+        uid_for_uri = uid_generator(self.instance_uid())
         # do actual appending
         f = tar.fileobj
         begin_offset = f.tell()
