@@ -64,19 +64,19 @@ class CODAppender:
         # Calculate state change as a result of instances added by this group
         state_change = self._calculate_state_change(instances)
         # handle same
-        self._handle_true_duplicates(state_change.same)
+        self._handle_same(state_change.same)
         # Edge case: no NEW or DIFF state changes -> return early
-        if not len(state_changes["NEW"]) and not len(state_changes["DIFF"]):
-            logger.warning(f"GRADIENT_STATE_LOGS:NO_NEW_INSTANCES:{self.as_log}")
+        if not state_change.new and not state_change.diff:
+            logger.warning(f"No new instances: {self.as_log}")
             metrics.SERIES_DUPE_COUNTER.inc()
             return self.append_result
         # handle diff
-        self._handle_diff_hash_duplicates(state_changes["DIFF"])
+        self._handle_diff(state_change.diff)
         # Edge case: no NEW state changes, but some DIFFs -> return early
-        if not len(state_changes["NEW"]):
+        if not state_change.new:
             return self.append_result
         # handle new
-        self._handle_new(state_changes["NEW"])
+        self._handle_new(state_change.new)
         metrics.TAR_SUCCESS_COUNTER.inc()
         metrics.TAR_BYTES_PROCESSED.inc(os.path.getsize(self.cod_object.local_tar_path))
         return self.append_result
@@ -238,3 +238,55 @@ class CODAppender:
         # update append result
         self.append_result.errors.extend(errors)
         return state_change
+
+    def _handle_same(
+        self,
+        same_state_changes: list[
+            tuple[Instance, Optional[SeriesMetadata], Optional[str]]
+        ],
+    ):
+        """Log a warning for each instance that is the same as a previous instance, and update append result"""
+        for dupe_instance, series_metadata, deid_instance_uid in same_state_changes:
+            existing_path = series_metadata.instances[deid_instance_uid].dicom_uri
+            logger.warning(
+                f"Skipping duplicate instance (same hash): {dupe_instance.as_log} (duplicate of {existing_path})"
+            )
+        # update append result
+        self.append_result.same.extend([same for same, _, _ in same_state_changes])
+
+    def _handle_diff(
+        self,
+        diff_state_changes: list[
+            tuple[Instance, Optional[SeriesMetadata], Optional[str]]
+        ],
+    ):
+        """Log a warning for each file that is a repeat instance UID with a different hash,
+        add file URIs to that instance's diff_hash_dupe_paths in the series metadata,
+        and update append result
+        """
+        for dupe_instance, series_metadata, deid_instance_uid in diff_state_changes:
+            existing_instance = series_metadata.instances[deid_instance_uid]
+            # add novel (not already in diff_hash_dupe_paths), remote dupe uris to diff_hash_dupe_paths
+            if (
+                dupe_instance.is_remote
+                and dupe_instance.dicom_uri
+                not in existing_instance._diff_hash_dupe_paths
+            ):
+                existing_instance.append_diff_hash_dupe(dupe_instance.dicom_uri)
+                # metadata is now desynced because we added to diff_hash_dupe_paths
+                self.cod_object._metadata_synced = False
+            logger.warning(
+                f"Skipping duplicate instance (diff hash): {dupe_instance.as_log} (duplicate of {existing_instance.dicom_uri})"
+            )
+        # update append result
+        self.append_result.conflict.extend([diff for diff, _, _ in diff_state_changes])
+
+    def _handle_new(
+        self,
+        new_state_changes: list[
+            tuple[Instance, Optional[SeriesMetadata], Optional[str]]
+        ],
+    ):
+        """
+        Log a warning for each instance that is new, and update append result
+        """
