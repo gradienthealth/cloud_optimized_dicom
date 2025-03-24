@@ -68,7 +68,7 @@ class TestInstance(unittest.TestCase):
                 )
                 self.assertEqual(
                     tar.getmember(f"instances/{self.test_instance_uid}.dcm").size,
-                    instance.size,
+                    instance.size(),
                 )
 
     def test_extract_metadata(self):
