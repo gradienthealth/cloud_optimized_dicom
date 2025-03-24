@@ -53,6 +53,7 @@ class CODObject:
             self._locker.acquire(create_if_missing=create_if_missing)
         else:
             self.get_metadata(create_if_missing=create_if_missing, dirty=True)
+        self._metadata_synced = True
 
     def _validate_uids(self):
         """Validate the UIDs are valid DICOM UIDs (TODO make this more robust, for now just check length)"""
