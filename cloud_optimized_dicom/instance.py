@@ -135,11 +135,12 @@ class Instance:
             self.fetch()
         return self._local_path
 
-    @property
-    def size(self):
+    def size(self, trust_hints_if_available: bool = False):
         """
         Getter for self._size. Populates by calling self.validate() if necessary.
         """
+        if trust_hints_if_available and self.hints.size is not None:
+            return self.hints.size
         if self._size is None:
             self.validate()
         return self._size
@@ -210,7 +211,7 @@ class Instance:
         if index == -1:
             raise ValueError("Not a Valid DICOM")
         start_offset = begin_offset + index
-        stop_offset = start_offset + self.size
+        stop_offset = start_offset + self.size()
         # Seek back to the end offset to read the file from the tar
         f.seek(end_offset)
 
