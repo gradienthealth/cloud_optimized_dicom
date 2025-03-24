@@ -55,7 +55,7 @@ class Instance:
     _crc32c: str = None
 
     def __post_init__(self):
-        if self.is_remote():
+        if self.is_remote:
             self._local_path = None
         else:
             self._local_path = self.dicom_uri
@@ -76,7 +76,7 @@ class Instance:
             return
 
         # Sanity check: only remote instances should be fetchable
-        assert self.is_remote(), "Cannot fetch local DICOM instance"
+        assert self.is_remote, "Cannot fetch local DICOM instance"
 
         self._temp_file = tempfile.NamedTemporaryFile(suffix=".dcm", delete=False)
         self._local_path = self._temp_file.name

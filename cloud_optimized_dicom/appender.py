@@ -127,3 +127,52 @@ class CODAppender:
                 f"Overlarge series: {self.cod_object.as_log} ({grouping_size} bytes) exceeds max_series_size: {max_series_size}gb"
             )
         return filtered_instances, errors
+
+    def _dedupe(
+        self, instances: list[Instance]
+    ) -> tuple[
+        list[Instance], list[Instance], list[Instance], list[tuple[Instance, Exception]]
+    ]:
+        """
+        We expect uniqueness of instance ids within the input series.
+        This method removes and records the paths to any duplicate instance files.
+        ALL duplicates are removed, but dupe paths are only recorded if they are remote.
+        (modifies instances list in place!)
+        Returns:
+            new (list): list of instances with duplicates removed
+            same (list): list of instances that are true duplicates
+            conflict (list): list of instances that are diff hash duplicates
+            errors (list): list of instance, error tuples
+        """
+        instance_id_to_instance: dict[str, Instance] = {}
+        same, conflict, errors = [], [], []
+        for instance in instances:
+            try:
+                instance_id = instance.instance_uid(trust_hints_if_available=True)
+                # handle duplicate instance id case
+                if instance_id in instance_id_to_instance:
+                    preexisting_instance = instance_id_to_instance[instance_id]
+                    if (
+                        instance.crc32c(trust_hints_if_available=True)
+                        != preexisting_instance.crc32c()
+                    ):
+                        conflict.append(instance)
+                        if instance.is_remote:
+                            preexisting_instance.append_diff_hash_dupe(
+                                instance.dicom_uri
+                            )
+                        logger.warning(
+                            f"Removing diff hash dupe from input: {instance.as_log}"
+                        )
+                    else:
+                        same.append(instance)
+                        logger.warning(
+                            f"Removing true duplicate from input: {instance.as_log}"
+                        )
+                    continue
+                # if we make it here, we have a unique instance id
+                instance_id_to_instance[instance_id] = instance
+            except Exception as e:
+                logger.exception(f"Error deduping instance: {instance.as_log}: {e}")
+                errors.append((instance, e))
+        return list(instance_id_to_instance.values()), same, conflict, errors

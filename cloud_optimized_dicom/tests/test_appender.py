@@ -43,7 +43,6 @@ class TestAppender(unittest.TestCase):
                 instances=[instance], max_instance_size=1, max_series_size=0.0001
             )
 
-    @unittest.skip("WIP")
     def test_append(self):
         cod_object = CODObject(
             datastore_path="test_datastore",
