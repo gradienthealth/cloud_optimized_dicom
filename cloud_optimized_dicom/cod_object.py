@@ -63,6 +63,11 @@ class CODObject:
         """Read-only property for lock status."""
         return self._locker is not None
 
+    @property
+    def as_log(self) -> str:
+        """Return a string representation of the CODObject for logging purposes."""
+        return f"{self.datastore_path}/{self.study_uid}/{self.series_uid}"
+
     @public_method
     def get_metadata(self, **kwargs) -> SeriesMetadata:
         """Get the metadata for this series."""
@@ -88,17 +93,27 @@ class CODObject:
 
     @public_method
     def append(
-        self, instances: list[Instance], delete_local_origin: bool = False, **kwargs
+        self,
+        instances: list[Instance],
+        max_instance_size: float = 10,
+        max_series_size: float = 100,
+        delete_local_origin: bool = False,
+        dirty: bool = False,
     ):
         """Append a list of instances to the COD object.
 
         Args:
             instances: list[Instance] - The instances to append.
+            max_instance_size: float - The maximum size of an instance to append, in gb.
+            max_series_size: float - The maximum size of the series to append, in gb.
             delete_local_origin: bool - If `True`, delete the local origin of the instances after appending.
             dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
         """
         CODAppender(self).append(
-            instances=instances, delete_local_origin=delete_local_origin
+            instances=instances,
+            delete_local_origin=delete_local_origin,
+            max_instance_size=max_instance_size,
+            max_series_size=max_series_size,
         )
 
     @property
