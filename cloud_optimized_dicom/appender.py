@@ -33,7 +33,7 @@ class CODAppender:
 
     def __init__(self, cod_object: "CODObject"):
         self.cod_object = cod_object
-        self.append_result = None
+        self.append_result = AppendResult(new=[], same=[], conflict=[], errors=[])
 
     def append(
         self,
@@ -56,19 +56,11 @@ class CODAppender:
         """
         self.append_result = AppendResult(new=[], same=[], conflict=[], errors=[])
         # remove overlarge instances
-        instances, size_errors = self._assert_not_too_large(
+        instances = self._assert_not_too_large(
             instances, max_instance_size, max_series_size
         )
-        # TODO: _assert_not_too_large actually updates self.append_result.errors
-        self.append_result.errors.extend(size_errors)
         # remove duplicates from input
-        instances, same_dedupes, conflict_dedupes, dedupe_errors = self._dedupe(
-            instances
-        )
-        # TODO: _dedupe actually updates self.append_result
-        self.append_result.same.extend(same_dedupes)
-        self.append_result.conflict.extend(conflict_dedupes)
-        self.append_result.errors.extend(dedupe_errors)
+        instances = self._dedupe(instances)
         # Calculate state change as a result of instances added by this group
         state_change = self._calculate_state_change(instances)
         # handle same
@@ -94,7 +86,7 @@ class CODAppender:
         instances: list[Instance],
         max_instance_size: float,
         max_series_size: float,
-    ) -> tuple[list[Instance], list[tuple[Instance, Exception]]]:
+    ) -> list[Instance]:
         """Performs 2 size validations:
         1. None of the individual instances are too large
         2. The overall series size is not too large
@@ -105,8 +97,6 @@ class CODAppender:
             max_series_size (float): maximum size of the series to append, in gb
         Returns:
             filtered_instances (list): list of instances that are not too large
-            errors (list): list of instance, error tuples (likely overlarge instances,
-            but there could be fetching-related errors)
         Raises:
             ValueError: if the series is too large
         """
@@ -139,23 +129,18 @@ class CODAppender:
             raise ValueError(
                 f"Overlarge series: {self.cod_object.as_log} ({grouping_size} bytes) exceeds max_series_size: {max_series_size}gb"
             )
-        return filtered_instances, errors
+        # update append result
+        self.append_result.errors.extend(errors)
+        return filtered_instances
 
-    def _dedupe(
-        self, instances: list[Instance]
-    ) -> tuple[
-        list[Instance], list[Instance], list[Instance], list[tuple[Instance, Exception]]
-    ]:
+    def _dedupe(self, instances: list[Instance]) -> list[Instance]:
         """
         We expect uniqueness of instance ids within the input series.
         This method removes and records the paths to any duplicate instance files.
         ALL duplicates are removed, but dupe paths are only recorded if they are remote.
         (modifies instances list in place!)
         Returns:
-            new (list): list of instances with duplicates removed
-            same (list): list of instances that are true duplicates
-            conflict (list): list of instances that are diff hash duplicates
-            errors (list): list of instance, error tuples
+            deduped_instances (list): list of instances with duplicates removed
         """
         instance_id_to_instance: dict[str, Instance] = {}
         same, conflict, errors = [], [], []
@@ -188,7 +173,11 @@ class CODAppender:
             except Exception as e:
                 logger.exception(f"Error deduping instance: {instance.as_log}: {e}")
                 errors.append((instance, e))
-        return list(instance_id_to_instance.values()), same, conflict, errors
+        # update append result
+        self.append_result.same.extend(same)
+        self.append_result.conflict.extend(conflict)
+        self.append_result.errors.extend(errors)
+        return list(instance_id_to_instance.values())
 
     def _calculate_state_change(self, instances: list[Instance]) -> StateChange:
         """For each file in the grouping, determine if it is NEW, SAME, or DIFF
