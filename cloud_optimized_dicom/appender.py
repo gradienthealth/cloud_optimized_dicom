@@ -52,10 +52,16 @@ class CODAppender:
         instances, size_errors = self._assert_not_too_large(
             instances, max_instance_size, max_series_size
         )
+        # TODO: _assert_not_too_large actually updates self.append_result.errors
+        self.append_result.errors.extend(size_errors)
         # remove duplicates from input
         instances, same_dedupes, conflict_dedupes, dedupe_errors = self._dedupe(
             instances
         )
+        # TODO: _dedupe actually updates self.append_result
+        self.append_result.same.extend(same_dedupes)
+        self.append_result.conflict.extend(conflict_dedupes)
+        self.append_result.errors.extend(dedupe_errors)
         # Calculate state change as a result of instances added by this group
         state_changes, state_change_errors = self._calculate_state_change(instances)
         # handle same
