@@ -1,9 +1,10 @@
 import logging
 import os
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, Optional
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.instance import Instance
+from cloud_optimized_dicom.series_metadata import SeriesMetadata
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -182,3 +183,64 @@ class CODAppender:
                 logger.exception(f"Error deduping instance: {instance.as_log}: {e}")
                 errors.append((instance, e))
         return list(instance_id_to_instance.values()), same, conflict, errors
+
+    def _calculate_state_change(self, instances: list[Instance]) -> tuple[
+        dict[str, list[tuple[Instance, Optional[SeriesMetadata], Optional[str]]]],
+        list[tuple[Instance, Exception]],
+    ]:
+        """
+        For each file in the grouping, determine if it is NEW, SAME, or DIFF
+        compared to the current series metadata json which contains instance_uid and crc32c values
+        Returns:
+            state_change (dict): dict of lists of instance, series metadata, and deid instance uid tuples
+            errors (list): list of instance, error tuples
+        """
+        # TODO namedtuple?
+        state_change = {"SAME": [], "NEW": [], "DIFF": []}
+        errors = []
+        # If there is no preexisting series metadata, all files are new
+        if len(self.cod_object._metadata.instances) == 0:
+            # append logic here
+            for instance in instances:
+                state_change["NEW"].append((instance, None, None))
+            return state_change, errors
+
+        # Calculate state change for each file in the new series
+        for new_instance in instances:
+            try:
+                # if deid instance id isn't in existing metadata dict, this file must be new
+                instance_uid = new_instance.instance_uid(trust_hints_if_available=True)
+                if instance_uid not in self.cod_object._metadata.instances:
+                    state_change["NEW"].append((new_instance, None, None))
+                    continue
+
+                # if we make it here, the instance id is in the existing metadata
+                existing_instance = self.cod_object._metadata.instances[instance_uid]
+                # if the crc32c is the same, we have a true duplicate
+                if (
+                    new_instance.crc32c(trust_hints_if_available=True)
+                    == existing_instance.crc32c()
+                ):
+                    metrics.TRUE_DUPE_COUNTER.inc()
+                    state_change["SAME"].append(
+                        (
+                            new_instance,
+                            self.cod_object._metadata,
+                            instance_uid,
+                        )
+                    )
+                # if the crc32c is different, we have a diff hash duplicate
+                else:
+                    metrics.DIFFHASH_DUPE_COUNTER.inc()
+                    state_change["DIFF"].append(
+                        (
+                            new_instance,
+                            self.cod_object._metadata,
+                            instance_uid,
+                        )
+                    )
+            except Exception as e:
+                logger.exception(e)
+                errors.append((new_instance, e))
+
+        return state_change, errors
