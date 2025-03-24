@@ -47,11 +47,12 @@ class CODObject:
         self.study_uid = study_uid
         self.series_uid = series_uid
         self._validate_uids()
-        self.create_if_missing = create_if_missing
         self._metadata = metadata
         self._locker = CODLocker(self, lock_generation) if lock else None
         if self.lock:
-            self._locker.acquire()
+            self._locker.acquire(create_if_missing=create_if_missing)
+        else:
+            self.get_metadata(create_if_missing=create_if_missing, dirty=True)
 
     def _validate_uids(self):
         """Validate the UIDs are valid DICOM UIDs (TODO make this more robust, for now just check length)"""
@@ -69,7 +70,9 @@ class CODObject:
         return f"{self.datastore_path}/{self.study_uid}/{self.series_uid}"
 
     @public_method
-    def get_metadata(self, **kwargs) -> SeriesMetadata:
+    def get_metadata(
+        self, create_if_missing: bool = True, dirty: bool = False
+    ) -> SeriesMetadata:
         """Get the metadata for this series."""
         # early exit if metadata is already set
         if self._metadata is not None:
@@ -81,7 +84,7 @@ class CODObject:
         )
         if metadata_blob.exists():
             self._metadata = SeriesMetadata.from_blob(metadata_blob)
-        elif self.create_if_missing:
+        elif create_if_missing:
             self._metadata = SeriesMetadata(
                 study_uid=self.study_uid, series_uid=self.series_uid
             )
