@@ -200,9 +200,11 @@ class TestLocking(unittest.TestCase):
 
         original_get_metadata = CODObject.get_metadata
 
-        def mock_get_metadata(self: CODObject, dirty=False, create_new=True):
+        def mock_get_metadata(self: CODObject, dirty=False, create_if_missing=True):
             # First get the metadata normally
-            result = original_get_metadata(self, dirty=dirty, create_new=create_new)
+            result = original_get_metadata(
+                self, dirty=dirty, create_if_missing=create_if_missing
+            )
             # Then simulate another process creating the lock file
             self._locker.get_lock_blob().upload_from_string(
                 "competing lock", content_type="application/json", if_generation_match=0
