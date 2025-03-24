@@ -17,10 +17,10 @@ class TestInstance(unittest.TestCase):
         cls.local_instance_path = os.path.join(cls.test_data_dir, "valid.dcm")
 
     def test_remote_detection(self):
-        self.assertTrue(Instance("s3://bucket/path/to/file.dcm").is_remote())
-        self.assertTrue(Instance("gs://bucket/path/to/file.dcm").is_remote())
-        self.assertTrue(Instance(self.remote_dicom_uri).is_remote())
-        self.assertFalse(Instance(self.local_instance_path).is_remote())
+        self.assertTrue(Instance("s3://bucket/path/to/file.dcm").is_remote)
+        self.assertTrue(Instance("gs://bucket/path/to/file.dcm").is_remote)
+        self.assertTrue(Instance(self.remote_dicom_uri).is_remote)
+        self.assertFalse(Instance(self.local_instance_path).is_remote)
 
     def test_local_open(self):
         instance = Instance(self.local_instance_path)
