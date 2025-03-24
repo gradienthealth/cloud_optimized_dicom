@@ -70,9 +70,9 @@ class CODAppender:
         self.append_result.conflict.extend(conflict_dedupes)
         self.append_result.errors.extend(dedupe_errors)
         # Calculate state change as a result of instances added by this group
-        state_changes, state_change_errors = self._calculate_state_change(instances)
+        state_change = self._calculate_state_change(instances)
         # handle same
-        self._handle_true_duplicates(state_changes["SAME"])
+        self._handle_true_duplicates(state_change.same)
         # Edge case: no NEW or DIFF state changes -> return early
         if not len(state_changes["NEW"]) and not len(state_changes["DIFF"]):
             logger.warning(f"GRADIENT_STATE_LOGS:NO_NEW_INSTANCES:{self.as_log}")
@@ -190,19 +190,15 @@ class CODAppender:
                 errors.append((instance, e))
         return list(instance_id_to_instance.values()), same, conflict, errors
 
-    def _calculate_state_change(self, instances: list[Instance]) -> tuple[
-        StateChange,
-        list[tuple[Instance, Exception]],
-    ]:
+    def _calculate_state_change(self, instances: list[Instance]) -> StateChange:
         """For each file in the grouping, determine if it is NEW, SAME, or DIFF
         compared to the current series metadata json which contains instance_uid and crc32c values
 
         Returns:
-            state_change (namedtuple): namedtuple with the following fields:
+            state_change (StateChange): namedtuple with the following fields:
                 new (list): list of instance, series metadata, and deid instance uid tuples
                 same (list): list of instance, series metadata, and deid instance uid tuples
                 diff (list): list of instance, series metadata, and deid instance uid tuples
-            errors (list): list of instance, error tuples
         """
         # TODO namedtuple?
         state_change = StateChange(new=[], same=[], diff=[])
@@ -250,5 +246,6 @@ class CODAppender:
             except Exception as e:
                 logger.exception(e)
                 errors.append((new_instance, e))
-
-        return state_change, errors
+        # update append result
+        self.append_result.errors.extend(errors)
+        return state_change
