@@ -29,7 +29,7 @@ class CODLocker:
         self.cod_object = cod_object
         self.lock_generation = lock_generation
 
-    def acquire(self):
+    def acquire(self, create_if_missing: bool = True):
         """Upload a lock file (to prevent concurrent access to the COD object)."""
         # if the lock already exists, assert generation matches (re-acquisition case)
         if (lock_blob := self.get_lock_blob()).exists():
@@ -44,7 +44,7 @@ class CODLocker:
             return
 
         # Step 1: fetch metadata
-        self.cod_object.get_metadata()
+        self.cod_object.get_metadata(create_if_missing=create_if_missing)
 
         # Step 2: Try to create the lock file
         lock_blob.content_encoding = "gzip"
