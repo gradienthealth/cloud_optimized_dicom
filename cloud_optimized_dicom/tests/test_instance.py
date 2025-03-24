@@ -49,7 +49,7 @@ class TestInstance(unittest.TestCase):
             instance._study_uid, "1.2.276.0.50.192168001092.11156604.14547392.4"
         )
         # getter methods should return the same values
-        self.assertEqual(instance.instance_uid, instance._instance_uid)
+        self.assertEqual(instance.instance_uid(), instance._instance_uid)
         self.assertEqual(instance.series_uid, instance._series_uid)
         self.assertEqual(instance.study_uid, instance._study_uid)
 
