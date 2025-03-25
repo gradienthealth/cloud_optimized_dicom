@@ -1,7 +1,11 @@
 import logging
+import os
+import tarfile
+from tempfile import TemporaryDirectory
 
 from google.cloud import storage
 
+import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.appender import CODAppender
 from cloud_optimized_dicom.errors import CODObjectNotFoundError
 from cloud_optimized_dicom.instance import Instance
@@ -31,13 +35,15 @@ class CODObject:
 
     def __init__(
         self,
-        # fields user should set
+        # fields user must set
         datastore_path: str,
         client: storage.Client,
         study_uid: str,
         series_uid: str,
         lock: bool,
+        # fields user can set but does not have to
         create_if_missing: bool = True,
+        temp_dir: str = None,
         # fields user should not set
         lock_generation: int = None,
         metadata: SeriesMetadata = None,
@@ -48,17 +54,34 @@ class CODObject:
         self.series_uid = series_uid
         self._validate_uids()
         self._metadata = metadata
+        self._temp_dir = temp_dir
         self._locker = CODLocker(self, lock_generation) if lock else None
         if self.lock:
             self._locker.acquire(create_if_missing=create_if_missing)
         else:
             self.get_metadata(create_if_missing=create_if_missing, dirty=True)
+        self._tar_synced = False
         self._metadata_synced = True
 
     def _validate_uids(self):
         """Validate the UIDs are valid DICOM UIDs (TODO make this more robust, for now just check length)"""
         assert len(self.study_uid) >= 10, "Study UID must be 10 characters long"
         assert len(self.series_uid) >= 10, "Series UID must be 10 characters long"
+
+    def _force_fetch_tar(self, fetch_index: bool = True):
+        """Download the tarball (and index) from GCS.
+        In some cases, like ingestion, we may not need the index as it will be recalculated.
+        This method circumvents COD caching logic, which is why it's not public. Only use it if you know what you're doing.
+        """
+        tar_blob = storage.Blob.from_string(self.tar_uri, client=self.client)
+        tar_blob.download_to_filename(self.tar_file_path)
+        metrics.STORAGE_CLASS_COUNTERS["GET"][tar_blob.storage_class].inc()
+        if fetch_index:
+            index_blob = storage.Blob.from_string(self.index_uri, client=self.client)
+            index_blob.download_to_filename(self.index_file_path)
+            metrics.STORAGE_CLASS_COUNTERS["GET"][index_blob.storage_class].inc()
+        # we just fetched the tar, so it is guaranteed to be in the same state as the datastore
+        self._tar_synced = True
 
     @property
     def lock(self) -> bool:
@@ -69,6 +92,29 @@ class CODObject:
     def as_log(self) -> str:
         """Return a string representation of the CODObject for logging purposes."""
         return f"{self.datastore_path}/{self.study_uid}/{self.series_uid}"
+
+    @property
+    def temp_dir(self) -> TemporaryDirectory:
+        """The path to the temporary directory for this series. Generates a new temp dir if it doesn't exist."""
+        # make sure temp file exists
+        if self._temp_dir is None:
+            self._temp_dir = TemporaryDirectory(suffix=f"_{self.series_uid}")
+        return self._temp_dir
+
+    @property
+    def tar_file_path(self) -> str:
+        """The path to the tar file for this series in the temporary directory."""
+        _tar_file_path = os.path.join(self.temp_dir.name, f"{self.series_uid}.tar")
+        # create tar if it doesn't exist (needs to exist so we can open later in append mode)
+        if not os.path.exists(_tar_file_path):
+            with tarfile.open(_tar_file_path, "w"):
+                pass
+        return _tar_file_path
+
+    @property
+    def index_file_path(self) -> str:
+        """The path to the index file for this series in the temporary directory."""
+        return os.path.join(self.temp_dir.name, f"index.sqlite")
 
     @public_method
     def get_metadata(
@@ -113,7 +159,7 @@ class CODObject:
             delete_local_origin: bool - If `True`, delete the local origin of the instances after appending.
             dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
         """
-        CODAppender(self).append(
+        return CODAppender(self).append(
             instances=instances,
             delete_local_origin=delete_local_origin,
             max_instance_size=max_instance_size,

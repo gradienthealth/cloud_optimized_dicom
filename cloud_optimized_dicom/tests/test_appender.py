@@ -53,16 +53,16 @@ class TestAppender(unittest.TestCase):
             )
 
     def test_append(self):
-        cod_object = CODObject(
-            datastore_path=self.datastore_path,
+        cod_obj = CODObject(
             client=self.client,
+            datastore_path=self.datastore_path,
             study_uid="test_study_uid",
             series_uid="test_series_uid",
             lock=False,
         )
-        instance = Instance(self.local_instance_path)
-        cod_object.append(instances=[instance], dirty=True)
-        self.assertEqual(len(cod_object.get_metadata().instances), 1)
-        self.assertEqual(
-            cod_object.get_metadata().instances[instance.instance_uid], instance
-        )
+        instance = Instance(dicom_uri=self.local_instance_path)
+        new, same, conflict, errors = cod_obj.append([instance], dirty=True)
+        self.assertEqual(len(errors), 0)
+        self.assertEqual(len(new), 1)
+        self.assertEqual(len(same), 0)
+        self.assertEqual(len(conflict), 0)

@@ -1,6 +1,9 @@
 import logging
 import os
+import tarfile
 from typing import TYPE_CHECKING, NamedTuple, Optional
+
+from ratarmountcore import open as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.instance import Instance
@@ -78,7 +81,7 @@ class CODAppender:
         # handle new
         self._handle_new(state_change.new)
         metrics.TAR_SUCCESS_COUNTER.inc()
-        metrics.TAR_BYTES_PROCESSED.inc(os.path.getsize(self.cod_object.local_tar_path))
+        metrics.TAR_BYTES_PROCESSED.inc(os.path.getsize(self.cod_object.tar_file_path))
         return self.append_result
 
     def _assert_not_too_large(
@@ -196,7 +199,7 @@ class CODAppender:
         if len(self.cod_object._metadata.instances) == 0:
             for instance in instances:
                 state_change.new.append((instance, None, None))
-            return state_change, errors
+            return state_change
 
         # Calculate state change for each file in the new series
         for new_instance in instances:
@@ -288,5 +291,98 @@ class CODAppender:
         ],
     ):
         """
-        Log a warning for each instance that is new, and update append result
+        Create/append to tar & upload; add to series metadata & upload.
+        Returns:
+            new (list): list of new instances that were added successfully
         """
+        instances_added_to_tar = self._handle_create_tar(new_state_changes)
+        self._handle_create_metadata(instances_added_to_tar)
+        # update append result
+        self.append_result.new.extend(instances_added_to_tar)
+
+    def _handle_create_tar(
+        self, new_state_changes: list[tuple[Instance, SeriesMetadata, str]]
+    ) -> list[Instance]:
+        """
+        Create/append to tar + index.sqlite locally
+        Returns:
+            instances_added_to_tar (list): list of instances that got added to the tar successfully
+        """
+        # If a tarball already exists, download it (no need to get index, will be recalculated anyways)
+        if len(self.cod_object._metadata.instances) > 0:
+            self.cod_object._force_fetch_tar(fetch_index=False)
+
+        instances_added_to_tar = self._create_or_append_tar(
+            [new for new, _, _ in new_state_changes]
+        )
+        self._create_sqlite_index()
+        return instances_added_to_tar
+
+    def _create_or_append_tar(self, instances_to_add: list[Instance]) -> list[Instance]:
+        """Create/append to `cod_object.tar_file_path` all instances in `instances_to_add`
+
+        Returns:
+            instances_added_to_tar (list): instances that were successfully added to the tar
+        Raises:
+            ValueError: if no instances were successfully added to the tar
+        """
+        # validate that at least one instance is being added
+        assert len(instances_to_add) > 0, "No instances to add to tar"
+        # create/append to tar
+        instances_added_to_tar, errors = [], []
+        with tarfile.open(self.cod_object.tar_file_path, "a") as tar:
+            for instance in instances_to_add:
+                try:
+                    instance.append_to_series_tar(tar)
+                    instances_added_to_tar.append(instance)
+                except Exception as e:
+                    logger.exception(e)
+                    errors.append((instance, e))
+        # Edge case: no instances were successfully added to the tar
+        if len(instances_added_to_tar) == 0:
+            uri_str = "\n".join([instance.dicom_uri for instance in instances_to_add])
+            raise ValueError(
+                f"GRADIENT_STATE_LOGS:FAILED_TO_TAR_ALL_INSTANCES:{uri_str}"
+            )
+        logger.info(
+            f"GRADIENT_STATE_LOGS:POPULATED_TAR:{self.cod_object.tar_file_path} ({os.path.getsize(self.cod_object.tar_file_path)} bytes)"
+        )
+        # tar has been altered, so it is no longer in sync with the datastore
+        self.cod_object._tar_synced = False
+        # update append result
+        self.append_result.errors.extend(errors)
+        return instances_added_to_tar
+
+    def _create_sqlite_index(self):
+        """
+        Given a tar on disk, open it with ratarmountcore and save the index to `cod_object.index_file_path`.
+        """
+        # at this point the index should not exist. Assert this
+        assert not os.path.exists(self.cod_object.index_file_path)
+        # explicitly bypass property getter to avoid AttributeError: does not exist
+        with rmc_open(
+            self.cod_object.tar_file_path,
+            writeIndex=True,
+            indexFilePath=self.cod_object.index_file_path,
+        ):
+            pass
+
+    def _handle_create_metadata(
+        self,
+        instances_added_to_tar: list[Instance],
+    ):
+        """Update metadata locally with new instances.
+        Do not catch errors; any exceptions here should bubble up as they represent a desync between tar and metadata
+        """
+        # Add new instances to metadata
+        for instance in instances_added_to_tar:
+            # TODO: deid?
+            output_uri = (
+                f"{self.cod_object.tar_uri}://instances/{instance.instance_uid()}"
+            )
+            instance.extract_metadata(output_uri)
+            self.cod_object._metadata.instances[instance.instance_uid()] = instance
+        # if we added any instances, metadata is now desynced
+        self.cod_object._metadata_synced = (
+            False if len(instances_added_to_tar) > 0 else True
+        )

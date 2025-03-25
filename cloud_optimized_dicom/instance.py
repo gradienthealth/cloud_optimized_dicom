@@ -8,6 +8,7 @@ from io import BufferedReader
 from typing import Callable
 
 import pydicom
+from ratarmountcore import open as rmc_open
 from smart_open import open as smart_open
 
 import cloud_optimized_dicom.metrics as metrics
@@ -20,6 +21,7 @@ from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
     is_remote,
 )
+from cloud_optimized_dicom.virtual_file import VirtualFile
 
 logger = logging.getLogger(__name__)
 
@@ -50,18 +52,14 @@ class Instance:
     _custom_offset_tables: dict = None
     _diff_hash_dupe_paths: list[str] = field(default_factory=list)
     _modified_datetime: str = datetime.now().isoformat()
+    _original_path: str = None
+    _byte_offsets: tuple[int, int] = None
     # uids/cached values
     _instance_uid: str = None
     _series_uid: str = None
     _study_uid: str = None
     _size: int = None
     _crc32c: str = None
-
-    def __post_init__(self):
-        if self.is_remote:
-            self._local_path = None
-        else:
-            self._local_path = self.dicom_uri
 
     @property
     def is_remote(self) -> bool:
@@ -70,26 +68,31 @@ class Instance:
         """
         return is_remote(self.dicom_uri)
 
+    @property
+    def is_nested_in_tar(self) -> bool:
+        """
+        Return whether self.dicom_uri is nested in a tar file.
+        """
+        return TAR_IDENTIFIER in self.dicom_uri
+
     def fetch(self):
         """
         Fetch the DICOM instance from the remote source and save it to a temporary file.
         """
-        # Early exit condition: self._local_path exists already
-        if self._local_path is not None and os.path.exists(self._local_path):
+        # Early exit condition: self.dicom_uri is local
+        if not self.is_remote:
             return
 
-        # Sanity check: only remote instances should be fetchable
-        assert self.is_remote, "Cannot fetch local DICOM instance"
-
         self._temp_file = tempfile.NamedTemporaryFile(suffix=".dcm", delete=False)
-        self._local_path = self._temp_file.name
 
         # read remote file into local temp file
-        with open(self._local_path, "wb") as local_file:
+        with open(self._temp_file.name, "wb") as local_file:
             with smart_open(
                 uri=self.dicom_uri, mode="rb", transport_params=self.transport_params
             ) as source:
                 local_file.write(source.read())
+        # after writing, dicom_uri is now local
+        self.dicom_uri = self._temp_file.name
         self.validate()
 
     def validate(self):
@@ -109,7 +112,7 @@ class Instance:
             # seek back to beginning of file to calculate crc32c
             f.seek(0)
             self._crc32c = generate_ptr_crc32c(f)
-        self._size = os.path.getsize(self.local_path)
+        self._size = os.path.getsize(self.dicom_uri)
         # validate hints
         self.hints.validate(
             true_size=self._size,
@@ -128,15 +131,6 @@ class Instance:
         if self._metadata is None:
             self.extract_metadata()
         return self._metadata
-
-    @property
-    def local_path(self):
-        """
-        Getter for self._local_path. Populates by calling self.fetch() if necessary.
-        """
-        if self._local_path is None:
-            self.fetch()
-        return self._local_path
 
     def size(self, trust_hints_if_available: bool = False):
         """
@@ -191,7 +185,39 @@ class Instance:
         Open an instance and return a file pointer to its bytes, which can be given to pydicom.dcmread()
         """
         self.fetch()
-        return open(self._local_path, "rb")
+        if self.is_nested_in_tar:
+            return self._open_tar()
+        return open(self.dicom_uri, "rb")
+
+    def _open_tar(self):
+        """Return a pointer to the instance (within a tar)"""
+        assert self.is_nested_in_tar, f"_open_tar called on non-tar: {self.dicom_uri}"
+        # if byte_offsets are not set, we need to find the file in the tar
+        tar_path, internal_path = self.dicom_uri.split(TAR_IDENTIFIER)
+        # if origin_uri is a tar, we need to find the file in the tar
+        if not self._byte_offsets:
+            options = {}
+            if os.path.exists(f"{tar_path}.index.sqlite"):
+                options = {"indexFilePath": f"{tar_path}.index.sqlite"}
+            with rmc_open(f"{tar_path}.tar", **options) as archive:
+                internal_file_info = archive.getFileInfo(internal_path)
+                if not internal_file_info:
+                    raise FileNotFoundError(f"File not found in tar: {internal_path}")
+                # set size if necessary
+                if not self._size:
+                    self._size = internal_file_info.size
+                # with size guaranteed, we can compute byte offsets
+                start_byte = internal_file_info.userdata[0].offset
+                self._byte_offsets = start_byte, start_byte + self._size - 1
+                # set crc32c if necessary
+                if not self._crc32c:
+                    with archive.open(internal_file_info) as instance_file:
+                        self._crc32c = generate_ptr_crc32c(instance_file)
+        # with byte_offsets guaranteed, we can now return a file pointer
+        master_file_pointer = open(f"{tar_path}.tar", "rb")
+        # Add 1 to end byte to get stop position
+        start, stop = self._byte_offsets[0], self._byte_offsets[1] + 1
+        return VirtualFile(master_file_pointer, start, stop)
 
     def append_to_series_tar(
         self,
@@ -210,11 +236,12 @@ class Instance:
             uid_generator: function to call on instance UIDs to generate tar path (e.g. to anonymize)
             delete_local_on_completion: if True and dicom_uri is local, delete the local instance file on completion
         """
+        # instance must be fetched first
         uid_for_uri = uid_generator(self.instance_uid())
         # do actual appending
         f = tar.fileobj
         begin_offset = f.tell()
-        tar.add(self.local_path, arcname=f"/instances/{uid_for_uri}.dcm")
+        tar.add(self.dicom_uri, arcname=f"/instances/{uid_for_uri}.dcm")
         end_offset = f.tell()
         f.seek(begin_offset)
         # TODO: if index is always 1536, we can skip the find pattern
@@ -234,9 +261,9 @@ class Instance:
         self.cleanup()
         # delete local origin if flag is set
         if delete_local_on_completion and not self.is_remote:
-            os.remove(self._local_path)
+            os.remove(self.dicom_uri)
         # point local_origin_file within the local tar
-        self._local_path = f"{tar.name}://instances/{uid_for_uri}.dcm"
+        self.dicom_uri = f"{tar.name}://instances/{uid_for_uri}.dcm"
 
     def extract_metadata(self, output_uri: str):
         """

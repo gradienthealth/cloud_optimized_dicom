@@ -1,4 +1,10 @@
 from apache_beam.metrics import Metrics
+from google.cloud.storage.constants import (
+    ARCHIVE_STORAGE_CLASS,
+    COLDLINE_STORAGE_CLASS,
+    NEARLINE_STORAGE_CLASS,
+    STANDARD_STORAGE_CLASS,
+)
 
 NAMESPACE = "cloud_optimized_dicom"
 
@@ -18,3 +24,28 @@ TRUE_DUPE_COUNTER = Metrics.counter(APPEND_NAMESPACE, "num_true_duplicates")
 DIFFHASH_DUPE_COUNTER = Metrics.counter(APPEND_NAMESPACE, "num_diffhash_duplicates")
 TAR_SUCCESS_COUNTER = Metrics.counter(APPEND_NAMESPACE, "tar_success")
 TAR_BYTES_PROCESSED = Metrics.counter(APPEND_NAMESPACE, "tar_bytes_processed")
+
+# Storage class counters
+STD_CREATE_COUNTER = Metrics.counter(__name__, "num_STANDARD_creates")
+STD_GET_COUNTER = Metrics.counter(__name__, "num_STANDARD_gets")
+NEARLINE_CREATE_COUNTER = Metrics.counter(__name__, "num_NEARLINE_creates")
+NEARLINE_GET_COUNTER = Metrics.counter(__name__, "num_NEARLINE_gets")
+COLDLINE_CREATE_COUNTER = Metrics.counter(__name__, "num_COLDLINE_creates")
+COLDLINE_GET_COUNTER = Metrics.counter(__name__, "num_COLDLINE_gets")
+ARCHIVE_CREATE_COUNTER = Metrics.counter(__name__, "num_ARCHIVE_creates")
+ARCHIVE_GET_COUNTER = Metrics.counter(__name__, "num_ARCHIVE_gets")
+# Storage class counter mappings
+STORAGE_CLASS_COUNTERS: dict[str, dict[str, Metrics.DelegatingCounter]] = {
+    "GET": {
+        STANDARD_STORAGE_CLASS: STD_GET_COUNTER,
+        NEARLINE_STORAGE_CLASS: NEARLINE_GET_COUNTER,
+        COLDLINE_STORAGE_CLASS: COLDLINE_GET_COUNTER,
+        ARCHIVE_STORAGE_CLASS: ARCHIVE_GET_COUNTER,
+    },
+    "CREATE": {
+        STANDARD_STORAGE_CLASS: STD_CREATE_COUNTER,
+        NEARLINE_STORAGE_CLASS: NEARLINE_CREATE_COUNTER,
+        COLDLINE_STORAGE_CLASS: COLDLINE_CREATE_COUNTER,
+        ARCHIVE_STORAGE_CLASS: ARCHIVE_CREATE_COUNTER,
+    },
+}
