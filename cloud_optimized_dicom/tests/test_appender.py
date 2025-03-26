@@ -88,16 +88,12 @@ class TestAppender(unittest.TestCase):
         self.assertEqual(len(conflict), 0)
         self.assertFalse(cod_obj._tar_synced)
         self.assertFalse(cod_obj._metadata_synced)
-        tar_blob = storage.Blob.from_string(
-            cod_obj.full_output_uri + ".tar", client=self.client
-        )
+        tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=self.client)
         self.assertFalse(tar_blob.exists())
-        index_blob = storage.Blob.from_string(
-            cod_obj.full_output_uri + "/index.sqlite", client=self.client
-        )
+        index_blob = storage.Blob.from_string(cod_obj.index_uri, client=self.client)
         self.assertFalse(index_blob.exists())
         metadata_blob = storage.Blob.from_string(
-            cod_obj.full_output_uri + "/metadata.json", client=self.client
+            cod_obj.metadata_uri, client=self.client
         )
         self.assertFalse(metadata_blob.exists())
         cod_obj.sync()
