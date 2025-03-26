@@ -10,19 +10,7 @@ from cloud_optimized_dicom.errors import (
     LockAcquisitionError,
     LockVerificationError,
 )
-
-
-def _delete_uploaded_blobs(client: storage.Client, uris_to_delete: list[str]):
-    """
-    Helper method used by tests to delete blobs they have created, resetting the test
-    environment for a subsequent test. Takes a GCS client and a list of GCS uris to delete.
-    These URIs should be folders (e.g. 'gs://siskin-172863-test-data/concat-output'), and
-    this method will delete everything in the folder
-    """
-    for gcs_uri in uris_to_delete:
-        bucket_name, folder_name = gcs_uri.replace("gs://", "").split("/", 1)
-        for blob in client.list_blobs(bucket_name, prefix=f"{folder_name}/"):
-            blob.delete()
+from cloud_optimized_dicom.tests.utils import delete_uploaded_blobs
 
 
 class TestLocking(unittest.TestCase):
@@ -39,7 +27,7 @@ class TestLocking(unittest.TestCase):
         cls.datastore_path = "gs://siskin-172863-temp/cod_tests/dicomweb"
         cls.study_uid = "1.2.3.4.5.6.7.8.9.10"
         cls.series_uid = "1.2.3.4.5.6.7.8.9.10"
-        _delete_uploaded_blobs(cls.client, [cls.datastore_path])
+        delete_uploaded_blobs(cls.client, [cls.datastore_path])
 
     def test_lock_unspecified(self):
         """Test that not specifying lock raises an error"""
@@ -193,7 +181,7 @@ class TestLocking(unittest.TestCase):
                 )
             # when the with block exits, cod will attempt to release the lock and will find it changed
         # cod will have failed to delete the lock since it assumes it belongs to another cod, so we need to clean up after ourselves
-        _delete_uploaded_blobs(self.client, [self.datastore_path])
+        delete_uploaded_blobs(self.client, [self.datastore_path])
 
     def test_lock_stolen_during_metadata_fetch(self):
         """Test that we get an error if another process creates the lock while we're fetching metadata"""
@@ -232,7 +220,7 @@ class TestLocking(unittest.TestCase):
             # Restore the original method
             CODObject.get_metadata = original_get_metadata
             # Clean up any locks that might have been created
-            _delete_uploaded_blobs(self.client, [self.datastore_path])
+            delete_uploaded_blobs(self.client, [self.datastore_path])
 
     def test_lock_persists_after_exception(self):
         """Test that the lock persists after an exception is raised"""
@@ -248,4 +236,4 @@ class TestLocking(unittest.TestCase):
         # The lock should still exist
         self.assertTrue(cod._locker.get_lock_blob().exists())
         # Clean up any locks that might have been created
-        _delete_uploaded_blobs(self.client, [self.datastore_path])
+        delete_uploaded_blobs(self.client, [self.datastore_path])
