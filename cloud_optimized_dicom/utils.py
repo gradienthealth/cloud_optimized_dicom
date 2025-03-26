@@ -12,7 +12,9 @@ from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
 
 import cloud_optimized_dicom.metrics as metrics
+from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.errors import CleanOpOnUnlockedCODObjectError
+from cloud_optimized_dicom.instance import Instance
 
 logger = logging.getLogger(__name__)
 
