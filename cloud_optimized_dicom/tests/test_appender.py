@@ -124,7 +124,7 @@ class TestAppender(unittest.TestCase):
         self.assertIn("does not belong to COD object", str(errors[0][1]))
 
     def test_append_bad_hint(self):
-        """Expect ValueError on append instance with bad hint"""
+        """Expect instance with bad hint to error"""
         cod_obj = CODObject(
             client=self.client,
             datastore_path=self.datastore_path,
