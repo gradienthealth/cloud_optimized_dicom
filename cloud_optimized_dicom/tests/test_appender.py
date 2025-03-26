@@ -176,3 +176,22 @@ class TestAppender(unittest.TestCase):
         self.assertEqual(len(same), 0)
         self.assertEqual(len(conflict), 0)
         self.assertIn("No such file or directory", str(errors[0][1]))
+
+    def test_append_mix(self):
+        """test mix of good and bad URIs"""
+        cod_obj = CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=False,
+        )
+        good_instance = Instance(dicom_uri=self.local_instance_path)
+        bad_instance = Instance(dicom_uri="gs://some-hospital/that/does/not/exist.dcm")
+        new, same, conflict, errors = cod_obj.append(
+            [good_instance, bad_instance], dirty=True
+        )
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(len(new), 1)
+        self.assertEqual(len(same), 0)
+        self.assertEqual(len(conflict), 0)
