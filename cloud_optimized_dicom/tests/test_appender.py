@@ -8,6 +8,7 @@ from cloud_optimized_dicom.appender import CODAppender
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.instance import Instance
+from cloud_optimized_dicom.tests.utils import delete_uploaded_blobs
 
 
 class TestAppender(unittest.TestCase):
@@ -23,6 +24,10 @@ class TestAppender(unittest.TestCase):
             ),
         )
         cls.datastore_path = "gs://siskin-172863-temp/cod_tests/dicomweb"
+
+    def setUp(self):
+        # before running each test, make sure datastore_path is empty
+        delete_uploaded_blobs(self.client, [self.datastore_path])
 
     def test_instance_too_large(self):
         instance = Instance(self.local_instance_path, hints=Hints(size=1000000))
@@ -66,3 +71,38 @@ class TestAppender(unittest.TestCase):
         self.assertEqual(len(new), 1)
         self.assertEqual(len(same), 0)
         self.assertEqual(len(conflict), 0)
+
+    def test_append_and_sync(self):
+        cod_obj = CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid="test_study_uid",
+            series_uid="test_series_uid",
+            lock=True,
+        )
+        instance = Instance(dicom_uri=self.local_instance_path)
+        new, same, conflict, errors = cod_obj.append([instance])
+        self.assertEqual(len(errors), 0)
+        self.assertEqual(len(new), 1)
+        self.assertEqual(len(same), 0)
+        self.assertEqual(len(conflict), 0)
+        self.assertFalse(cod_obj._tar_synced)
+        self.assertFalse(cod_obj._metadata_synced)
+        tar_blob = storage.Blob.from_string(
+            cod_obj.full_output_uri + ".tar", client=self.client
+        )
+        self.assertFalse(tar_blob.exists())
+        index_blob = storage.Blob.from_string(
+            cod_obj.full_output_uri + "/index.sqlite", client=self.client
+        )
+        self.assertFalse(index_blob.exists())
+        metadata_blob = storage.Blob.from_string(
+            cod_obj.full_output_uri + "/metadata.json", client=self.client
+        )
+        self.assertFalse(metadata_blob.exists())
+        cod_obj.sync()
+        self.assertTrue(cod_obj._tar_synced)
+        self.assertTrue(cod_obj._metadata_synced)
+        self.assertTrue(tar_blob.exists())
+        self.assertTrue(index_blob.exists())
+        self.assertTrue(metadata_blob.exists())
