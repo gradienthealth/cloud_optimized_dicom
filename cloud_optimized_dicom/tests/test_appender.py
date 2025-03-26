@@ -142,3 +142,20 @@ class TestAppender(unittest.TestCase):
         self.assertEqual(len(same), 0)
         self.assertEqual(len(conflict), 0)
         self.assertIn("study uid mismatch", str(errors[0][1]))
+
+    def test_append_bad_uri_remote(self):
+        """test nonexistent remote URI handling"""
+        cod_obj = CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=False,
+        )
+        instance = Instance(dicom_uri="gs://some-hospital/that/does/not/exist.dcm")
+        new, same, conflict, errors = cod_obj.append([instance], dirty=True)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(len(new), 0)
+        self.assertEqual(len(same), 0)
+        self.assertEqual(len(conflict), 0)
+        self.assertIn("not found", str(errors[0][1]))
