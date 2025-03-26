@@ -363,6 +363,25 @@ class Instance:
         self._diff_hash_dupe_paths.append(dupe_uri)
         self._modified_datetime = datetime.now().isoformat()
 
+    def to_cod_dict_v1(self):
+        """Convert this instance to a dict in accordance with the COD Metadata v1.0 spec"""
+        return {
+            "metadata": self._metadata,
+            "uri": self.dicom_uri,
+            "headers": {
+                "start_byte": self.byte_offsets[0],
+                "end_byte": self.byte_offsets[1],
+            },
+            "offset_tables": self._custom_offset_tables,
+            "crc32c": self.crc32c(),
+            "size": self.size(),
+            "original_path": self._original_path,
+            "dependencies": self.dependencies,
+            "diff_hash_dupe_paths": self._diff_hash_dupe_paths,
+            "version": "1.0",
+            "modified_datetime": self._modified_datetime,
+        }
+
     def cleanup(self):
         """
         Delete the temporary file, if it exists.
