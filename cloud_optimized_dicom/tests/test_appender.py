@@ -122,3 +122,23 @@ class TestAppender(unittest.TestCase):
         self.assertEqual(len(same), 0)
         self.assertEqual(len(conflict), 0)
         self.assertIn("does not belong to COD object", str(errors[0][1]))
+
+    def test_append_bad_hint(self):
+        """Expect ValueError on append instance with bad hint"""
+        cod_obj = CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=False,
+        )
+        bad_instance = Instance(
+            dicom_uri=self.local_instance_path,
+            hints=Hints(study_uid="bad_study_uid"),
+        )
+        new, same, conflict, errors = cod_obj.append([bad_instance], dirty=True)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(len(new), 0)
+        self.assertEqual(len(same), 0)
+        self.assertEqual(len(conflict), 0)
+        self.assertIn("study uid mismatch", str(errors[0][1]))
