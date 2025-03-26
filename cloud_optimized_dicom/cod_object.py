@@ -37,6 +37,7 @@ class CODObject:
         lock_generation: int - The generation of the lock file. Should only be set if instantiation from serialized cod object.
     """
 
+    # Constructor and basic validation
     def __init__(
         self,
         # fields user must set
@@ -75,21 +76,7 @@ class CODObject:
         assert len(self.study_uid) >= 10, "Study UID must be 10 characters long"
         assert len(self.series_uid) >= 10, "Series UID must be 10 characters long"
 
-    def _force_fetch_tar(self, fetch_index: bool = True):
-        """Download the tarball (and index) from GCS.
-        In some cases, like ingestion, we may not need the index as it will be recalculated.
-        This method circumvents COD caching logic, which is why it's not public. Only use it if you know what you're doing.
-        """
-        tar_blob = storage.Blob.from_string(self.tar_uri, client=self.client)
-        tar_blob.download_to_filename(self.tar_file_path)
-        metrics.STORAGE_CLASS_COUNTERS["GET"][tar_blob.storage_class].inc()
-        if fetch_index:
-            index_blob = storage.Blob.from_string(self.index_uri, client=self.client)
-            index_blob.download_to_filename(self.index_file_path)
-            metrics.STORAGE_CLASS_COUNTERS["GET"][index_blob.storage_class].inc()
-        # we just fetched the tar, so it is guaranteed to be in the same state as the datastore
-        self._tar_synced = True
-
+    # Core properties and getters
     @property
     def lock(self) -> bool:
         """Read-only property for lock status."""
@@ -100,6 +87,7 @@ class CODObject:
         """Return a string representation of the CODObject for logging purposes."""
         return f"{self.datastore_series_uri}"
 
+    # Temporary directory management
     def get_temp_dir(self) -> TemporaryDirectory:
         """The path to the temporary directory for this series. Generates a new temp dir if it doesn't exist."""
         # make sure temp file exists
@@ -124,6 +112,30 @@ class CODObject:
         """The path to the index file for this series in the temporary directory."""
         return os.path.join(self.get_temp_dir().name, f"index.sqlite")
 
+    # URI properties
+    @property
+    def datastore_series_uri(self) -> str:
+        """The URI of the series in the COD datastore."""
+        return os.path.join(
+            self.datastore_path, "studies", self.study_uid, "series", self.series_uid
+        )
+
+    @property
+    def tar_uri(self) -> str:
+        """The URI of the tar file for this series in the COD datastore."""
+        return f"{self.datastore_series_uri}.tar"
+
+    @property
+    def metadata_uri(self) -> str:
+        """The URI of the metadata file for this series in the COD datastore."""
+        return os.path.join(self.datastore_series_uri, "metadata.json")
+
+    @property
+    def index_uri(self) -> str:
+        """The URI of the index file for this series in the COD datastore."""
+        return os.path.join(self.datastore_series_uri, "index.sqlite")
+
+    # Core public operations
     @public_method
     def get_metadata(
         self, create_if_missing: bool = True, dirty: bool = False
@@ -213,16 +225,21 @@ class CODObject:
         # single overall sync message
         logger.info(f"GRADIENT_STATE_LOGS:SYNCED_SUCCESSFULLY:{self.as_log}")
 
-    def serialize(self) -> dict:
-        """Serialize the object into a dict"""
-        state = self.__dict__.copy()
-        # remove client (cannot pickle)
-        del state["client"]
-        # remove locker (will be recreated on deserialization)
-        del state["_locker"]
-        # use metadata's to_dict() method to serialize
-        state["_metadata"] = self._metadata.to_dict()
-        return state
+    # Internal operations
+    def _force_fetch_tar(self, fetch_index: bool = True):
+        """Download the tarball (and index) from GCS.
+        In some cases, like ingestion, we may not need the index as it will be recalculated.
+        This method circumvents COD caching logic, which is why it's not public. Only use it if you know what you're doing.
+        """
+        tar_blob = storage.Blob.from_string(self.tar_uri, client=self.client)
+        tar_blob.download_to_filename(self.tar_file_path)
+        metrics.STORAGE_CLASS_COUNTERS["GET"][tar_blob.storage_class].inc()
+        if fetch_index:
+            index_blob = storage.Blob.from_string(self.index_uri, client=self.client)
+            index_blob.download_to_filename(self.index_file_path)
+            metrics.STORAGE_CLASS_COUNTERS["GET"][index_blob.storage_class].inc()
+        # we just fetched the tar, so it is guaranteed to be in the same state as the datastore
+        self._tar_synced = True
 
     def _gzip_and_upload_metadata(self):
         """
@@ -237,28 +254,32 @@ class CODObject:
         )
         metrics.STORAGE_CLASS_COUNTERS["CREATE"][metadata_blob.storage_class].inc()
 
-    @property
-    def datastore_series_uri(self) -> str:
-        """The URI of the series in the COD datastore."""
-        return os.path.join(
-            self.datastore_path, "studies", self.study_uid, "series", self.series_uid
-        )
+    # Serialization methods
+    def serialize(self) -> dict:
+        """Serialize the object into a dict"""
+        state = self.__dict__.copy()
+        # remove client (cannot pickle)
+        del state["client"]
+        # remove locker (will be recreated on deserialization)
+        del state["_locker"]
+        # use metadata's to_dict() method to serialize
+        state["_metadata"] = self._metadata.to_dict()
+        return state
 
-    @property
-    def tar_uri(self) -> str:
-        """The URI of the tar file for this series in the COD datastore."""
-        return f"{self.datastore_series_uri}.tar"
+    @classmethod
+    def deserialize(
+        cls,
+        serialized_obj: dict,
+        client: storage.Client,
+    ) -> "CODObject":
+        metadata_dict = serialized_obj.pop("_metadata")
+        # if lock_generation is not None, the serialized object had a lock
+        lock = True if serialized_obj["lock_generation"] is not None else False
+        cod_object = CODObject(**serialized_obj, client=client, lock=lock)
+        cod_object._metadata = SeriesMetadata.from_dict(metadata_dict)
+        return cod_object
 
-    @property
-    def metadata_uri(self) -> str:
-        """The URI of the metadata file for this series in the COD datastore."""
-        return os.path.join(self.datastore_series_uri, "metadata.json")
-
-    @property
-    def index_uri(self) -> str:
-        """The URI of the index file for this series in the COD datastore."""
-        return os.path.join(self.datastore_series_uri, "index.sqlite")
-
+    # Magic methods
     def __str__(self):
         return f"CODObject({self.datastore_series_uri})"
 
@@ -280,16 +301,3 @@ class CODObject:
         # Regardless of exception(s), we still want to clean up the temp dir
         # self.cleanup_temp_dir() TODO reimplement
         return False  # Don't suppress any exceptions
-
-    @classmethod
-    def deserialize(
-        cls,
-        serialized_obj: dict,
-        client: storage.Client,
-    ) -> "CODObject":
-        metadata_dict = serialized_obj.pop("_metadata")
-        # if lock_generation is not None, the serialized object had a lock
-        lock = True if serialized_obj["lock_generation"] is not None else False
-        cod_object = CODObject(**serialized_obj, client=client, lock=lock)
-        cod_object._metadata = SeriesMetadata.from_dict(metadata_dict)
-        return cod_object
