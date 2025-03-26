@@ -52,6 +52,12 @@ def is_remote(uri: str) -> bool:
     return any(uri.startswith(prefix) for prefix in REMOTE_IDENTIFIERS)
 
 
+def upload_and_count(blob: storage.Blob, file_path: str):
+    """Wraps `blob.upload_from_filename` with the proper beam creation counter metric"""
+    blob.upload_from_filename(file_path, retry=DEFAULT_RETRY)
+    metrics.STORAGE_CLASS_COUNTERS["CREATE"][blob.storage_class].inc()
+
+
 def _delete_gcs_dep(uri: str, client: storage.Client, expected_crc32c: str = None):
     """
     Delete a dependency from GCS.
