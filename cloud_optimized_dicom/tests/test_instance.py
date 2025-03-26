@@ -50,8 +50,8 @@ class TestInstance(unittest.TestCase):
         )
         # getter methods should return the same values
         self.assertEqual(instance.instance_uid(), instance._instance_uid)
-        self.assertEqual(instance.series_uid, instance._series_uid)
-        self.assertEqual(instance.study_uid, instance._study_uid)
+        self.assertEqual(instance.series_uid(), instance._series_uid)
+        self.assertEqual(instance.study_uid(), instance._study_uid)
 
     def test_append_to_series_tar(self):
         instance = Instance(self.local_instance_path)

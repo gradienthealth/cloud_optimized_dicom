@@ -29,19 +29,19 @@ class TestCODObject(unittest.TestCase):
         self.assertEqual(cod_object.datastore_path, self.datastore_path)
         self.assertEqual(
             cod_object.tar_uri,
-            f"{self.datastore_path}/1.2.3.4.5.6.7.8.9.0/1.2.3.4.5.6.7.8.9.0.tar",
+            f"{self.datastore_path}/studies/1.2.3.4.5.6.7.8.9.0/series/1.2.3.4.5.6.7.8.9.0.tar",
         )
         self.assertEqual(
             cod_object.metadata_uri,
-            f"{self.datastore_path}/1.2.3.4.5.6.7.8.9.0/1.2.3.4.5.6.7.8.9.0/metadata.json",
+            f"{self.datastore_path}/studies/1.2.3.4.5.6.7.8.9.0/series/1.2.3.4.5.6.7.8.9.0/metadata.json",
         )
         self.assertEqual(
             cod_object.index_uri,
-            f"{self.datastore_path}/1.2.3.4.5.6.7.8.9.0/1.2.3.4.5.6.7.8.9.0/index.sqlite",
+            f"{self.datastore_path}/studies/1.2.3.4.5.6.7.8.9.0/series/1.2.3.4.5.6.7.8.9.0/index.sqlite",
         )
         self.assertEqual(
             str(cod_object),
-            f"CODObject({self.datastore_path}/1.2.3.4.5.6.7.8.9.0/1.2.3.4.5.6.7.8.9.0)",
+            f"CODObject({self.datastore_path}/studies/1.2.3.4.5.6.7.8.9.0/series/1.2.3.4.5.6.7.8.9.0)",
         )
 
     def test_validate_uids(self):

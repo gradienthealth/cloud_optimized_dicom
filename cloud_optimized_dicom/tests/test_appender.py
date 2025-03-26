@@ -9,7 +9,7 @@ from cloud_optimized_dicom.appender import CODAppender
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.instance import Instance
-from cloud_optimized_dicom.tests.utils import delete_uploaded_blobs
+from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 
 class TestAppender(unittest.TestCase):

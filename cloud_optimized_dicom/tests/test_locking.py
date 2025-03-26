@@ -10,7 +10,7 @@ from cloud_optimized_dicom.errors import (
     LockAcquisitionError,
     LockVerificationError,
 )
-from cloud_optimized_dicom.tests.utils import delete_uploaded_blobs
+from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 
 class TestLocking(unittest.TestCase):

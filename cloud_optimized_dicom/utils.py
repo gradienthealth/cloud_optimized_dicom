@@ -86,6 +86,19 @@ def _delete_gcs_dep(uri: str, client: storage.Client, expected_crc32c: str = Non
     return True
 
 
+def delete_uploaded_blobs(client: storage.Client, uris_to_delete: list[str]):
+    """
+    Helper method used by tests to delete blobs they have created, resetting the test
+    environment for a subsequent test. Takes a GCS client and a list of GCS uris to delete.
+    These URIs should be folders (e.g. 'gs://siskin-172863-test-data/concat-output'), and
+    this method will delete everything in the folder
+    """
+    for gcs_uri in uris_to_delete:
+        bucket_name, folder_name = gcs_uri.replace("gs://", "").split("/", 1)
+        for blob in client.list_blobs(bucket_name, prefix=f"{folder_name}/"):
+            blob.delete()
+
+
 def generate_ptr_crc32c(ptr: io.BufferedReader, blocksize: int = 2**20) -> str:
     """
     Modified from stackoverflow: https://stackoverflow.com/questions/37367741/difficulty-comparing-generated-and-google-cloud-storage-provided-crc32c-checksum
