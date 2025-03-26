@@ -162,20 +162,22 @@ class Instance:
             self.validate()
         return self._instance_uid
 
-    @property
-    def series_uid(self):
+    def series_uid(self, trust_hints_if_available: bool = False):
         """
         Getter for self._series_uid. Populates by calling self.validate() if necessary.
         """
+        if trust_hints_if_available and self.hints.series_uid is not None:
+            return self.hints.series_uid
         if self._series_uid is None:
             self.validate()
         return self._series_uid
 
-    @property
-    def study_uid(self):
+    def study_uid(self, trust_hints_if_available: bool = False):
         """
         Getter for self._study_uid. Populates by calling self.validate() if necessary.
         """
+        if trust_hints_if_available and self.hints.study_uid is not None:
+            return self.hints.study_uid
         if self._study_uid is None:
             self.validate()
         return self._study_uid
@@ -317,7 +319,7 @@ class Instance:
         """
         Return a string representation of the instance for logging purposes.
         """
-        return f"(uri={self.dicom_uri}, instance_uid={self._instance_uid}, dependencies={self.dependencies})"
+        return f"(uri={self.dicom_uri}, instance_uid={self._instance_uid}, series_uid={self._series_uid}, study_uid={self._study_uid}, dependencies={self.dependencies})"
 
     def delete_dependencies(
         self, dryrun: bool = False, validate_blob_hash: bool = True

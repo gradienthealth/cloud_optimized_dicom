@@ -64,6 +64,8 @@ class CODAppender:
         )
         # remove duplicates from input
         instances = self._dedupe(instances)
+        # at this point, instances belonging to the wrong series should not be in the list
+        self._assert_instances_belong_to_cod_obj(instances)
         # Calculate state change as a result of instances added by this group
         state_change = self._calculate_state_change(instances)
         # handle same
@@ -181,6 +183,16 @@ class CODAppender:
         self.append_result.conflict.extend(conflict)
         self.append_result.errors.extend(errors)
         return list(instance_id_to_instance.values())
+
+    def _assert_instances_belong_to_cod_obj(self, instances: list[Instance]):
+        """
+        Assert that all instances belong to the COD object.
+        """
+        for instance in instances:
+            assert (
+                instance.series_uid() == self.cod_object.series_uid
+                and instance.study_uid() == self.cod_object.study_uid
+            ), f"Instance {instance.as_log} does not belong to COD object {self.cod_object.as_log}"
 
     def _calculate_state_change(self, instances: list[Instance]) -> StateChange:
         """For each file in the grouping, determine if it is NEW, SAME, or DIFF
