@@ -1,5 +1,6 @@
 import os
 import unittest
+from tempfile import NamedTemporaryFile
 
 import pydicom
 from google.api_core.client_options import ClientOptions
@@ -195,3 +196,47 @@ class TestAppender(unittest.TestCase):
         self.assertEqual(len(new), 1)
         self.assertEqual(len(same), 0)
         self.assertEqual(len(conflict), 0)
+
+    def test_append_corrupt_dicom(self):
+        """test that corrupt dicom is not appended"""
+        good_instance = Instance(dicom_uri=self.local_instance_path)
+
+        # create a corrupt dicom (has proper header but then is garbage)
+        with NamedTemporaryFile(suffix=".dcm") as f:
+            with pydicom.FileDataset(
+                f.name, {}, is_little_endian=True, is_implicit_VR=False
+            ) as ds:
+                ds.StudyInstanceUID = (
+                    "1.2.826.0.1.3680043.8.498.75141544885342931881503164869995724634"
+                )
+                ds.SeriesInstanceUID = (
+                    "1.2.826.0.1.3680043.8.498.34266834008938638668629534063784433302"
+                )
+                ds.SOPInstanceUID = "1.2.3.4.5.6.7.8.9.0"
+                ds.save_as(f.name)
+
+            bad_instance = Instance(
+                dicom_uri=f.name,
+                hints=Hints(
+                    size=os.path.getsize(f.name),
+                    crc32c="some_crc32c",
+                    instance_uid="some_instance_uid",
+                    study_uid=good_instance.study_uid(),
+                    series_uid=good_instance.series_uid(),
+                ),
+            )
+            with CODObject(
+                datastore_path=self.datastore_path,
+                client=self.client,
+                study_uid=good_instance.study_uid(),
+                series_uid=good_instance.series_uid(),
+                lock=True,
+            ) as cod_obj:
+                new, same, conflict, errors = cod_obj.append(
+                    [bad_instance, good_instance]
+                )
+                self.assertEqual(len(new), 1)
+                self.assertEqual(len(same), 0)
+                self.assertEqual(len(conflict), 0)
+                self.assertEqual(len(errors), 1)
+                self.assertEqual(errors[0][0], bad_instance)
