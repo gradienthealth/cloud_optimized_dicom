@@ -16,6 +16,8 @@ from cloud_optimized_dicom.utils import public_method, upload_and_count
 
 logger = logging.getLogger(__name__)
 
+EMPTY_TAR_SIZE = 10240
+
 
 class CODObject:
     """
@@ -92,7 +94,7 @@ class CODObject:
     @property
     def as_log(self) -> str:
         """Return a string representation of the CODObject for logging purposes."""
-        return f"{self.datastore_path}/{self.study_uid}/{self.series_uid}"
+        return f"{self.datastore_series_uri}"
 
     @property
     def temp_dir(self) -> TemporaryDirectory:
@@ -191,8 +193,7 @@ class CODObject:
             self._metadata_synced = True
         # sync tar
         if not self._tar_synced:
-            # tar_file_path property creates an empty tar file if it doesn't exist (size == 10240)
-            if os.path.getsize(self.tar_file_path) == 10240:
+            if os.path.getsize(self.tar_file_path) == EMPTY_TAR_SIZE:
                 logger.warning(f"Skipping tar sync - tar is empty: {self.as_log}")
                 return
             assert os.path.exists(
