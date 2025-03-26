@@ -4,6 +4,7 @@ import tarfile
 from tempfile import TemporaryDirectory
 
 from google.cloud import storage
+from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.appender import CODAppender
@@ -11,7 +12,7 @@ from cloud_optimized_dicom.errors import CODObjectNotFoundError
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
-from cloud_optimized_dicom.utils import public_method
+from cloud_optimized_dicom.utils import public_method, upload_and_count
 
 logger = logging.getLogger(__name__)
 
@@ -166,23 +167,70 @@ class CODObject:
             max_series_size=max_series_size,
         )
 
+    @public_method
+    def sync(self, tar_storage_class: str = STANDARD_STORAGE_CLASS):
+        """Sync tar+index and/or metadata to GCS, as needed
+
+        Args:
+            tar_storage_class: str - Storage class to use for the tar file (default: `STANDARD`).
+            See `google.cloud.storage.constants` for options.
+        """
+        # prior to sync, make some assertions
+        if self._tar_synced and self._metadata_synced:
+            logger.warning(f"Nothing to sync: {self.as_log}")
+            return
+        # design choice: it's worth the API call to verify lock prior to sync
+        # TODO consider removing this if we never see lock changes in the wild
+        self._locker.verify()
+        # sync metadata
+        if not self._metadata_synced:
+            assert (
+                self._metadata
+            ), "Metadata sync attempted but CODObject has no metadata"
+            self._gzip_and_upload_metadata()
+            self._metadata_synced = True
+        # sync tar
+        if not self._tar_synced:
+            # tar_file_path property creates an empty tar file if it doesn't exist (size == 10240)
+            if os.path.getsize(self.tar_file_path) == 10240:
+                logger.warning(f"Skipping tar sync - tar is empty: {self.as_log}")
+                return
+            assert os.path.exists(
+                self.index_file_path
+            ), "Tar sync attempted but CODObject has no index"
+            tar_blob = storage.Blob.from_string(self.tar_uri, client=self.client)
+            tar_blob.storage_class = tar_storage_class
+            index_blob = storage.Blob.from_string(self.index_uri, client=self.client)
+            upload_and_count(index_blob, self.index_file_path)
+            upload_and_count(tar_blob, self.tar_file_path)
+            self._tar_synced = True
+        # single overall sync message
+        logger.info(f"GRADIENT_STATE_LOGS:SYNCED_SUCCESSFULLY:{self.as_log}")
+
+    @property
+    def datastore_series_uri(self) -> str:
+        """The URI of the series in the COD datastore."""
+        return os.path.join(
+            self.datastore_path, "studies", self.study_uid, "series", self.series_uid
+        )
+
     @property
     def tar_uri(self) -> str:
         """The URI of the tar file for this series in the COD datastore."""
-        return f"{self.datastore_path}/{self.study_uid}/{self.series_uid}.tar"
+        return f"{self.datastore_series_uri}.tar"
 
     @property
     def metadata_uri(self) -> str:
         """The URI of the metadata file for this series in the COD datastore."""
-        return f"{self.datastore_path}/{self.study_uid}/{self.series_uid}/metadata.json"
+        return os.path.join(self.datastore_series_uri, "metadata.json")
 
     @property
     def index_uri(self) -> str:
         """The URI of the index file for this series in the COD datastore."""
-        return f"{self.datastore_path}/{self.study_uid}/{self.series_uid}/index.sqlite"
+        return os.path.join(self.datastore_series_uri, "index.sqlite")
 
     def __str__(self):
-        return f"CODObject({self.datastore_path}/{self.study_uid}/{self.series_uid})"
+        return f"CODObject({self.datastore_series_uri})"
 
     def __enter__(self):
         """Context manager entry point"""
