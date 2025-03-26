@@ -54,3 +54,20 @@ class TestCODObject(unittest.TestCase):
                 series_uid="1.2.3.4.5",
                 lock=False,
             )
+
+    def test_serialize_deserialize(self):
+        """Test serialization and deserialization"""
+        with CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid="1.2.3.4.5.6.7.8.9.0",
+            series_uid="1.2.3.4.5.6.7.8.9.0",
+            lock=False,
+        ) as cod_obj:
+            serialized = cod_obj.serialize()
+        with CODObject.deserialize(serialized, self.client) as deserialized:
+            reserialized = deserialized.serialize()
+        # Assert all public fields are equal
+        for field in serialized:
+            if not field.startswith("_"):
+                self.assertEqual(serialized[field], reserialized[field])

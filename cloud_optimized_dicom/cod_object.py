@@ -51,6 +51,8 @@ class CODObject:
         # fields user should not set
         lock_generation: int = None,
         metadata: SeriesMetadata = None,
+        _tar_synced: bool = False,
+        _metadata_synced: bool = True,
     ):
         self.datastore_path = datastore_path
         self.client = client
@@ -58,14 +60,15 @@ class CODObject:
         self.series_uid = series_uid
         self._validate_uids()
         self._metadata = metadata
-        self._temp_dir = temp_dir
-        self._locker = CODLocker(self, lock_generation) if lock else None
+        self.temp_dir = temp_dir
+        self.lock_generation = lock_generation
+        self._locker = CODLocker(self) if lock else None
         if self.lock:
             self._locker.acquire(create_if_missing=create_if_missing)
         else:
             self.get_metadata(create_if_missing=create_if_missing, dirty=True)
-        self._tar_synced = False
-        self._metadata_synced = True
+        self._tar_synced = _tar_synced
+        self._metadata_synced = _metadata_synced
 
     def _validate_uids(self):
         """Validate the UIDs are valid DICOM UIDs (TODO make this more robust, for now just check length)"""
@@ -97,18 +100,19 @@ class CODObject:
         """Return a string representation of the CODObject for logging purposes."""
         return f"{self.datastore_series_uri}"
 
-    @property
-    def temp_dir(self) -> TemporaryDirectory:
+    def get_temp_dir(self) -> TemporaryDirectory:
         """The path to the temporary directory for this series. Generates a new temp dir if it doesn't exist."""
         # make sure temp file exists
-        if self._temp_dir is None:
-            self._temp_dir = TemporaryDirectory(suffix=f"_{self.series_uid}")
-        return self._temp_dir
+        if self.temp_dir is None:
+            self.temp_dir = TemporaryDirectory(suffix=f"_{self.series_uid}")
+        return self.temp_dir
 
     @property
     def tar_file_path(self) -> str:
         """The path to the tar file for this series in the temporary directory."""
-        _tar_file_path = os.path.join(self.temp_dir.name, f"{self.series_uid}.tar")
+        _tar_file_path = os.path.join(
+            self.get_temp_dir().name, f"{self.series_uid}.tar"
+        )
         # create tar if it doesn't exist (needs to exist so we can open later in append mode)
         if not os.path.exists(_tar_file_path):
             with tarfile.open(_tar_file_path, "w"):
@@ -118,7 +122,7 @@ class CODObject:
     @property
     def index_file_path(self) -> str:
         """The path to the index file for this series in the temporary directory."""
-        return os.path.join(self.temp_dir.name, f"index.sqlite")
+        return os.path.join(self.get_temp_dir().name, f"index.sqlite")
 
     @public_method
     def get_metadata(
@@ -209,6 +213,17 @@ class CODObject:
         # single overall sync message
         logger.info(f"GRADIENT_STATE_LOGS:SYNCED_SUCCESSFULLY:{self.as_log}")
 
+    def serialize(self) -> dict:
+        """Serialize the object into a dict"""
+        state = self.__dict__.copy()
+        # remove client (cannot pickle)
+        del state["client"]
+        # remove locker (will be recreated on deserialization)
+        del state["_locker"]
+        # use metadata's to_dict() method to serialize
+        state["_metadata"] = self._metadata.to_dict()
+        return state
+
     def _gzip_and_upload_metadata(self):
         """
         Given a SeriesMetadata object and a blob to upload it to, convert the object to JSON, gzip it,
@@ -265,3 +280,16 @@ class CODObject:
         # Regardless of exception(s), we still want to clean up the temp dir
         # self.cleanup_temp_dir() TODO reimplement
         return False  # Don't suppress any exceptions
+
+    @classmethod
+    def deserialize(
+        cls,
+        serialized_obj: dict,
+        client: storage.Client,
+    ) -> "CODObject":
+        metadata_dict = serialized_obj.pop("_metadata")
+        # if lock_generation is not None, the serialized object had a lock
+        lock = True if serialized_obj["lock_generation"] is not None else False
+        cod_object = CODObject(**serialized_obj, client=client, lock=lock)
+        cod_object._metadata = SeriesMetadata.from_dict(metadata_dict)
+        return cod_object
