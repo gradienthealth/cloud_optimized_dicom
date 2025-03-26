@@ -105,3 +105,20 @@ class TestAppender(unittest.TestCase):
         self.assertTrue(tar_blob.exists())
         self.assertTrue(index_blob.exists())
         self.assertTrue(metadata_blob.exists())
+
+    def test_append_wrong_series(self):
+        """Expect instance from different series than CODObject to error"""
+        cod_obj = CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid="some_other_study_uid",
+            series_uid="some_other_series_uid",
+            lock=False,
+        )
+        bad_instance = Instance(dicom_uri=self.local_instance_path)
+        new, same, conflict, errors = cod_obj.append([bad_instance], dirty=True)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(len(new), 0)
+        self.assertEqual(len(same), 0)
+        self.assertEqual(len(conflict), 0)
+        self.assertIn("does not belong to COD object", str(errors[0][1]))

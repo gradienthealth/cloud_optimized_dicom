@@ -64,15 +64,15 @@ class CODAppender:
         )
         # remove duplicates from input
         instances = self._dedupe(instances)
-        # at this point, instances belonging to the wrong series should not be in the list
-        self._assert_instances_belong_to_cod_obj(instances)
+        # remove instances that do not belong to the COD object
+        instances = self._assert_instances_belong_to_cod_obj(instances)
         # Calculate state change as a result of instances added by this group
         state_change = self._calculate_state_change(instances)
         # handle same
         self._handle_same(state_change.same)
         # Edge case: no NEW or DIFF state changes -> return early
         if not state_change.new and not state_change.diff:
-            logger.warning(f"No new instances: {self.as_log}")
+            logger.warning(f"No new instances: {self.cod_object.as_log}")
             metrics.SERIES_DUPE_COUNTER.inc()
             return self.append_result
         # handle diff
@@ -115,6 +115,7 @@ class CODAppender:
             except Exception as e:
                 logger.exception(e)
                 errors.append((instance, e))
+                continue
             # now that we have the size, filter instance if overlarge
             if cur_size > max_instance_size * BYTES_PER_GB:
                 overlarge_msg = f"Overlarge instance: {instance.as_log} ({cur_size} bytes) exceeds max_instance_size: {max_instance_size}gb"
@@ -188,11 +189,19 @@ class CODAppender:
         """
         Assert that all instances belong to the COD object.
         """
+        instances_in_series = []
         for instance in instances:
-            assert (
-                instance.series_uid() == self.cod_object.series_uid
-                and instance.study_uid() == self.cod_object.study_uid
-            ), f"Instance {instance.as_log} does not belong to COD object {self.cod_object.as_log}"
+            # deliberately try/catch assertion to add error instances to append result
+            try:
+                assert (
+                    instance.series_uid() == self.cod_object.series_uid
+                    and instance.study_uid() == self.cod_object.study_uid
+                ), f"Instance {instance.as_log} does not belong to COD object {self.cod_object.as_log}"
+                instances_in_series.append(instance)
+            except Exception as e:
+                logger.exception(e)
+                self.append_result.errors.append((instance, e))
+        return instances_in_series
 
     def _calculate_state_change(self, instances: list[Instance]) -> StateChange:
         """For each file in the grouping, determine if it is NEW, SAME, or DIFF
