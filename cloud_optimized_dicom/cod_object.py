@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 
 from google.cloud import storage
 from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
+from google.cloud.storage.retry import DEFAULT_RETRY
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.appender import CODAppender
@@ -207,6 +208,19 @@ class CODObject:
             self._tar_synced = True
         # single overall sync message
         logger.info(f"GRADIENT_STATE_LOGS:SYNCED_SUCCESSFULLY:{self.as_log}")
+
+    def _gzip_and_upload_metadata(self):
+        """
+        Given a SeriesMetadata object and a blob to upload it to, convert the object to JSON, gzip it,
+        and upload it to the blob
+        """
+        metadata_blob = storage.Blob.from_string(self.metadata_uri, client=self.client)
+        metadata_blob.content_encoding = "gzip"
+        compressed_metadata = self._metadata.to_gzipped_json()
+        metadata_blob.upload_from_string(
+            compressed_metadata, content_type="application/json", retry=DEFAULT_RETRY
+        )
+        metrics.STORAGE_CLASS_COUNTERS["CREATE"][metadata_blob.storage_class].inc()
 
     @property
     def datastore_series_uri(self) -> str:
