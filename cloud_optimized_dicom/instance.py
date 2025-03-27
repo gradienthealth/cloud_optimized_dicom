@@ -384,6 +384,28 @@ class Instance:
             "modified_datetime": self._modified_datetime,
         }
 
+    @classmethod
+    def from_cod_dict_v1(cls, instance_dict: dict) -> "Instance":
+        """Convert a COD Metadata v1.0 dict to an Instance."""
+        if (found_version := instance_dict.get("version")) != "1.0":
+            logger.warning(f"Expected version 1.0, but got {found_version}")
+        byte_offsets = (
+            instance_dict["headers"]["start_byte"],
+            instance_dict["headers"]["end_byte"],
+        )
+        return Instance(
+            dicom_uri=instance_dict["uri"],
+            _metadata=instance_dict["metadata"],
+            _byte_offsets=byte_offsets,
+            _custom_offset_tables=instance_dict["offset_tables"],
+            _size=instance_dict["size"],
+            _crc32c=instance_dict["crc32c"],
+            dependencies=instance_dict["dependencies"],
+            _original_path=instance_dict["original_path"],
+            _modified_datetime=instance_dict["modified_datetime"],
+            _diff_hash_dupe_paths=instance_dict["diff_hash_dupe_paths"],
+        )
+
     def cleanup(self):
         """
         Delete the temporary file, if it exists.

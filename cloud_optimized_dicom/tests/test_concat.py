@@ -128,7 +128,7 @@ class TestConcat(unittest.TestCase):
                     tar.seek(instance.byte_offsets[0])
                     data = tar.read(instance.byte_offsets[1] - instance.byte_offsets[0])
                     with pydicom.dcmread(io.BytesIO(data)) as ds:
-                        self.assertEqual(ds.SOPInstanceUID, instance.instance_uid)
+                        self.assertEqual(ds.SOPInstanceUID, instance.instance_uid())
 
     def test_dupe_instance(self):
         """
@@ -139,15 +139,14 @@ class TestConcat(unittest.TestCase):
         # get expected result of full upload
         with self.run_group(GROUPING_FULL) as cod_obj:
             # download normal bytes
-            tar_uri = f"{cod_obj.full_output_uri}.tar"
-            tar_blob = storage.Blob.from_string(tar_uri, client=self.client)
+            tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=self.client)
             tar_blob.download_as_bytes()
-            metadata = SeriesMetadata.from_json_loadable(
-                cod_obj.metadata_blob.download_as_bytes(),
-                self.client,
+            metadata_blob = storage.Blob.from_string(
+                cod_obj.metadata_uri, client=self.client
             )
+            metadata = SeriesMetadata.from_blob(metadata_blob)
         # wipe GCS
-        delete_uploaded_blobs(self.client)
+        delete_uploaded_blobs(self.client, [OUTPUT_URI, PLAYGROUND_URI_PREFIX])
         # copy & upload first partial series
         with self.run_group(GROUPING_FIRST_TWO) as cod_obj_first_two:
             pass
@@ -155,10 +154,10 @@ class TestConcat(unittest.TestCase):
         with self.run_group(GROUPING_LAST_TWO) as cod_obj_last_two:
             # download duped bytes
             # duped_content = tar_blob.download_as_bytes()
-            duped_metadata = SeriesMetadata.from_json_loadable(
-                cod_obj_last_two.metadata_blob.download_as_bytes(),
-                self.client,
+            metadata_blob = storage.Blob.from_string(
+                cod_obj_last_two.metadata_uri, client=self.client
             )
+            duped_metadata = SeriesMetadata.from_blob(metadata_blob)
             # results are assumed to be identical if they are the same size and have equivalent metadata
             # self.assertEqual(len(upload_content), len(duped_content))
         self._assert_metadata_equal(metadata, duped_metadata)
@@ -201,7 +200,7 @@ class TestConcat(unittest.TestCase):
         We would expect to see this second version NOT DELETED (flagged for manual_review).
         """
         dcm_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "real_dicom.dcm"
+            os.path.dirname(os.path.abspath(__file__)), "test_data", "valid.dcm"
         )
         # upload a version of the dicom
         v1_uri = f"{PLAYGROUND_URI_PREFIX}/version1.dcm"
@@ -223,29 +222,27 @@ class TestConcat(unittest.TestCase):
         self.assertNotEqual(v1_blob.crc32c, v2_blob.crc32c)
 
         with CODObject(
-            true_study_uid=study_uid,
-            true_series_uid=series_uid,
+            study_uid=study_uid,
+            series_uid=series_uid,
             datastore_path=OUTPUT_URI,
             client=self.client,
             lock=True,
-            _validate_datastore_path=False,
         ) as cod_obj:
             instance_v1 = Instance(
-                dicomP10_uri=v1_uri,
-                hints=Hints.from_bigquery_file_dict(
-                    {"true_instance_uid": instance_uid}
-                ),
+                dicom_uri=v1_uri,
+                hints=Hints(instance_uid=instance_uid),
             )
             instance_v2 = Instance(
-                dicomP10_uri=v2_uri,
-                hints=Hints.from_bigquery_file_dict(
-                    {"true_instance_uid": instance_uid}
-                ),
+                dicom_uri=v2_uri,
+                hints=Hints(instance_uid=instance_uid),
             )
             # append v1 and sync
             cod_obj.append([instance_v1])
             cod_obj.sync()
-            self.assertTrue(cod_obj.metadata_blob.exists())
+            metadata_blob = storage.Blob.from_string(
+                cod_obj.metadata_uri, client=self.client
+            )
+            self.assertTrue(metadata_blob.exists())
             # append v2 and sync
             cod_obj.append([instance_v2])
             # metadata should be desynced (diff hash dupe found), but tar should be synced
@@ -255,10 +252,10 @@ class TestConcat(unittest.TestCase):
             # file should still exist; deletion should be skipped due to same instance diff hash
             self.assertTrue(v2_blob.exists())
             # download the metadata and confirm diff hash duplicate was logged
-            duped_metadata = SeriesMetadata.from_json_loadable(
-                cod_obj.metadata_blob.download_as_bytes(),
-                self.client,
+            metadata_blob = storage.Blob.from_string(
+                cod_obj.metadata_uri, client=self.client
             )
+            duped_metadata = SeriesMetadata.from_blob(metadata_blob)
             populated_dupe_list = duped_metadata.instances.get(
                 instance_v1._hints_deid_instance_uid
             )._diff_hash_dupe_paths
@@ -296,8 +293,10 @@ class TestConcat(unittest.TestCase):
             self.client, GROUPING_FULL, OUTPUT_URI, validate_datastore_path=False
         )
         cod_obj, instances = codobj_instance_pairs[0]
-        cod_obj.max_instance_size = 10000 / 1073741824
-        new, same, conflict, errors = cod_obj.append(instances)
+        max_instance_size = 10000 / 1073741824
+        new, same, conflict, errors = cod_obj.append(
+            instances, max_instance_size=max_instance_size
+        )
         self.assertEqual(len(new), 0)
         self.assertEqual(len(same), 0)
         self.assertEqual(len(conflict), 0)
@@ -309,9 +308,9 @@ class TestConcat(unittest.TestCase):
             self.client, GROUPING_FULL, OUTPUT_URI, validate_datastore_path=False
         )
         cod_obj, instances = codobj_instance_pairs[0]
-        cod_obj.max_series_size = 10000 / 1073741824
+        max_series_size = 10000 / 1073741824
         with self.assertRaises(ValueError):
-            cod_obj.append(instances)
+            cod_obj.append(instances, max_series_size=max_series_size)
 
 
 if __name__ == "__main__":
