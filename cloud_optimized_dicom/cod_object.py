@@ -201,13 +201,6 @@ class CODObject:
         # design choice: it's worth the API call to verify lock prior to sync
         # TODO consider removing this if we never see lock changes in the wild
         self._locker.verify()
-        # sync metadata
-        if not self._metadata_synced:
-            assert (
-                self._metadata
-            ), "Metadata sync attempted but CODObject has no metadata"
-            self._gzip_and_upload_metadata()
-            self._metadata_synced = True
         # sync tar
         if not self._tar_synced:
             if os.path.getsize(self.tar_file_path) == EMPTY_TAR_SIZE:
@@ -222,6 +215,14 @@ class CODObject:
             upload_and_count(index_blob, self.index_file_path)
             upload_and_count(tar_blob, self.tar_file_path)
             self._tar_synced = True
+        # sync metadata
+        if not self._metadata_synced:
+            assert (
+                self._metadata
+            ), "Metadata sync attempted but CODObject has no metadata"
+            self._gzip_and_upload_metadata()
+            self._metadata_synced = True
+        # now that the tar has been synced,
         # single overall sync message
         logger.info(f"GRADIENT_STATE_LOGS:SYNCED_SUCCESSFULLY:{self.as_log}")
 

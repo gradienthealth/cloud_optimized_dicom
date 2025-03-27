@@ -402,6 +402,7 @@ class CODAppender:
                 f"{self.cod_object.tar_uri}://instances/{instance.instance_uid()}"
             )
             instance.extract_metadata(output_uri)
+            instance.dicom_uri = output_uri
             self.cod_object._metadata.instances[instance.instance_uid()] = instance
         # if we added any instances, metadata is now desynced
         self.cod_object._metadata_synced = (

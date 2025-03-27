@@ -41,8 +41,7 @@ def _copy_within_bucket(bucket: storage.Bucket, source_uri: str, dest_uri: str):
 
 
 @unittest.skipIf("SKIP_NETWORK_TESTS" in os.environ, reason="cloud storage")
-@unittest.skipIf("SISKIN_ENV_ENABLED" not in os.environ, reason="cloud storage")
-class TestPipelineFunctions(unittest.TestCase):
+class TestConcat(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -58,7 +57,7 @@ class TestPipelineFunctions(unittest.TestCase):
 
     def setUp(self):
         # ensure clean test directory prior to test start
-        delete_uploaded_blobs(self.client)
+        delete_uploaded_blobs(self.client, [OUTPUT_URI, PLAYGROUND_URI_PREFIX])
 
     def _assert_metadata_equal(self, a: SeriesMetadata, b: SeriesMetadata):
         # same series
@@ -85,7 +84,7 @@ class TestPipelineFunctions(unittest.TestCase):
         for instance in instances:
             self.assertFalse(
                 storage.Blob.from_string(
-                    instance.dicomP10_uri, client=self.client
+                    instance.dicom_uri, client=self.client
                 ).exists()
             )
 
@@ -100,16 +99,19 @@ class TestPipelineFunctions(unittest.TestCase):
         new, same, conflict, errors = cod_obj.append(instances)
         cod_obj.sync()
         self.assertEqual(len(errors), 0)
-        tar_uri = f"{cod_obj.full_output_uri}.tar"
-        tar_blob = storage.Blob.from_string(tar_uri, client=self.client)
-        metadata_blob = cod_obj.metadata_blob
+        tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=self.client)
+        metadata_blob = storage.Blob.from_string(
+            cod_obj.metadata_uri, client=self.client
+        )
         # confirm blobs that should exist, exist
-        self.assertTrue(tar_blob.exists(), f"{tar_uri} does not exist")
-        self.assertTrue(metadata_blob.exists())
+        self.assertTrue(tar_blob.exists(), f"{cod_obj.tar_uri} does not exist")
+        self.assertTrue(
+            metadata_blob.exists(), f"{cod_obj.metadata_uri} does not exist"
+        )
         if not dryrun:
             for instance in new + same:
                 instance.delete_dependencies()
-            self._assert_instances_dne(instances)
+            self._assert_instances_dne(cod_obj._metadata.instances.values())
         return cod_obj
 
     def test_single_instance(self):

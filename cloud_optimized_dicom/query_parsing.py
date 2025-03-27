@@ -22,6 +22,7 @@ def query_result_to_codobjects(
 ) -> list[tuple[CODObject, list[Instance]]]:
     """Helper that calls query_result_to_instances and instances_to_codobj_tuples in sequence"""
     instances = query_result_to_instances(query_result)
+    logger.info(f"instances: {instances}")
     return list(
         instances_to_codobj_tuples(
             client, instances, datastore_path, validate_datastore_path, lock
@@ -42,17 +43,20 @@ def query_result_to_instances(query_result: dict) -> list[Instance]:
             raise AttributeError(
                 f"'file_uri' field missing from file within query:\n{file}"
             )
+        hints = Hints(
+            size=file["size"],
+            crc32c=file["crc32c"],
+            instance_uid=file["instance_uid"],
+            study_uid=study_uid,
+            series_uid=series_uid,
+        )
         # make the instance
         instance = Instance(
             dicom_uri=file_uri,
             _original_path=file_uri,
-            hints=Hints.from_bigquery_file_dict(file),
+            hints=hints,
             dependencies=[file_uri],
         )
-        # if query provided UIDs, assume they're right. Set hints (will allow us to skip fetching later)
-        if study_uid and series_uid:
-            instance.hints.deid_study_uid = study_uid
-            instance.hints.deid_series_uid = series_uid
         instances.append(instance)
     return instances
 
@@ -67,14 +71,23 @@ def instances_to_codobj_tuples(
     """Group instances by study/series, make codobjects, and yield (codobj, instances) pairs"""
     # need to set client on instances before sorting (may have to fetch them)
     for instance in instances:
-        instance.client = client
+        instance.transport_params = dict(client=client)
 
     # sort instances prior to grouping (groupby requires a sorted list)
-    instances.sort(key=lambda x: (x._hints_deid_study_uid, x._hints_deid_series_uid))
+    instances.sort(
+        key=lambda x: (
+            x.study_uid(trust_hints_if_available=True),
+            x.series_uid(trust_hints_if_available=True),
+        )
+    )
 
     num_series = 0
     for deid_study_series_tuple, series_instances in groupby(
-        instances, lambda x: (x._hints_deid_study_uid, x._hints_deid_series_uid)
+        instances,
+        lambda x: (
+            x.study_uid(trust_hints_if_available=True),
+            x.series_uid(trust_hints_if_available=True),
+        ),
     ):
         # form instances into list
         instances_list = list(series_instances)
@@ -86,7 +99,6 @@ def instances_to_codobj_tuples(
                 study_uid=deid_study_uid,
                 series_uid=deid_series_uid,
                 lock=lock,
-                _validate_datastore_path=validate_datastore_path,
             )
             num_series += 1
             yield (cod_obj, instances_list)
