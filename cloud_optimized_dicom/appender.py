@@ -291,17 +291,13 @@ class CODAppender:
         for dupe_instance, series_metadata, deid_instance_uid in diff_state_changes:
             existing_instance = series_metadata.instances[deid_instance_uid]
             # add novel (not already in diff_hash_dupe_paths), remote dupe uris to diff_hash_dupe_paths
-            if (
-                dupe_instance.is_remote
-                and dupe_instance.dicom_uri
-                not in existing_instance._diff_hash_dupe_paths
-            ):
-                existing_instance.append_diff_hash_dupe(dupe_instance.dicom_uri)
-                # metadata is now desynced because we added to diff_hash_dupe_paths
-                self.cod_object._metadata_synced = False
             logger.warning(
                 f"Skipping duplicate instance (diff hash): {dupe_instance.as_log} (duplicate of {existing_instance.dicom_uri})"
             )
+            if existing_instance.append_diff_hash_dupe(dupe_instance):
+                # metadata is now desynced because we added to diff_hash_dupe_paths
+                self.cod_object._metadata_synced = False
+
         # update append result
         self.append_result.conflict.extend([diff for diff, _, _ in diff_state_changes])
 

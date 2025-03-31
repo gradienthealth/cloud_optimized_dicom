@@ -61,6 +61,11 @@ class Instance:
     _size: int = None
     _crc32c: str = None
 
+    def __post_init__(self):
+        # if original_path is not set, set it to dicom_uri
+        if not self._original_path:
+            self._original_path = self.dicom_uri
+
     @property
     def is_remote(self) -> bool:
         """
@@ -360,10 +365,40 @@ class Instance:
         metrics.BYTES_DELETED_COUNTER.inc(self.size)
         return deleted_dependencies
 
-    def append_diff_hash_dupe(self, dupe_uri: str):
-        """Append a diff hash dupe and update modified_datetime"""
-        self._diff_hash_dupe_paths.append(dupe_uri)
+    def append_diff_hash_dupe(self, dupe_instance: "Instance") -> bool:
+        """Append a diff hash dupe and update `modified_datetime`. Skips appending if any of the following conditions are met:
+        - UIDs do not match (also raises ValueError)
+        - `dupe_instance` is not remote (would be meaningless to store local dupe in remote datastore)
+        - `dupe_instance` is already in `diff_hash_dupe_paths`
+
+        Returns:
+            bool - True if the dupe was appended, False otherwise
+
+        Note: relies on the `_original_path` field, since (depending on where in the pipeline this is called),
+        `dicom_uri` may be a temporary file.
+        """
+        # sanity check: uids must match
+        if (
+            self.instance_uid(trust_hints_if_available=True)
+            != dupe_instance.instance_uid(trust_hints_if_available=True)
+            or self.series_uid(trust_hints_if_available=True)
+            != dupe_instance.series_uid(trust_hints_if_available=True)
+            or self.study_uid(trust_hints_if_available=True)
+            != dupe_instance.study_uid(trust_hints_if_available=True)
+        ):
+            raise ValueError(
+                f"Attempted to append diff hash dupe with different UIDs: {self.as_log} and {dupe_instance.as_log}"
+            )
+        # do not append local diff hash dupes
+        if not is_remote(dupe_instance._original_path):
+            return False
+        # do not append again if path already exists in dupe list
+        if dupe_instance._original_path in self._diff_hash_dupe_paths:
+            return False
+        # if we make it here, we have a new, remote, diff hash dupe to append
+        self._diff_hash_dupe_paths.append(dupe_instance._original_path)
         self._modified_datetime = datetime.now().isoformat()
+        return True
 
     def to_cod_dict_v1(self):
         """Convert this instance to a dict in accordance with the COD Metadata v1.0 spec"""
