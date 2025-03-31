@@ -9,7 +9,7 @@ from google.cloud.storage.retry import DEFAULT_RETRY
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.appender import CODAppender
-from cloud_optimized_dicom.errors import CODObjectNotFoundError
+from cloud_optimized_dicom.errors import CODObjectNotFoundError, ErrorLogExistsError
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
@@ -34,6 +34,8 @@ class CODObject:
         series_uid: str - The series_uid of the series.
         lock: bool - If `True`, acquire a lock on initialization. If `False`, no changes made on this object will be synced to the datastore.
         create_if_missing: bool - If `False`, raise an error if series does not yet exist in the datastore.
+        temp_dir: str - If a temp_dir with data pertaining to this series already exists, provide it here.
+        override_errors: bool - If `True`, delete any existing error.log and upload a new one.
         lock_generation: int - The generation of the lock file. Should only be set if instantiation from serialized cod object.
     """
 
@@ -49,6 +51,7 @@ class CODObject:
         # fields user can set but does not have to
         create_if_missing: bool = True,
         temp_dir: str = None,
+        override_errors: bool = False,
         # fields user should not set
         lock_generation: int = None,
         metadata: SeriesMetadata = None,
@@ -62,7 +65,21 @@ class CODObject:
         self._validate_uids()
         self._metadata = metadata
         self.temp_dir = temp_dir
+        self.override_errors = override_errors
         self.lock_generation = lock_generation
+        # check for error.log existence - if it exists, fail initialization
+        if (
+            error_log_blob := storage.Blob.from_string(
+                self.error_log_uri, client=self.client
+            )
+        ).exists():
+            if self.override_errors:
+                error_log_blob.delete()
+                logger.warning(f"Deleted existing error log: {self.error_log_uri}")
+            else:
+                raise ErrorLogExistsError(
+                    f"Cannot initialize; error log exists: {self.error_log_uri}"
+                )
         self._locker = CODLocker(self) if lock else None
         if self.lock:
             self._locker.acquire(create_if_missing=create_if_missing)
@@ -134,6 +151,11 @@ class CODObject:
     def index_uri(self) -> str:
         """The URI of the index file for this series in the COD datastore."""
         return os.path.join(self.datastore_series_uri, "index.sqlite")
+
+    @property
+    def error_log_uri(self) -> str:
+        """The URI of the error log file for this series in the COD datastore."""
+        return os.path.join(self.datastore_series_uri, "error.log")
 
     # Core public operations
     @public_method
@@ -225,6 +247,21 @@ class CODObject:
         # now that the tar has been synced,
         # single overall sync message
         logger.info(f"GRADIENT_STATE_LOGS:SYNCED_SUCCESSFULLY:{self.as_log}")
+
+    @public_method
+    def upload_error_log(self, message: str):
+        """To be used by caller in except block to upload an error.log to the datastore explaining what's wrong with this cod object"""
+        error_blob = storage.Blob.from_string(self.error_log_uri, client=self.client)
+        if error_blob.exists():
+            # because an error.log existing should cause cod objects to fail initialization,
+            # it should be impossible for error.log to exist when this method is called
+            msg = f"GRADIENT_STATE_LOGS:ERROR_LOG_ALREADY_EXISTS:{self.as_log}"
+            logger.critical(msg)
+            raise ErrorLogExistsError(msg)
+        logger.warning(
+            f"GRADIENT_STATE_LOGS:UPLOADING_ERROR_LOG:{self.as_log}:{message}"
+        )
+        error_blob.upload_from_string(message)
 
     # Internal operations
     def _force_fetch_tar(self, fetch_index: bool = True):

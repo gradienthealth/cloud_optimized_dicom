@@ -16,3 +16,7 @@ class CODObjectNotFoundError(CODError):
 
 class CleanOpOnUnlockedCODObjectError(CODError):
     """Error raised when a clean operation is attempted on an unlocked CODObject."""
+
+
+class ErrorLogExistsError(CODError):
+    """Exception raised on CODObject initialization when error.log already exists in the datastore"""
