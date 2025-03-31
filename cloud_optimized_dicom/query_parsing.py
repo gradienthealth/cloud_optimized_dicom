@@ -22,7 +22,7 @@ def query_result_to_codobjects(
 ) -> list[tuple[CODObject, list[Instance]]]:
     """Helper that calls query_result_to_instances and instances_to_codobj_tuples in sequence"""
     instances = query_result_to_instances(query_result)
-    logger.info(f"instances: {instances}")
+    logger.info(f"Found {len(instances)} instances")
     return list(
         instances_to_codobj_tuples(
             client, instances, datastore_path, validate_datastore_path, lock

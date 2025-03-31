@@ -263,7 +263,7 @@ class Instance:
         f.seek(end_offset)
 
         # set byte offsets
-        self.byte_offsets = (start_offset, stop_offset)
+        self._byte_offsets = (start_offset, stop_offset)
         # cleanup temp file if exists (no longer needed)
         self.cleanup()
         # delete local origin if flag is set
@@ -351,7 +351,9 @@ class Instance:
                 # TODO: turn deps list into {uri: crc32c} dict. Then this assumption can be avoided
                 # and we can check the hash of any dependency
                 if validate_blob_hash and len(self.dependencies) == 1:
-                    _delete_gcs_dep(uri=uri, client=client, expected_crc32c=self.crc32c)
+                    _delete_gcs_dep(
+                        uri=uri, client=client, expected_crc32c=self.crc32c()
+                    )
                 else:
                     _delete_gcs_dep(uri=uri, client=client)
                 deleted_dependencies.append(uri)
@@ -406,8 +408,8 @@ class Instance:
             "metadata": self._metadata,
             "uri": self.dicom_uri,
             "headers": {
-                "start_byte": self.byte_offsets[0],
-                "end_byte": self.byte_offsets[1],
+                "start_byte": self._byte_offsets[0],
+                "end_byte": self._byte_offsets[1],
             },
             "offset_tables": self._custom_offset_tables,
             "crc32c": self.crc32c(),

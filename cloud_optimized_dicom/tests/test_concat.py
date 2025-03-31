@@ -61,23 +61,23 @@ class TestConcat(unittest.TestCase):
 
     def _assert_metadata_equal(self, a: SeriesMetadata, b: SeriesMetadata):
         # same series
-        self.assertEqual(a.deid_study_uid, b.deid_study_uid)
-        self.assertEqual(a.deid_series_uid, b.deid_series_uid)
+        self.assertEqual(a.study_uid, b.study_uid)
+        self.assertEqual(a.series_uid, b.series_uid)
         # same number of instances
         self.assertEqual(len(a.instances), len(b.instances))
         # every hash, uri, and size in a exists in b as well
         # (actual byte ranges could differ)
         b_data = {"hashes": [], "uris": [], "sizes": []}
         for binstance_uid, binstance in b.instances.items():
-            b_data["hashes"].append(binstance.crc32c)
-            b_data["uris"].append(binstance.output_uri)
-            b_data["sizes"].append(binstance.size)
-        for ainstance_uid, instance in a.instances.items():
-            self.assertIsNotNone(instance.crc32c)
-            self.assertIsNotNone(instance.output_uri)
-            self.assertIn(instance.crc32c, b_data["hashes"])
-            self.assertIn(instance.output_uri, b_data["uris"])
-            self.assertIn(instance.size, b_data["sizes"])
+            b_data["hashes"].append(binstance.crc32c())
+            b_data["uris"].append(binstance.dicom_uri)
+            b_data["sizes"].append(binstance.size())
+        for ainstance_uid, ainstance in a.instances.items():
+            self.assertIsNotNone(ainstance.crc32c())
+            self.assertIsNotNone(ainstance.dicom_uri)
+            self.assertIn(ainstance.crc32c(), b_data["hashes"])
+            self.assertIn(ainstance.dicom_uri, b_data["uris"])
+            self.assertIn(ainstance.size(), b_data["sizes"])
 
     def _assert_instances_dne(self, instances: list[Instance]):
         """assert the original uris of a group no longer exist"""
@@ -124,9 +124,11 @@ class TestConcat(unittest.TestCase):
         with self.run_group(GROUPING_FULL) as cod_obj:
             with open(cod_obj.tar_file_path, "rb") as tar:
                 for instance in cod_obj._metadata.instances.values():
-                    self.assertIsNotNone(instance.byte_offsets)
-                    tar.seek(instance.byte_offsets[0])
-                    data = tar.read(instance.byte_offsets[1] - instance.byte_offsets[0])
+                    self.assertIsNotNone(instance._byte_offsets)
+                    tar.seek(instance._byte_offsets[0])
+                    data = tar.read(
+                        instance._byte_offsets[1] - instance._byte_offsets[0]
+                    )
                     with pydicom.dcmread(io.BytesIO(data)) as ds:
                         self.assertEqual(ds.SOPInstanceUID, instance.instance_uid())
 
@@ -171,26 +173,29 @@ class TestConcat(unittest.TestCase):
         with self.assertLogs(level="INFO") as log_capture_second:
             with self.run_group(GROUPING_FULL, dryrun=True) as cod_obj_full:
                 pass
-        # Filter logs that contain the text "SKIP:DUPE_INSTANCE:SAME_HASH"
+        print("\n".join(log_capture_second.output))
+        # Filter logs that contain the same hash skip message
+        same_hash_skip_msg = "WARNING:cloud_optimized_dicom.appender:Skipping duplicate instance (same hash):"
         same_hash_logs = [
-            log
-            for log in log_capture_second.output
-            if "SKIP:DUPE_INSTANCE:SAME_HASH" in log
+            log for log in log_capture_second.output if same_hash_skip_msg in log
         ]
         # Assert that 3 logs with "SKIP:DUPE_INSTANCE:SAME_HASH" were logged
         self.assertEqual(
             len(same_hash_logs),
             3,
-            "There should be 3 'SKIP:DUPE_INSTANCE:SAME_HASH' logs on second run",
+            f"There should be 3 '{same_hash_skip_msg}' logs on second run",
         )
         # we also expect a "NO NEW INSTANCES" log
+        no_new_instances_msg = (
+            "WARNING:cloud_optimized_dicom.appender:No new instances:"
+        )
         no_new_instances_logs = [
-            log for log in log_capture_second.output if "NO_NEW_INSTANCES" in log
+            log for log in log_capture_second.output if no_new_instances_msg in log
         ]
         self.assertEqual(
             len(no_new_instances_logs),
             1,
-            "There should be exactly 1 'NO_NEW_INSTANCES' log on second run",
+            f"There should be exactly 1 '{no_new_instances_msg}' log on second run",
         )
 
     def test_diff_hash(self):
