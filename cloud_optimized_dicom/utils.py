@@ -71,14 +71,16 @@ def _delete_gcs_dep(uri: str, client: storage.Client, expected_crc32c: str = Non
     blob = storage.Blob.from_string(uri, client=client)
     if not blob.exists():
         metrics.DEP_DOES_NOT_EXIST.inc()
-        logger.warning(f"DEPENDENCY_DELETION:SKIP:FILE_DOES_NOT_EXIST:{uri}")
+        logger.warning(f"Skipping deletion of {uri} due to non-existence")
         return False
     # validate crc32c if expected hash was provided
     if expected_crc32c:
         blob.reload()
         if blob.crc32c != expected_crc32c:
             metrics.INSTANCE_BLOB_CRC32C_MISMATCH.inc()
-            logger.warning(f"DEPENDENCY_DELETION:SKIP:FILE_HASH_MISMATCH:{uri}")
+            logger.warning(
+                f"Skipping deletion of {uri} due to hash mismatch (expected {expected_crc32c}, got {blob.crc32c})"
+            )
             return False
     # If we get here, none of the early exit conditions were met, so we can delete the file
     blob.delete(retry=DEFAULT_RETRY)
