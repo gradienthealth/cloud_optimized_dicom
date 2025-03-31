@@ -257,7 +257,7 @@ class TestConcat(unittest.TestCase):
             )
             duped_metadata = SeriesMetadata.from_blob(metadata_blob)
             populated_dupe_list = duped_metadata.instances.get(
-                instance_v1._hints_deid_instance_uid
+                instance_v1.instance_uid(trust_hints_if_available=True)
             )._diff_hash_dupe_paths
             self.assertEqual(len(populated_dupe_list), 1)
             self.assertEqual(populated_dupe_list[0], v2_uri)
