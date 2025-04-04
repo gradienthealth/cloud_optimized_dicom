@@ -35,10 +35,11 @@ class Instance:
 
     Required args:
         `dicom_uri: str` - The URI of the DICOM file.
-        `hints: Hints` - values already known or suspected about the instance (size, hash, etc. - see hints.py).
     Optional args:
         `dependencies: list[str]` - A list of URIs of files that were required to generate `dicom_uri`.
+        `hints: Hints` - values already known or suspected about the instance (size, hash, etc. - see hints.py).
         `transport_params: dict` - A smart_open transport_params dict.
+        `uid_hash_func: Callable[[str], str]` - A function that takes a UID and returns a new UID
     """
 
     # public fields that the user might provide
@@ -46,6 +47,7 @@ class Instance:
     dependencies: list[str] = field(default_factory=list)
     hints: Hints = field(default_factory=Hints)
     transport_params: dict = field(default_factory=dict)
+    uid_hash_func: Callable[[str], str] = None
 
     # private internal fields
     _metadata: dict = None
