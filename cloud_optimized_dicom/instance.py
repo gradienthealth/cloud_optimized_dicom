@@ -180,6 +180,18 @@ class Instance:
             self.validate()
         return self._instance_uid
 
+    def hashed_instance_uid(self, trust_hints_if_available: bool = False):
+        """
+        Getter for `self.uid_hash_func(self._instance_uid)`. Populates by calling self.validate() if necessary.
+        """
+        if self.uid_hash_func is None:
+            raise ValueError(
+                f"hashed_instance_uid called on instance with no uid_hash_func: {self.as_log}"
+            )
+        return self.uid_hash_func(
+            self.instance_uid(trust_hints_if_available=trust_hints_if_available)
+        )
+
     def series_uid(self, trust_hints_if_available: bool = False):
         """
         Getter for self._series_uid. Populates by calling self.validate() if necessary.
@@ -190,6 +202,18 @@ class Instance:
             self.validate()
         return self._series_uid
 
+    def hashed_series_uid(self, trust_hints_if_available: bool = False):
+        """
+        Getter for `self.uid_hash_func(self._series_uid)`. Populates by calling self.validate() if necessary.
+        """
+        if self.uid_hash_func is None:
+            raise ValueError(
+                f"hashed_series_uid called on instance with no uid_hash_func: {self.as_log}"
+            )
+        return self.uid_hash_func(
+            self.series_uid(trust_hints_if_available=trust_hints_if_available)
+        )
+
     def study_uid(self, trust_hints_if_available: bool = False):
         """
         Getter for self._study_uid. Populates by calling self.validate() if necessary.
@@ -199,6 +223,18 @@ class Instance:
         if self._study_uid is None:
             self.validate()
         return self._study_uid
+
+    def hashed_study_uid(self, trust_hints_if_available: bool = False):
+        """
+        Getter for `self.uid_hash_func(self._study_uid)`. Populates by calling self.validate() if necessary.
+        """
+        if self.uid_hash_func is None:
+            raise ValueError(
+                f"hashed_study_uid called on instance with no uid_hash_func: {self.as_log}"
+            )
+        return self.uid_hash_func(
+            self.study_uid(trust_hints_if_available=trust_hints_if_available)
+        )
 
     def open(self):
         """

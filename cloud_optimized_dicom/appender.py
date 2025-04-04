@@ -193,10 +193,7 @@ class CODAppender:
         for instance in instances:
             # deliberately try/catch assertion to add error instances to append result
             try:
-                assert (
-                    instance.series_uid() == self.cod_object.series_uid
-                    and instance.study_uid() == self.cod_object.study_uid
-                ), f"Instance {instance.as_log} does not belong to COD object {self.cod_object.as_log}"
+                self.cod_object.assert_instance_belongs_to_cod_object(instance)
                 instances_in_series.append(instance)
             except Exception as e:
                 logger.exception(e)
