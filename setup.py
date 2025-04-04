@@ -16,5 +16,6 @@ setup(
         "numpy",
         "google-cloud-storage",
         "apache-beam[gcp]",
+        "filetype",
     ],
 )
