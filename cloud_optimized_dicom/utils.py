@@ -7,6 +7,7 @@ import io
 import logging
 from base64 import b64encode
 
+import filetype
 import google_crc32c
 from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
@@ -85,6 +86,14 @@ def _delete_gcs_dep(uri: str, client: storage.Client, expected_crc32c: str = Non
     # If we get here, none of the early exit conditions were met, so we can delete the file
     blob.delete(retry=DEFAULT_RETRY)
     metrics.NUM_DELETES.inc()
+    return True
+
+
+def file_is_dicom(instance_path: str) -> bool:
+    """use filetype.guess to verify {instance_path} is indeed dicom"""
+    guess_result = filetype.guess(instance_path)
+    if guess_result is None or guess_result.mime != "application/dicom":
+        return False
     return True
 
 

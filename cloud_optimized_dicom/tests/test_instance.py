@@ -92,6 +92,14 @@ class TestInstance(unittest.TestCase):
         instance.delete_dependencies()
         self.assertFalse(os.path.exists(temp_file.name))
 
-    def test_delete_remote_dependencies(self):
-        # TODO: implement
-        pass
+    def test_open_invalid_file(self):
+        """Test that we raise an error if the file is not a dicom file"""
+        instance = Instance(dicom_uri=f"{os.path.dirname(__file__)}/test_appender.py")
+        with self.assertRaises(AssertionError):
+            instance.open()
+
+    def test_has_pixeldata_property(self):
+        """Test that we can determine if a local dicom file has pixel data"""
+        instance = Instance(dicom_uri=self.local_instance_path)
+        assert instance._has_pixeldata is None  # Verify it's None before fetch
+        self.assertTrue(instance.has_pixeldata)

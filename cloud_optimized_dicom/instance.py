@@ -4,7 +4,6 @@ import tarfile
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
-from io import BufferedReader
 from typing import Callable
 
 import pydicom
@@ -17,6 +16,7 @@ from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.utils import (
     DICOM_PREAMBLE,
     _delete_gcs_dep,
+    file_is_dicom,
     find_pattern,
     generate_ptr_crc32c,
     is_remote,
@@ -60,6 +60,7 @@ class Instance:
     _study_uid: str = None
     _size: int = None
     _crc32c: str = None
+    _has_pixeldata: bool = None
 
     def __post_init__(self):
         # if original_path is not set, set it to dicom_uri
@@ -110,10 +111,11 @@ class Instance:
         """
         # populate all true values
         with self.open() as f:
-            with pydicom.dcmread(f) as ds:
+            with pydicom.dcmread(f, defer_size=1024) as ds:
                 self._instance_uid = getattr(ds, "SOPInstanceUID")
                 self._series_uid = getattr(ds, "SeriesInstanceUID")
                 self._study_uid = getattr(ds, "StudyInstanceUID")
+                self._has_pixeldata = hasattr(ds, "PixelData")
             # seek back to beginning of file to calculate crc32c
             f.seek(0)
             self._crc32c = generate_ptr_crc32c(f)
@@ -136,6 +138,15 @@ class Instance:
         if self._metadata is None:
             self.extract_metadata()
         return self._metadata
+
+    @property
+    def has_pixeldata(self):
+        """
+        Getter for self._has_pixeldata. Populates by calling self.validate() if necessary.
+        """
+        if self._has_pixeldata is None:
+            self.validate()
+        return self._has_pixeldata
 
     def size(self, trust_hints_if_available: bool = False):
         """
@@ -187,14 +198,17 @@ class Instance:
             self.validate()
         return self._study_uid
 
-    def open(self) -> BufferedReader:
+    def open(self):
         """
         Open an instance and return a file pointer to its bytes, which can be given to pydicom.dcmread()
         """
         self.fetch()
         if self.is_nested_in_tar:
-            return self._open_tar()
-        return open(self.dicom_uri, "rb")
+            ptr = self._open_tar()
+        else:
+            ptr = open(self.dicom_uri, "rb")
+        assert file_is_dicom(ptr)
+        return ptr
 
     def _open_tar(self):
         """Return a pointer to the instance (within a tar)"""
