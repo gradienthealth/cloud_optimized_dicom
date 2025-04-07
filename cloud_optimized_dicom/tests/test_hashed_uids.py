@@ -76,8 +76,8 @@ class TestDeid(unittest.TestCase):
         with self.assertRaises(ValueError):
             instance.hashed_study_uid(trust_hints_if_available=True)
 
-    def test_instances_belong_to_cod_object(self):
-        """Test validation of instances belonging to a cod_object"""
+    def test_instance_belongs_to_cod_object(self):
+        """Test validation of instance belonging to a cod_object"""
         # create cod_object with original uids
         cod_object = CODObject(
             datastore_path=self.datastore_path,
