@@ -179,7 +179,7 @@ class Instance:
         """
         if self.uid_hash_func is None:
             raise ValueError(
-                f"hashed_instance_uid called on instance with no uid_hash_func: {self.as_log}"
+                f"hashed_instance_uid called on instance with no uid_hash_func: {self}"
             )
         return self.uid_hash_func(
             self.instance_uid(trust_hints_if_available=trust_hints_if_available)
@@ -201,7 +201,7 @@ class Instance:
         """
         if self.uid_hash_func is None:
             raise ValueError(
-                f"hashed_series_uid called on instance with no uid_hash_func: {self.as_log}"
+                f"hashed_series_uid called on instance with no uid_hash_func: {self}"
             )
         return self.uid_hash_func(
             self.series_uid(trust_hints_if_available=trust_hints_if_available)
@@ -223,7 +223,7 @@ class Instance:
         """
         if self.uid_hash_func is None:
             raise ValueError(
-                f"hashed_study_uid called on instance with no uid_hash_func: {self.as_log}"
+                f"hashed_study_uid called on instance with no uid_hash_func: {self}"
             )
         return self.uid_hash_func(
             self.study_uid(trust_hints_if_available=trust_hints_if_available)
@@ -346,7 +346,7 @@ class Instance:
                     )
                 except Exception as e:
                     logger.warning(
-                        f"Instance {self.as_log} metadata extraction error: {e}\nRetrying with suppress_invalid_tags=True"
+                        f"Instance {self} metadata extraction error: {e}\nRetrying with suppress_invalid_tags=True"
                     )
                     # TODO: check if supress will still provide bad tags in utf-8 encoded binary (this way we still can preview something)
                     # Will likely be related to pydicom 3.0; sometimes we get birthday in MMDDYYYY rather than YYYYMMDD as per spec
@@ -364,12 +364,14 @@ class Instance:
                 # populate self._metadata
                 self._metadata = ds_dict
 
-    @property
-    def as_log(self):
+    def __str__(self):
         """
-        Return a string representation of the instance for logging purposes.
+        Return a string representation of the instance.
         """
-        return f"(uri={self.dicom_uri}, instance_uid={self._instance_uid}, series_uid={self._series_uid}, study_uid={self._study_uid}, dependencies={self.dependencies})"
+        iuid = self.hashed_instance_uid() if self.uid_hash_func else self._instance_uid
+        suid = self.hashed_series_uid() if self.uid_hash_func else self._series_uid
+        stuid = self.hashed_study_uid() if self.uid_hash_func else self._study_uid
+        return f"Instance(uri={self.dicom_uri}, hashed_uids={self.uid_hash_func is not None}, instance_uid={iuid}, series_uid={suid}, study_uid={stuid}, dependencies={self.dependencies})"
 
     def delete_dependencies(
         self, dryrun: bool = False, validate_blob_hash: bool = True
@@ -434,7 +436,7 @@ class Instance:
             != dupe_instance.study_uid(trust_hints_if_available=True)
         ):
             raise ValueError(
-                f"Attempted to append diff hash dupe with different UIDs: {self.as_log} and {dupe_instance.as_log}"
+                f"Attempted to append diff hash dupe with different UIDs: {self} and {dupe_instance}"
             )
         # do not append local diff hash dupes
         if not is_remote(dupe_instance._original_path):

@@ -307,7 +307,7 @@ class CODObject:
         assert (
             relevant_study_uid == self.study_uid
             and relevant_series_uid == self.series_uid
-        ), f"Instance {instance.as_log} does not belong to COD object {self.as_log}"
+        ), f"Instance {instance} does not belong to COD object {self.as_log}"
 
     # Serialization methods
     def serialize(self) -> dict:
