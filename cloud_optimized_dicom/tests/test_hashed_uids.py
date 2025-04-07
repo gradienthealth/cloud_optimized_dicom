@@ -1,4 +1,8 @@
+import os
 import unittest
+
+from google.api_core.client_options import ClientOptions
+from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.hints import Hints
@@ -17,6 +21,22 @@ def example_hash_function(uid: str) -> str:
 
 
 class TestDeid(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
+        cls.test_instance_uid = "1.2.276.0.50.192168001092.11156604.14547392.313"
+        cls.test_series_uid = "1.2.276.0.50.192168001092.11156604.14547392.303"
+        cls.test_study_uid = "1.2.276.0.50.192168001092.11156604.14547392.4"
+        cls.local_instance_path = os.path.join(cls.test_data_dir, "valid.dcm")
+        cls.client = storage.Client(
+            project="gradient-pacs-siskin-172863",
+            client_options=ClientOptions(
+                quota_project_id="gradient-pacs-siskin-172863"
+            ),
+        )
+        cls.datastore_path = "gs://siskin-172863-temp/cod_tests/dicomweb"
+
     def test_hash_func_provided(self):
         """Test the cod_object hash_func_provided property"""
         instance = Instance(
@@ -55,3 +75,40 @@ class TestDeid(unittest.TestCase):
             instance.hashed_series_uid(trust_hints_if_available=True)
         with self.assertRaises(ValueError):
             instance.hashed_study_uid(trust_hints_if_available=True)
+
+    def test_instances_belong_to_cod_object(self):
+        """Test validation of instances belonging to a cod_object"""
+        # create cod_object with original uids
+        cod_object = CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=False,
+        )
+        # create instance with original uids
+        instance = Instance(
+            dicom_uri=self.local_instance_path,
+            hints=Hints(
+                instance_uid=self.test_instance_uid,
+                series_uid=self.test_series_uid,
+                study_uid=self.test_study_uid,
+            ),
+        )
+        # expect no error: original uids will be used, so the instance belongs to the cod_object
+        cod_object.assert_instance_belongs_to_cod_object(instance)
+        # add a uid hash function to the instance
+        instance.uid_hash_func = example_hash_function
+        # expect an error: hashed uids will be used, so the instance will not belong to the cod_object
+        with self.assertRaises(AssertionError):
+            cod_object.assert_instance_belongs_to_cod_object(instance)
+        # make a new cod_object with the hashed uids
+        hashed_cod_object = CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=example_hash_function(self.test_study_uid),
+            series_uid=example_hash_function(self.test_series_uid),
+            lock=False,
+        )
+        # expect no error: hashed uids will be used, so the instance belongs to the cod_object
+        hashed_cod_object.assert_instance_belongs_to_cod_object(instance)
