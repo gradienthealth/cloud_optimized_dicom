@@ -4,6 +4,35 @@ A library for efficiently storing and interacting with DICOM files in the cloud.
 
 # Concepts & Design Philosophy
 
+## Hashed vs. regular study/series/instance UIDs
+Depending on your use case, you may notice that instances have 2 getter methods for each UID: 
+1. standard: `{study/series/instance}_uid()`
+2. hashed: `hashed_{study/series/instance}_uid()`.
+
+If your use case is purely storage related (say you're a hospital using COD to store your data), you can just use the standard getters and not worry about hashing functionality at all.
+
+If, however, your use case is de-identification related, you will likely be interested in COD's hashing functionality (outlined below).
+
+### `CODObject` UIDs are used directly
+For simplicity, only the `Instance` class deals with hashing. 
+The `CODObject` class itself has no notion of hashed versus standard UIDs. 
+The study/series UIDs provided to a `CODObject` on instantiation are the ones it uses directly, no querstions asked.
+
+So, **if CODObject study/series UIDs are supposed to be hashed or otherwise modified, it is the responsibility of the user to supply the modified UIDs on instantiation**
+
+### `Instance.uid_hash_func`
+The Instance class has an argument called `uid_hash_func: Callable[[str], str] = None`.
+
+This is expected to be a user-provided hash function that takes a string (the raw uid) and returns a string (the hashed uid).
+
+By default (if unspecified), this function is `None`.
+
+The existence of `uid_hash_func` (or lack thereof) is used in various key scenarios to decide whether hashed or standard UIDs will be used, including:
+- determining whether an instance "belongs" to a cod object (has same study/series UIDs)
+- choosing keys for UID related data in CODObject metadata dict (`deid_study_uid` vs. `study_uid`)
+
+As a safety feature, if `instance.hashed_{study/series/instance}_uid()` is called but `instance.uid_hash_func` was not provided, a `ValueError` is raised.
+
 ## "Locking" as a race-case solution
 ### Motivation
 Say there are multiple processes interacting with a COD datastore simultaneously.

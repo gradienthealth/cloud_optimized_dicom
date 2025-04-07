@@ -35,10 +35,11 @@ class Instance:
 
     Required args:
         `dicom_uri: str` - The URI of the DICOM file.
-        `hints: Hints` - values already known or suspected about the instance (size, hash, etc. - see hints.py).
     Optional args:
         `dependencies: list[str]` - A list of URIs of files that were required to generate `dicom_uri`.
-        `transport_params: dict` - A smart_open transport_params dict.
+        `hints: Hints` - values already known or suspected about the instance (size, hash, etc. - see hints.py).
+        `transport_params: dict` - A smart_open transport_params dict (if the instance is remote, and credentials are needed to retrieve it).
+        `uid_hash_func: Callable[[str], str]` - A function that takes a UID and returns a new UID
     """
 
     # public fields that the user might provide
@@ -46,6 +47,7 @@ class Instance:
     dependencies: list[str] = field(default_factory=list)
     hints: Hints = field(default_factory=Hints)
     transport_params: dict = field(default_factory=dict)
+    uid_hash_func: Callable[[str], str] = None
 
     # private internal fields
     _metadata: dict = None
@@ -68,13 +70,6 @@ class Instance:
             self._original_path = self.dicom_uri
 
     @property
-    def is_remote(self) -> bool:
-        """
-        Return whether self.dicom_uri begins with any of the `REMOTE_IDENTIFIERS`.
-        """
-        return is_remote(self.dicom_uri)
-
-    @property
     def is_nested_in_tar(self) -> bool:
         """
         Return whether self.dicom_uri is nested in a tar file.
@@ -86,7 +81,7 @@ class Instance:
         Fetch the DICOM instance from the remote source and save it to a temporary file.
         """
         # Early exit condition: self.dicom_uri is local
-        if not self.is_remote:
+        if not is_remote(self.dicom_uri):
             return
 
         self._temp_file = tempfile.NamedTemporaryFile(suffix=".dcm", delete=False)
@@ -178,6 +173,18 @@ class Instance:
             self.validate()
         return self._instance_uid
 
+    def hashed_instance_uid(self, trust_hints_if_available: bool = False):
+        """
+        Getter for `self.uid_hash_func(self._instance_uid)`. Populates by calling self.validate() if necessary.
+        """
+        if self.uid_hash_func is None:
+            raise ValueError(
+                f"hashed_instance_uid called on instance with no uid_hash_func: {self}"
+            )
+        return self.uid_hash_func(
+            self.instance_uid(trust_hints_if_available=trust_hints_if_available)
+        )
+
     def series_uid(self, trust_hints_if_available: bool = False):
         """
         Getter for self._series_uid. Populates by calling self.validate() if necessary.
@@ -188,6 +195,18 @@ class Instance:
             self.validate()
         return self._series_uid
 
+    def hashed_series_uid(self, trust_hints_if_available: bool = False):
+        """
+        Getter for `self.uid_hash_func(self._series_uid)`. Populates by calling self.validate() if necessary.
+        """
+        if self.uid_hash_func is None:
+            raise ValueError(
+                f"hashed_series_uid called on instance with no uid_hash_func: {self}"
+            )
+        return self.uid_hash_func(
+            self.series_uid(trust_hints_if_available=trust_hints_if_available)
+        )
+
     def study_uid(self, trust_hints_if_available: bool = False):
         """
         Getter for self._study_uid. Populates by calling self.validate() if necessary.
@@ -197,6 +216,18 @@ class Instance:
         if self._study_uid is None:
             self.validate()
         return self._study_uid
+
+    def hashed_study_uid(self, trust_hints_if_available: bool = False):
+        """
+        Getter for `self.uid_hash_func(self._study_uid)`. Populates by calling self.validate() if necessary.
+        """
+        if self.uid_hash_func is None:
+            raise ValueError(
+                f"hashed_study_uid called on instance with no uid_hash_func: {self}"
+            )
+        return self.uid_hash_func(
+            self.study_uid(trust_hints_if_available=trust_hints_if_available)
+        )
 
     def open(self):
         """
@@ -281,8 +312,8 @@ class Instance:
         # cleanup temp file if exists (no longer needed)
         self.cleanup()
         # delete local origin if flag is set
-        if delete_local_on_completion and not self.is_remote:
-            os.remove(self.dicom_uri)
+        if delete_local_on_completion and not is_remote(self._original_path):
+            os.remove(self._original_path)
         # point local_origin_file within the local tar
         self.dicom_uri = f"{tar.name}://instances/{uid_for_uri}.dcm"
 
@@ -315,7 +346,7 @@ class Instance:
                     )
                 except Exception as e:
                     logger.warning(
-                        f"Instance {self.as_log} metadata extraction error: {e}\nRetrying with suppress_invalid_tags=True"
+                        f"Instance {self} metadata extraction error: {e}\nRetrying with suppress_invalid_tags=True"
                     )
                     # TODO: check if supress will still provide bad tags in utf-8 encoded binary (this way we still can preview something)
                     # Will likely be related to pydicom 3.0; sometimes we get birthday in MMDDYYYY rather than YYYYMMDD as per spec
@@ -333,12 +364,26 @@ class Instance:
                 # populate self._metadata
                 self._metadata = ds_dict
 
-    @property
-    def as_log(self):
+    def __str__(self):
         """
-        Return a string representation of the instance for logging purposes.
+        Return a string representation of the instance.
         """
-        return f"(uri={self.dicom_uri}, instance_uid={self._instance_uid}, series_uid={self._series_uid}, study_uid={self._study_uid}, dependencies={self.dependencies})"
+        iuid = (
+            self.hashed_instance_uid()
+            if self.uid_hash_func and self._instance_uid
+            else self._instance_uid
+        )
+        suid = (
+            self.hashed_series_uid()
+            if self.uid_hash_func and self._series_uid
+            else self._series_uid
+        )
+        stuid = (
+            self.hashed_study_uid()
+            if self.uid_hash_func and self._study_uid
+            else self._study_uid
+        )
+        return f"Instance(uri={self.dicom_uri}, hashed_uids={self.uid_hash_func is not None}, instance_uid={iuid}, series_uid={suid}, study_uid={stuid}, dependencies={self.dependencies})"
 
     def delete_dependencies(
         self, dryrun: bool = False, validate_blob_hash: bool = True
@@ -403,7 +448,7 @@ class Instance:
             != dupe_instance.study_uid(trust_hints_if_available=True)
         ):
             raise ValueError(
-                f"Attempted to append diff hash dupe with different UIDs: {self.as_log} and {dupe_instance.as_log}"
+                f"Attempted to append diff hash dupe with different UIDs: {self} and {dupe_instance}"
             )
         # do not append local diff hash dupes
         if not is_remote(dupe_instance._original_path):

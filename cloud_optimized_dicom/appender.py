@@ -118,7 +118,7 @@ class CODAppender:
                 continue
             # now that we have the size, filter instance if overlarge
             if cur_size > max_instance_size * BYTES_PER_GB:
-                overlarge_msg = f"Overlarge instance: {instance.as_log} ({cur_size} bytes) exceeds max_instance_size: {max_instance_size}gb"
+                overlarge_msg = f"Overlarge instance: {instance} ({cur_size} bytes) exceeds max_instance_size: {max_instance_size}gb"
                 logger.warning(overlarge_msg)
                 errors.append((instance, ValueError(overlarge_msg)))
             else:
@@ -166,18 +166,18 @@ class CODAppender:
                                 instance.dicom_uri
                             )
                         logger.warning(
-                            f"Removing diff hash dupe from input: {instance.as_log}"
+                            f"Removing diff hash dupe from input: {instance}"
                         )
                     else:
                         same.append(instance)
                         logger.warning(
-                            f"Removing true duplicate from input: {instance.as_log}"
+                            f"Removing true duplicate from input: {instance}"
                         )
                     continue
                 # if we make it here, we have a unique instance id
                 instance_id_to_instance[instance_id] = instance
             except Exception as e:
-                logger.exception(f"Error deduping instance: {instance.as_log}: {e}")
+                logger.exception(f"Error deduping instance: {instance}: {e}")
                 errors.append((instance, e))
         # update append result
         self.append_result.same.extend(same)
@@ -193,10 +193,7 @@ class CODAppender:
         for instance in instances:
             # deliberately try/catch assertion to add error instances to append result
             try:
-                assert (
-                    instance.series_uid() == self.cod_object.series_uid
-                    and instance.study_uid() == self.cod_object.study_uid
-                ), f"Instance {instance.as_log} does not belong to COD object {self.cod_object.as_log}"
+                self.cod_object.assert_instance_belongs_to_cod_object(instance)
                 instances_in_series.append(instance)
             except Exception as e:
                 logger.exception(e)
@@ -273,7 +270,7 @@ class CODAppender:
         for dupe_instance, series_metadata, deid_instance_uid in same_state_changes:
             existing_path = series_metadata.instances[deid_instance_uid].dicom_uri
             logger.warning(
-                f"Skipping duplicate instance (same hash): {dupe_instance.as_log} (duplicate of {existing_path})"
+                f"Skipping duplicate instance (same hash): {dupe_instance} (duplicate of {existing_path})"
             )
         # update append result
         self.append_result.same.extend([same for same, _, _ in same_state_changes])
@@ -292,7 +289,7 @@ class CODAppender:
             existing_instance = series_metadata.instances[deid_instance_uid]
             # add novel (not already in diff_hash_dupe_paths), remote dupe uris to diff_hash_dupe_paths
             logger.warning(
-                f"Skipping duplicate instance (diff hash): {dupe_instance.as_log} (duplicate of {existing_instance.dicom_uri})"
+                f"Skipping duplicate instance (diff hash): {dupe_instance} (duplicate of {existing_instance.dicom_uri})"
             )
             if existing_instance.append_diff_hash_dupe(dupe_instance):
                 # metadata is now desynced because we added to diff_hash_dupe_paths

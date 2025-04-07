@@ -292,6 +292,23 @@ class CODObject:
         )
         metrics.STORAGE_CLASS_COUNTERS["CREATE"][metadata_blob.storage_class].inc()
 
+    def assert_instance_belongs_to_cod_object(self, instance: Instance):
+        """Compare relevant instance study/series UIDS (hashed if uid_hash_func provided, standard if not) to COD object study/series UIDs.
+
+        Raises:
+            AssertionError if the instance does not belong to the COD object.
+        """
+        if instance.uid_hash_func:
+            relevant_study_uid = instance.hashed_study_uid()
+            relevant_series_uid = instance.hashed_series_uid()
+        else:
+            relevant_study_uid = instance.study_uid()
+            relevant_series_uid = instance.series_uid()
+        assert (
+            relevant_study_uid == self.study_uid
+            and relevant_series_uid == self.series_uid
+        ), f"Instance {instance} does not belong to COD object {self.as_log}"
+
     # Serialization methods
     def serialize(self) -> dict:
         """Serialize the object into a dict"""
