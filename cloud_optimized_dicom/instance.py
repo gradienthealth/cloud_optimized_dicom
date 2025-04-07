@@ -38,7 +38,7 @@ class Instance:
     Optional args:
         `dependencies: list[str]` - A list of URIs of files that were required to generate `dicom_uri`.
         `hints: Hints` - values already known or suspected about the instance (size, hash, etc. - see hints.py).
-        `transport_params: dict` - A smart_open transport_params dict.
+        `transport_params: dict` - A smart_open transport_params dict (if the instance is remote, and credentials are needed to retrieve it).
         `uid_hash_func: Callable[[str], str]` - A function that takes a UID and returns a new UID
     """
 
@@ -70,13 +70,6 @@ class Instance:
             self._original_path = self.dicom_uri
 
     @property
-    def is_remote(self) -> bool:
-        """
-        Return whether self.dicom_uri begins with any of the `REMOTE_IDENTIFIERS`.
-        """
-        return is_remote(self.dicom_uri)
-
-    @property
     def is_nested_in_tar(self) -> bool:
         """
         Return whether self.dicom_uri is nested in a tar file.
@@ -88,7 +81,7 @@ class Instance:
         Fetch the DICOM instance from the remote source and save it to a temporary file.
         """
         # Early exit condition: self.dicom_uri is local
-        if not self.is_remote:
+        if not is_remote(self.dicom_uri):
             return
 
         self._temp_file = tempfile.NamedTemporaryFile(suffix=".dcm", delete=False)
@@ -319,8 +312,8 @@ class Instance:
         # cleanup temp file if exists (no longer needed)
         self.cleanup()
         # delete local origin if flag is set
-        if delete_local_on_completion and not self.is_remote:
-            os.remove(self.dicom_uri)
+        if delete_local_on_completion and not is_remote(self._original_path):
+            os.remove(self._original_path)
         # point local_origin_file within the local tar
         self.dicom_uri = f"{tar.name}://instances/{uid_for_uri}.dcm"
 

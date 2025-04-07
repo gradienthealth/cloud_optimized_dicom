@@ -38,6 +38,9 @@ class TestDeid(unittest.TestCase):
         self.assertEqual(
             instance.hashed_series_uid(trust_hints_if_available=True), "1.2.3.5"
         )
+        self.assertEqual(
+            instance.hashed_study_uid(trust_hints_if_available=True), "1.2.3.5"
+        )
 
     def test_hash_func_not_provided(self):
         """Test that trying to get a hashed uid without a hash function raises an error"""
