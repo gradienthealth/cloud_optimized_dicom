@@ -368,9 +368,21 @@ class Instance:
         """
         Return a string representation of the instance.
         """
-        iuid = self.hashed_instance_uid() if self.uid_hash_func else self._instance_uid
-        suid = self.hashed_series_uid() if self.uid_hash_func else self._series_uid
-        stuid = self.hashed_study_uid() if self.uid_hash_func else self._study_uid
+        iuid = (
+            self.hashed_instance_uid()
+            if self.uid_hash_func and self._instance_uid
+            else self._instance_uid
+        )
+        suid = (
+            self.hashed_series_uid()
+            if self.uid_hash_func and self._series_uid
+            else self._series_uid
+        )
+        stuid = (
+            self.hashed_study_uid()
+            if self.uid_hash_func and self._study_uid
+            else self._study_uid
+        )
         return f"Instance(uri={self.dicom_uri}, hashed_uids={self.uid_hash_func is not None}, instance_uid={iuid}, series_uid={suid}, study_uid={stuid}, dependencies={self.dependencies})"
 
     def delete_dependencies(
