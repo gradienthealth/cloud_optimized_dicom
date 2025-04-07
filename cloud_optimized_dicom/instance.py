@@ -463,12 +463,13 @@ class Instance:
 
     def to_cod_dict_v1(self):
         """Convert this instance to a dict in accordance with the COD Metadata v1.0 spec"""
+        start_byte, end_byte = self._byte_offsets if self._byte_offsets else None, None
         return {
             "metadata": self._metadata,
             "uri": self.dicom_uri,
             "headers": {
-                "start_byte": self._byte_offsets[0],
-                "end_byte": self._byte_offsets[1],
+                "start_byte": start_byte,
+                "end_byte": end_byte,
             },
             "offset_tables": self._custom_offset_tables,
             "crc32c": self.crc32c(),
