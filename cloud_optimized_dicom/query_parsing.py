@@ -35,8 +35,8 @@ def query_result_to_instances(query_result: dict) -> list[Instance]:
     assert "files" in query_result
     assert isinstance(query_result["files"], list)
     instances: list[Instance] = []
-    study_uid = query_result["study_uid"]
-    series_uid = query_result["series_uid"]
+    study_uid = query_result.get("study_uid")
+    series_uid = query_result.get("series_uid")
     for file in query_result["files"]:
         # assert uri provided
         if not (file_uri := file.get("file_uri", None)):
@@ -44,9 +44,9 @@ def query_result_to_instances(query_result: dict) -> list[Instance]:
                 f"'file_uri' field missing from file within query:\n{file}"
             )
         hints = Hints(
-            size=file["size"],
-            crc32c=file["crc32c"],
-            instance_uid=file["instance_uid"],
+            size=file.get("size"),
+            crc32c=file.get("crc32c"),
+            instance_uid=file.get("instance_uid"),
             study_uid=study_uid,
             series_uid=series_uid,
         )
