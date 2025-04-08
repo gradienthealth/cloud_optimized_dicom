@@ -425,7 +425,7 @@ class Instance:
                 logger.warning(f"DEPENDENCY_DELETION:SKIP:FILE_DOES_NOT_EXIST:{uri}")
                 continue
         # We don't want to spend GET requests to calculate exact deleted size. Instead we estimate with instance size
-        metrics.BYTES_DELETED_COUNTER.inc(self.size)
+        metrics.BYTES_DELETED_COUNTER.inc(self.size())
         return deleted_dependencies
 
     def append_diff_hash_dupe(self, dupe_instance: "Instance") -> bool:
