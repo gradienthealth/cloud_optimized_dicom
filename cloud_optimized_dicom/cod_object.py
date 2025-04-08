@@ -333,6 +333,16 @@ class CODObject:
         cod_object = CODObject(**serialized_obj, client=client, lock=lock)
         cod_object._metadata = SeriesMetadata.from_dict(metadata_dict)
         return cod_object
+    
+    def cleanup_temp_dir(self):
+        """Clean temp dir (if not done already)"""
+        # clean up temp dir
+        if self.temp_dir and isinstance(self.temp_dir, TemporaryDirectory):
+            self.temp_dir.cleanup()
+            self.temp_dir = None
+
+    def __del__(self):
+        self.cleanup_temp_dir()
 
     # Magic methods
     def __str__(self):
