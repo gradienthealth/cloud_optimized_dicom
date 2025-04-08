@@ -1,6 +1,6 @@
 import logging
 from itertools import groupby
-from typing import Iterator
+from typing import Iterator, Callable
 
 from google.cloud import storage
 
@@ -30,7 +30,7 @@ def query_result_to_codobjects(
     )
 
 
-def query_result_to_instances(query_result: dict) -> list[Instance]:
+def query_result_to_instances(query_result: dict, uid_hash_func:Callable[[str], str]=None) -> list[Instance]:
     """Convert a bigquery results dict into a list of instances"""
     assert "files" in query_result
     assert isinstance(query_result["files"], list)
@@ -53,20 +53,34 @@ def query_result_to_instances(query_result: dict) -> list[Instance]:
         # make the instance
         instance = Instance(
             dicom_uri=file_uri,
-            _original_path=file_uri,
-            hints=hints,
             dependencies=[file_uri],
+            hints=hints,
+            uid_hash_func=uid_hash_func,
+            _original_path=file_uri,
         )
         instances.append(instance)
     return instances
 
+def get_uids_for_cod_obj(uid_tuple: tuple[str, str], instances: list[Instance]) -> tuple[str,str]:
+    """Given the study/series UIDs from the groupby() call, which are true UIDs,
+    Determine whether hashed uids are available/should be used (all instances have a uid_hash_func provided).
+    Return hashed study/series UIDs if so, otherwise return standard UIDs."""
+    instance_uid_hash_func = instances[0].uid_hash_func
+    # sanity check: all instances must have same hash func (it could be None which is ok)
+    assert all(i.uid_hash_func == instance_uid_hash_func for i in instances), "not all instances have the same uid hash function"
+    # if hash func is provided, return hashed study/series uids for use in cod obj path
+    study_uid, series_uid = uid_tuple
+    if instance_uid_hash_func is not None:
+        return instance_uid_hash_func(study_uid), instance_uid_hash_func(series_uid)
+    # if we get here, hash func is None. Just return standard UIDs
+    return study_uid, series_uid
 
 def instances_to_codobj_tuples(
     client: storage.Client,
     instances: list[Instance],
     datastore_path: str,
     validate_datastore_path: bool = True,
-    lock: bool = True,
+    lock: bool = True
 ) -> Iterator[tuple[CODObject, list[Instance]]]:
     """Group instances by study/series, make codobjects, and yield (codobj, instances) pairs"""
     # need to set client on instances before sorting (may have to fetch them)
@@ -82,7 +96,7 @@ def instances_to_codobj_tuples(
     )
 
     num_series = 0
-    for deid_study_series_tuple, series_instances in groupby(
+    for study_series_uid_tuple, series_instances in groupby(
         instances,
         lambda x: (
             x.study_uid(trust_hints_if_available=True),
@@ -91,24 +105,24 @@ def instances_to_codobj_tuples(
     ):
         # form instances into list
         instances_list = list(series_instances)
-        deid_study_uid, deid_series_uid = deid_study_series_tuple
+        study_uid, series_uid = get_uids_for_cod_obj(study_series_uid_tuple, instances_list)
         try:
             cod_obj = CODObject(
                 datastore_path=datastore_path,
                 client=client,
-                study_uid=deid_study_uid,
-                series_uid=deid_series_uid,
+                study_uid=study_uid,
+                series_uid=series_uid,
                 lock=lock,
             )
             num_series += 1
             yield (cod_obj, instances_list)
         except LockAcquisitionError as e:
             logger.warning(
-                f"GRADIENT_STATE_LOGS:LOCK:ACQUISITION_FAILED:STUDY:{deid_study_uid}:SERIES:{deid_series_uid}:{e}"
+                f"COD:LOCK:ACQUISITION_FAILED:STUDY:{study_uid}:SERIES:{series_uid}:{e}"
             )
         except Exception as e:
             logger.exception(
-                f"GRADIENT_STATE_LOGS:CODOBJ_INIT_FAILED:STUDY:{deid_study_uid}:SERIES:{deid_series_uid}:ERROR:{e}"
+                f"COD:CODOBJ_INIT_FAILED:STUDY:{study_uid}:SERIES:{series_uid}:ERROR:{e}"
             )
 
     # Log warning about series ratio after all processing
