@@ -114,7 +114,9 @@ class Instance:
             # seek back to beginning of file to calculate crc32c
             f.seek(0)
             self._crc32c = generate_ptr_crc32c(f)
-        self._size = os.path.getsize(self.dicom_uri)
+        # compute size if not already set (if it's a tar, _open_tar will have set it)
+        if not self._size:
+            self._size = os.path.getsize(self.dicom_uri)
         # validate hints
         self.hints.validate(
             true_size=self._size,
