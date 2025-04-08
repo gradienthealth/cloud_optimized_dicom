@@ -276,7 +276,6 @@ class Instance:
     def append_to_series_tar(
         self,
         tar: tarfile.TarFile,
-        uid_generator: Callable[[str], str] = lambda x: x,
         delete_local_on_completion: bool = False,
     ):
         """
@@ -290,8 +289,8 @@ class Instance:
             uid_generator: function to call on instance UIDs to generate tar path (e.g. to anonymize)
             delete_local_on_completion: if True and dicom_uri is local, delete the local instance file on completion
         """
-        # instance must be fetched first
-        uid_for_uri = uid_generator(self.instance_uid())
+        # decide which instance UID to use in the uri (hashed if func provided, else standard)
+        uid_for_uri = self.hashed_instance_uid() if self.uid_hash_func else self.instance_uid()
         # do actual appending
         f = tar.fileobj
         begin_offset = f.tell()
