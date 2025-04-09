@@ -5,7 +5,7 @@ import unittest
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 
 
-class TestMetadataLoad(unittest.TestCase):
+class TestMetadataSerialization(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
