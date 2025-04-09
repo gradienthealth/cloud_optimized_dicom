@@ -10,8 +10,10 @@ class TestMetadataSerialization(unittest.TestCase):
     def setUpClass(cls):
         cls.test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
 
-    def test_metadata_load(self):
-        with open(os.path.join(self.test_data_dir, "valid_metadata.json"), "rb") as f:
+    def test_deid_metadata_load(self):
+        with open(
+            os.path.join(self.test_data_dir, "valid_deid_metadata.json"), "rb"
+        ) as f:
             metadata = SeriesMetadata.from_bytes(f.read())
 
         # make sure all expected cod metadata is present
@@ -62,9 +64,11 @@ class TestMetadataSerialization(unittest.TestCase):
             ["uri", "thumbnail_index_to_instance_frame", "instances", "version"],
         )
 
-    def test_metadata_save(self):
+    def test_deid_metadata_save(self):
         # first load the metadata
-        with open(os.path.join(self.test_data_dir, "valid_metadata.json"), "rb") as f:
+        with open(
+            os.path.join(self.test_data_dir, "valid_deid_metadata.json"), "rb"
+        ) as f:
             raw_bytes = f.read()
             # save raw dict for comparison
             raw_dict = json.loads(raw_bytes)
