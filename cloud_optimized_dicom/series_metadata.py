@@ -63,8 +63,13 @@ class SeriesMetadata:
     @classmethod
     def from_dict(cls, series_metadata_dict: dict) -> "SeriesMetadata":
         """Class method to create an instance from a dictionary."""
-        study_uid = series_metadata_dict["study_uid"]
-        series_uid = series_metadata_dict["series_uid"]
+        # retrieve the study and series UIDs (might be de-identified)
+        if "deid_study_uid" in series_metadata_dict:
+            study_uid = series_metadata_dict["deid_study_uid"]
+            series_uid = series_metadata_dict["deid_series_uid"]
+        else:
+            study_uid = series_metadata_dict["study_uid"]
+            series_uid = series_metadata_dict["series_uid"]
 
         # Parse cod instances
         cod_dict: dict = series_metadata_dict["cod"]
