@@ -53,6 +53,10 @@ class TestMetadataLoad(unittest.TestCase):
 
         # make sure thumbnail custom tags are present
         self.assertListEqual(
+            list(metadata.custom_tags.keys()),
+            ["thumbnail"],
+        )
+        self.assertListEqual(
             list(metadata.custom_tags["thumbnail"].keys()),
             ["uri", "thumbnail_index_to_instance_frame", "instances", "version"],
         )
