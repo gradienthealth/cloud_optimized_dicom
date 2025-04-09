@@ -1,14 +1,11 @@
 import gzip
 import json
-import logging
 from dataclasses import dataclass, field
 from io import BytesIO
 
 from google.cloud import storage
 
 from cloud_optimized_dicom.instance import Instance
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -41,8 +38,8 @@ class SeriesMetadata:
             return
         # if there are no instances, we cannot infer if the series is hashed
         if len(self.instances) == 0:
-            logger.warning("Series has no instances, cannot infer if it is hashed")
-            return
+            # TODO should this be a warning? Raising an error for visibility for now
+            raise ValueError("Series has no instances, cannot infer if it is hashed")
         # case 2: new metadata
         hash_funcs = set(instance.uid_hash_func for instance in self.instances.values())
         # we should never see multiple different hash functions for a series
@@ -55,7 +52,7 @@ class SeriesMetadata:
 
     def to_dict(self) -> dict:
         # TODO version handling once we have a new version
-        # prior to saving, make sure _is_hashed is set correctly
+        # prior to dict creation, make sure _is_hashed is set correctly
         self._infer_is_hashed()
         study_uid_key = "deid_study_uid" if self._is_hashed else "study_uid"
         series_uid_key = "deid_series_uid" if self._is_hashed else "series_uid"
