@@ -23,11 +23,11 @@ class TestMetadataLoad(unittest.TestCase):
         )
         self.assertEqual(
             metadata.study_uid,
-            "1.2.826.0.1.3680043.8.498.74099735861445455864877203680881240932",
+            "some_study_uid",
         )
         self.assertEqual(
             metadata.series_uid,
-            "1.2.826.0.1.3680043.8.498.22808106348136061249548865750821275070",
+            "some_series_uid",
         )
 
         # check some random metadata value for thoroughness
