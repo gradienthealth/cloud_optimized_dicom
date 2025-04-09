@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 
@@ -60,3 +61,34 @@ class TestMetadataLoad(unittest.TestCase):
             list(metadata.custom_tags["thumbnail"].keys()),
             ["uri", "thumbnail_index_to_instance_frame", "instances", "version"],
         )
+
+    def test_metadata_save(self):
+        # first load the metadata
+        with open(os.path.join(self.test_data_dir, "valid_metadata.json"), "rb") as f:
+            raw_bytes = f.read()
+            # save raw dict for comparison
+            raw_dict = json.loads(raw_bytes)
+            metadata = SeriesMetadata.from_bytes(raw_bytes)
+        saved_dict = metadata.to_dict()
+        # top level key assertion first for ease of debugging
+        self.assertEqual(raw_dict.keys(), saved_dict.keys())
+        # start with uids
+        self.assertEqual(
+            raw_dict.pop("deid_study_uid"), saved_dict.pop("deid_study_uid")
+        )
+        self.assertEqual(
+            raw_dict.pop("deid_series_uid"), saved_dict.pop("deid_series_uid")
+        )
+        # pop off cod dict for comparison later (it is the most complex)
+        raw_cod = raw_dict.pop("cod")
+        saved_cod = saved_dict.pop("cod")
+        # check remaining dicts (custom tags) are equal
+        self.assertDictEqual(raw_dict, saved_dict)
+        # now do cod dict comparison
+        self.assertEqual(raw_cod.keys(), saved_cod.keys())
+        for instance_uid in raw_cod["instances"].keys():
+            raw_instance = raw_cod["instances"][instance_uid]
+            saved_instance = saved_cod["instances"][instance_uid]
+            self.assertEqual(raw_instance.keys(), saved_instance.keys())
+            for key in raw_instance.keys():
+                self.assertEqual(raw_instance[key], saved_instance[key])
