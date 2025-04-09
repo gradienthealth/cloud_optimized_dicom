@@ -57,18 +57,24 @@ class SeriesMetadata:
         """Class method to create an instance from a dictionary."""
         # retrieve the study and series UIDs (might be de-identified)
         if "deid_study_uid" in series_metadata_dict:
-            study_uid = series_metadata_dict["deid_study_uid"]
-            series_uid = series_metadata_dict["deid_series_uid"]
+            study_uid = series_metadata_dict.pop("deid_study_uid")
+            series_uid = series_metadata_dict.pop("deid_series_uid")
         else:
-            study_uid = series_metadata_dict["study_uid"]
-            series_uid = series_metadata_dict["series_uid"]
+            study_uid = series_metadata_dict.pop("study_uid")
+            series_uid = series_metadata_dict.pop("series_uid")
 
-        # Parse cod instances
-        cod_dict: dict = series_metadata_dict["cod"]
+        # Parse standard cod metadata
+        cod_dict: dict = series_metadata_dict.pop("cod")
         instances = {
             instance_uid: Instance.from_cod_dict_v1(instance_dict)
             for instance_uid, instance_dict in cod_dict.get("instances", {}).items()
         }
+
+        # Treat any remaining keys as custom tags
+        if len(series_metadata_dict) > 0:
+            raise NotImplementedError(
+                f"Unknown metadata keys: {series_metadata_dict.keys()}"
+            )
 
         return cls(study_uid=study_uid, series_uid=series_uid, instances=instances)
 
