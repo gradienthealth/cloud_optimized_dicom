@@ -14,13 +14,6 @@ class TestMetadataLoad(unittest.TestCase):
             metadata = SeriesMetadata.from_bytes(f.read())
 
         # make sure all expected cod metadata is present
-        self.assertListEqual(
-            list(metadata.instances.keys()),
-            [
-                "1.2.826.0.1.3680043.8.498.62425593669867971606161001484111987783",
-                "1.2.826.0.1.3680043.8.498.50975770268315387059815637280790177891",
-            ],
-        )
         self.assertEqual(
             metadata.study_uid,
             "some_study_uid",
@@ -29,12 +22,32 @@ class TestMetadataLoad(unittest.TestCase):
             metadata.series_uid,
             "some_series_uid",
         )
-
+        self.assertListEqual(
+            list(metadata.instances.keys()),
+            ["instance_uid_1", "instance_uid_2"],
+        )
+        # check a specific instance for thoroughness
+        loaded_instance = metadata.instances["instance_uid_1"]
+        self.assertEqual(
+            loaded_instance.dicom_uri,
+            "gs://some-hospital-pacs/v1.0/dicomweb/studies/some_study_uid/series/some_series_uid.tar://instances/instance_uid_1.dcm",
+        )
+        self.assertEqual(
+            loaded_instance._byte_offsets,
+            (1536, 393554),
+        )
+        self.assertEqual(loaded_instance._crc32c, "MdpbMQ==")
+        self.assertEqual(loaded_instance._size, 392018)
+        self.assertEqual(loaded_instance._original_path, "gs://path/to/original.dcm")
+        self.assertEqual(loaded_instance.dependencies, ["gs://path/to/original.dcm"])
+        self.assertEqual(loaded_instance._diff_hash_dupe_paths, [])
+        self.assertEqual(
+            loaded_instance._modified_datetime, "2025-02-26T01:25:49.250660"
+        )
+        self.assertEqual(loaded_instance._custom_offset_tables, {})
         # check some random metadata value for thoroughness
         self.assertEqual(
-            metadata.instances[
-                "1.2.826.0.1.3680043.8.498.62425593669867971606161001484111987783"
-            ].metadata["00080000"]["Value"],
+            metadata.instances["instance_uid_1"].metadata["00080000"]["Value"],
             [612],
         )
 

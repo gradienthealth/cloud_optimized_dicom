@@ -3,7 +3,7 @@
     "deid_series_uid": "some_series_uid",
     "cod": {
       "instances": {
-        "1.2.826.0.1.3680043.8.498.62425593669867971606161001484111987783": {
+        "instance_uid_1": {
           "metadata": {
             "00080000": {
               "vr": "UL",
@@ -32,7 +32,7 @@
             "7FE00010": {
               "vr": "OB",
               "BulkDataURI": {
-                "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/1.2.826.0.1.3680043.8.498.74099735861445455864877203680881240932/series/1.2.826.0.1.3680043.8.498.22808106348136061249548865750821275070.tar://instances/1.2.826.0.1.3680043.8.498.62425593669867971606161001484111987783.dcm",
+                "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/some_study_uid/series/some_series_uid.tar://instances/instance_uid_1.dcm",
                 "head": "some_img_bytes_would_go_here"
               }
             },
@@ -41,7 +41,7 @@
               "Value": [230]
             }
           },
-          "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/1.2.826.0.1.3680043.8.498.74099735861445455864877203680881240932/series/1.2.826.0.1.3680043.8.498.22808106348136061249548865750821275070.tar://instances/1.2.826.0.1.3680043.8.498.62425593669867971606161001484111987783.dcm",
+          "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/some_study_uid/series/some_series_uid.tar://instances/instance_uid_1.dcm",
           "headers": {
             "start_byte": 1536,
             "end_byte": 393554
@@ -59,7 +59,7 @@
           "version": "1.0",
           "modified_datetime": "2025-02-26T01:25:49.250660"
         },
-        "1.2.826.0.1.3680043.8.498.50975770268315387059815637280790177891": {
+        "instance_uid_2": {
           "metadata": {
             "00080000": {
               "vr": "UL",
@@ -88,12 +88,12 @@
             "7FE00010": {
               "vr": "OB",
               "BulkDataURI": {
-                "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/1.2.826.0.1.3680043.8.498.74099735861445455864877203680881240932/series/1.2.826.0.1.3680043.8.498.22808106348136061249548865750821275070.tar://instances/1.2.826.0.1.3680043.8.498.50975770268315387059815637280790177891.dcm",
+                "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/some_study_uid/series/some_series_uid.tar://instances/instance_uid_2.dcm",
                 "head": "some_img_bytes_would_go_here"
               }
             }
           },
-          "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/1.2.826.0.1.3680043.8.498.74099735861445455864877203680881240932/series/1.2.826.0.1.3680043.8.498.22808106348136061249548865750821275070.tar://instances/1.2.826.0.1.3680043.8.498.50975770268315387059815637280790177891.dcm",
+          "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/some_study_uid/series/some_series_uid.tar://instances/instance_uid_2.dcm",
           "headers": {
             "start_byte": 395264,
             "end_byte": 802910
@@ -114,17 +114,17 @@
       }
     },
     "thumbnail": {
-      "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/1.2.826.0.1.3680043.8.498.74099735861445455864877203680881240932/series/1.2.826.0.1.3680043.8.498.22808106348136061249548865750821275070/thumbnail.mp4",
+      "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/some_study_uid/series/some_series_uid/thumbnail.mp4",
       "thumbnail_index_to_instance_frame": [
         [
-          "1.2.826.0.1.3680043.8.498.62425593669867971606161001484111987783",
+          "instance_uid_1",
           0],
         [
-          "1.2.826.0.1.3680043.8.498.50975770268315387059815637280790177891",
+          "instance_uid_2",
           0]
       ],
       "instances": {
-        "1.2.826.0.1.3680043.8.498.62425593669867971606161001484111987783": {
+        "instance_uid_1": {
           "frames": [
             {
               "thumbnail_index": 0,
@@ -145,7 +145,7 @@
             }
           ]
         },
-        "1.2.826.0.1.3680043.8.498.50975770268315387059815637280790177891": {
+        "instance_uid_2": {
           "frames": [
             {
               "thumbnail_index": 1,
