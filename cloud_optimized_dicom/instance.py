@@ -466,7 +466,12 @@ class Instance:
 
     def to_cod_dict_v1(self):
         """Convert this instance to a dict in accordance with the COD Metadata v1.0 spec"""
-        start_byte, end_byte = self._byte_offsets if self._byte_offsets else None, None
+        # first unpack byte offsets
+        if self._byte_offsets is None:
+            start_byte, end_byte = None, None
+        else:
+            start_byte, end_byte = self._byte_offsets
+        # now return dict
         return {
             "metadata": self._metadata,
             "uri": self.dicom_uri,
