@@ -12,17 +12,10 @@ class TestMetadataSerialization(unittest.TestCase):
 
     def _assert_load_success(self, metadata: SeriesMetadata):
         # make sure all expected cod metadata is present
-        self.assertEqual(
-            metadata.study_uid,
-            "some_study_uid",
-        )
-        self.assertEqual(
-            metadata.series_uid,
-            "some_series_uid",
-        )
+        self.assertEqual(metadata.study_uid, "some_study_uid")
+        self.assertEqual(metadata.series_uid, "some_series_uid")
         self.assertListEqual(
-            list(metadata.instances.keys()),
-            ["instance_uid_1", "instance_uid_2"],
+            list(metadata.instances.keys()), ["instance_uid_1", "instance_uid_2"]
         )
         # check a specific instance for thoroughness
         loaded_instance = metadata.instances["instance_uid_1"]
@@ -30,10 +23,7 @@ class TestMetadataSerialization(unittest.TestCase):
             loaded_instance.dicom_uri,
             "gs://some-hospital-pacs/v1.0/dicomweb/studies/some_study_uid/series/some_series_uid.tar://instances/instance_uid_1.dcm",
         )
-        self.assertEqual(
-            loaded_instance._byte_offsets,
-            (1536, 393554),
-        )
+        self.assertEqual(loaded_instance._byte_offsets, (1536, 393554))
         self.assertEqual(loaded_instance._crc32c, "MdpbMQ==")
         self.assertEqual(loaded_instance._size, 392018)
         self.assertEqual(loaded_instance._original_path, "gs://path/to/original.dcm")
@@ -45,30 +35,36 @@ class TestMetadataSerialization(unittest.TestCase):
         self.assertEqual(loaded_instance._custom_offset_tables, {})
         # check some random metadata value for thoroughness
         self.assertEqual(
-            metadata.instances["instance_uid_1"].metadata["00080000"]["Value"],
-            [612],
+            metadata.instances["instance_uid_1"].metadata["00080000"]["Value"], [612]
         )
 
         # make sure thumbnail custom tags are present
-        self.assertListEqual(
-            list(metadata.custom_tags.keys()),
-            ["thumbnail"],
-        )
+        self.assertListEqual(list(metadata.custom_tags.keys()), ["thumbnail"])
         self.assertListEqual(
             list(metadata.custom_tags["thumbnail"].keys()),
             ["uri", "thumbnail_index_to_instance_frame", "instances", "version"],
         )
 
-    def _assert_save_success(self, raw_dict: dict, saved_dict: dict):
+    def _assert_save_success(self, raw_dict: dict, saved_dict: dict, is_deid: bool):
         # top level key assertion first for ease of debugging
         self.assertEqual(raw_dict.keys(), saved_dict.keys())
-        # start with uids
-        self.assertEqual(
-            raw_dict.pop("deid_study_uid"), saved_dict.pop("deid_study_uid")
-        )
-        self.assertEqual(
-            raw_dict.pop("deid_series_uid"), saved_dict.pop("deid_series_uid")
-        )
+        # uids must be equal
+        if is_deid:
+            self.assertEqual(
+                raw_dict.pop("deid_study_uid", None),
+                saved_dict.pop("deid_study_uid", None),
+            )
+            self.assertEqual(
+                raw_dict.pop("deid_series_uid", None),
+                saved_dict.pop("deid_series_uid", None),
+            )
+        else:
+            self.assertEqual(
+                raw_dict.pop("study_uid", None), saved_dict.pop("study_uid", None)
+            )
+            self.assertEqual(
+                raw_dict.pop("series_uid", None), saved_dict.pop("series_uid", None)
+            )
         # pop off cod dict for comparison later (it is the most complex)
         raw_cod = raw_dict.pop("cod")
         saved_cod = saved_dict.pop("cod")
@@ -102,7 +98,7 @@ class TestMetadataSerialization(unittest.TestCase):
             # save raw dict for comparison
             raw_dict = json.loads(raw_bytes)
             saved_dict = SeriesMetadata.from_bytes(raw_bytes).to_dict()
-        self._assert_save_success(raw_dict, saved_dict)
+        self._assert_save_success(raw_dict, saved_dict, is_deid=False)
 
     def test_deid_metadata_save(self):
         # first load the metadata
@@ -113,4 +109,4 @@ class TestMetadataSerialization(unittest.TestCase):
             # save raw dict for comparison
             raw_dict = json.loads(raw_bytes)
             saved_dict = SeriesMetadata.from_bytes(raw_bytes).to_dict()
-        self._assert_save_success(raw_dict, saved_dict)
+        self._assert_save_success(raw_dict, saved_dict, is_deid=True)
