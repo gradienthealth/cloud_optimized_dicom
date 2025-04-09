@@ -48,7 +48,7 @@ class SeriesMetadata:
                 "Series has instances with multiple different uid_hash_funcs, which should be impossible"
             )
         # if the hash function is not None, then the series is hashed
-        self._is_hashed = hash_funcs[0] is not None
+        self._is_hashed = hash_funcs.pop() is not None
 
     def to_dict(self) -> dict:
         # TODO version handling once we have a new version
