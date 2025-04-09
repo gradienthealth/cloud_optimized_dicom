@@ -10,12 +10,7 @@ class TestMetadataSerialization(unittest.TestCase):
     def setUpClass(cls):
         cls.test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
 
-    def test_deid_metadata_load(self):
-        with open(
-            os.path.join(self.test_data_dir, "valid_deid_metadata.json"), "rb"
-        ) as f:
-            metadata = SeriesMetadata.from_bytes(f.read())
-
+    def _assert_load_success(self, metadata: SeriesMetadata):
         # make sure all expected cod metadata is present
         self.assertEqual(
             metadata.study_uid,
@@ -64,16 +59,7 @@ class TestMetadataSerialization(unittest.TestCase):
             ["uri", "thumbnail_index_to_instance_frame", "instances", "version"],
         )
 
-    def test_deid_metadata_save(self):
-        # first load the metadata
-        with open(
-            os.path.join(self.test_data_dir, "valid_deid_metadata.json"), "rb"
-        ) as f:
-            raw_bytes = f.read()
-            # save raw dict for comparison
-            raw_dict = json.loads(raw_bytes)
-            metadata = SeriesMetadata.from_bytes(raw_bytes)
-        saved_dict = metadata.to_dict()
+    def _assert_save_success(self, raw_dict: dict, saved_dict: dict):
         # top level key assertion first for ease of debugging
         self.assertEqual(raw_dict.keys(), saved_dict.keys())
         # start with uids
@@ -96,3 +82,21 @@ class TestMetadataSerialization(unittest.TestCase):
             self.assertEqual(raw_instance.keys(), saved_instance.keys())
             for key in raw_instance.keys():
                 self.assertEqual(raw_instance[key], saved_instance[key])
+
+    def test_deid_metadata_load(self):
+        with open(
+            os.path.join(self.test_data_dir, "valid_deid_metadata.json"), "rb"
+        ) as f:
+            metadata = SeriesMetadata.from_bytes(f.read())
+        self._assert_load_success(metadata)
+
+    def test_deid_metadata_save(self):
+        # first load the metadata
+        with open(
+            os.path.join(self.test_data_dir, "valid_deid_metadata.json"), "rb"
+        ) as f:
+            raw_bytes = f.read()
+            # save raw dict for comparison
+            raw_dict = json.loads(raw_bytes)
+            saved_dict = SeriesMetadata.from_bytes(raw_bytes).to_dict()
+        self._assert_save_success(raw_dict, saved_dict)
