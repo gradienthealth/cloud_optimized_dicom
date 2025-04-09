@@ -80,11 +80,13 @@ class TestMetadataSerialization(unittest.TestCase):
                 self.assertEqual(raw_instance[key], saved_instance[key])
 
     def test_metadata_load(self):
+        """Test that we can properly load metadata from a json file."""
         with open(os.path.join(self.test_data_dir, "valid_metadata.json"), "rb") as f:
             metadata = SeriesMetadata.from_bytes(f.read())
         self._assert_load_success(metadata)
 
     def test_deid_metadata_load(self):
+        """Test that we can properly load de-identified metadata from a json file."""
         with open(
             os.path.join(self.test_data_dir, "valid_deid_metadata.json"), "rb"
         ) as f:
@@ -92,6 +94,7 @@ class TestMetadataSerialization(unittest.TestCase):
         self._assert_load_success(metadata)
 
     def test_metadata_save(self):
+        """Test that raw_dict_from_json = dict_when_we_load_then_save_again"""
         # first load the metadata
         with open(os.path.join(self.test_data_dir, "valid_metadata.json"), "rb") as f:
             raw_bytes = f.read()
@@ -101,6 +104,7 @@ class TestMetadataSerialization(unittest.TestCase):
         self._assert_save_success(raw_dict, saved_dict, is_deid=False)
 
     def test_deid_metadata_save(self):
+        """Test that DEID raw_dict_from_json = dict_when_we_load_then_save_again"""
         # first load the metadata
         with open(
             os.path.join(self.test_data_dir, "valid_deid_metadata.json"), "rb"
