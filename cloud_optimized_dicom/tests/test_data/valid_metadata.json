@@ -1,0 +1,172 @@
+{
+    "study_uid": "some_study_uid",
+    "series_uid": "some_series_uid",
+    "cod": {
+      "instances": {
+        "instance_uid_1": {
+          "metadata": {
+            "00080000": {
+              "vr": "UL",
+              "Value": [612]
+            },
+            "00080008": {
+              "vr": "CS",
+              "Value": [
+                "ORIGINAL",
+                "PRIMARY",
+                "LOCALIZER"
+              ]
+            },
+            "00080016": {
+              "vr": "UI",
+              "Value": [
+                "1.2.840.10008.5.1.4.1.1.2"
+              ]
+            },
+            "00080018": {
+              "vr": "UI",
+              "Value": [
+                "1.2.392.200036.9116.2.6.1.44063.1805437483.1707395280.529740"
+              ]
+            },
+            "7FE00010": {
+              "vr": "OB",
+              "BulkDataURI": {
+                "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/some_study_uid/series/some_series_uid.tar://instances/instance_uid_1.dcm",
+                "head": "some_img_bytes_would_go_here"
+              }
+            },
+            "00020000": {
+              "vr": "UL",
+              "Value": [230]
+            }
+          },
+          "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/some_study_uid/series/some_series_uid.tar://instances/instance_uid_1.dcm",
+          "headers": {
+            "start_byte": 1536,
+            "end_byte": 393554
+          },
+          "offset_tables": {
+  
+          },
+          "crc32c": "MdpbMQ==",
+          "size": 392018,
+          "original_path": "gs://path/to/original.dcm",
+          "dependencies": [
+            "gs://path/to/original.dcm"
+          ],
+          "diff_hash_dupe_paths": [],
+          "version": "1.0",
+          "modified_datetime": "2025-02-26T01:25:49.250660"
+        },
+        "instance_uid_2": {
+          "metadata": {
+            "00080000": {
+              "vr": "UL",
+              "Value": [612]
+            },
+            "00080008": {
+              "vr": "CS",
+              "Value": [
+                "ORIGINAL",
+                "PRIMARY",
+                "LOCALIZER"
+              ]
+            },
+            "00080016": {
+              "vr": "UI",
+              "Value": [
+                "1.2.840.10008.5.1.4.1.1.2"
+              ]
+            },
+            "00080018": {
+              "vr": "UI",
+              "Value": [
+                "1.2.392.200036.9116.2.6.1.44063.1805437483.1707395306.69863"
+              ]
+            },
+            "7FE00010": {
+              "vr": "OB",
+              "BulkDataURI": {
+                "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/some_study_uid/series/some_series_uid.tar://instances/instance_uid_2.dcm",
+                "head": "some_img_bytes_would_go_here"
+              }
+            }
+          },
+          "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/some_study_uid/series/some_series_uid.tar://instances/instance_uid_2.dcm",
+          "headers": {
+            "start_byte": 395264,
+            "end_byte": 802910
+          },
+          "offset_tables": {
+  
+          },
+          "crc32c": "s4fjNA==",
+          "size": 407646,
+          "original_path": "gs://path/to/original_2.dcm",
+          "dependencies": [
+            "gs://path/to/original_2.dcm"
+          ],
+          "diff_hash_dupe_paths": [],
+          "version": "1.0",
+          "modified_datetime": "2025-02-26T01:25:49.250976"
+        }
+      }
+    },
+    "thumbnail": {
+      "uri": "gs://some-hospital-pacs/v1.0/dicomweb/studies/some_study_uid/series/some_series_uid/thumbnail.mp4",
+      "thumbnail_index_to_instance_frame": [
+        [
+          "instance_uid_1",
+          0],
+        [
+          "instance_uid_2",
+          0]
+      ],
+      "instances": {
+        "instance_uid_1": {
+          "frames": [
+            {
+              "thumbnail_index": 0,
+              "anchors": {
+                "original_size": {
+                  "width": 552,
+                  "height": 686
+                },
+                "thumbnail_upper_left": {
+                  "row": 0,
+                  "col": 13
+                },
+                "thumbnail_bottom_right": {
+                  "row": 127,
+                  "col": 114
+                }
+              }
+            }
+          ]
+        },
+        "instance_uid_2": {
+          "frames": [
+            {
+              "thumbnail_index": 1,
+              "anchors": {
+                "original_size": {
+                  "width": 654,
+                  "height": 552
+                },
+                "thumbnail_upper_left": {
+                  "row": 10,
+                  "col": 0
+                },
+                "thumbnail_bottom_right": {
+                  "row": 117,
+                  "col": 127
+                }
+              }
+            }
+          ]
+        }
+      },
+      "version": "1.0"
+    }
+  }

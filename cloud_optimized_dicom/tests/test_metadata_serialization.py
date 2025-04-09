@@ -83,12 +83,26 @@ class TestMetadataSerialization(unittest.TestCase):
             for key in raw_instance.keys():
                 self.assertEqual(raw_instance[key], saved_instance[key])
 
+    def test_metadata_load(self):
+        with open(os.path.join(self.test_data_dir, "valid_metadata.json"), "rb") as f:
+            metadata = SeriesMetadata.from_bytes(f.read())
+        self._assert_load_success(metadata)
+
     def test_deid_metadata_load(self):
         with open(
             os.path.join(self.test_data_dir, "valid_deid_metadata.json"), "rb"
         ) as f:
             metadata = SeriesMetadata.from_bytes(f.read())
         self._assert_load_success(metadata)
+
+    def test_metadata_save(self):
+        # first load the metadata
+        with open(os.path.join(self.test_data_dir, "valid_metadata.json"), "rb") as f:
+            raw_bytes = f.read()
+            # save raw dict for comparison
+            raw_dict = json.loads(raw_bytes)
+            saved_dict = SeriesMetadata.from_bytes(raw_bytes).to_dict()
+        self._assert_save_success(raw_dict, saved_dict)
 
     def test_deid_metadata_save(self):
         # first load the metadata
