@@ -71,12 +71,14 @@ class SeriesMetadata:
         }
 
         # Treat any remaining keys as custom tags
-        if len(series_metadata_dict) > 0:
-            raise NotImplementedError(
-                f"Unknown metadata keys: {series_metadata_dict.keys()}"
-            )
+        custom_tags = series_metadata_dict
 
-        return cls(study_uid=study_uid, series_uid=series_uid, instances=instances)
+        return cls(
+            study_uid=study_uid,
+            series_uid=series_uid,
+            instances=instances,
+            custom_tags=custom_tags,
+        )
 
     @classmethod
     def from_bytes(cls, bytes: bytes) -> "SeriesMetadata":
