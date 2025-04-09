@@ -9,14 +9,6 @@ from cloud_optimized_dicom.instance import Instance
 
 
 @dataclass
-class ThumbnailMetadata:
-    uri: str
-    thumbnail_index_to_instance_frame: list[tuple[str, int]]
-    instances: dict[str, dict]
-    version: str = "1.0"
-
-
-@dataclass
 class SeriesMetadata:
     """The metadata of an entire series.
 
@@ -24,13 +16,13 @@ class SeriesMetadata:
         study_uid (str): The study UID of this series (should match `CODObject.study_uid`)
         series_uid (str): The series UID of this series (should match `CODObject.series_uid`)
         instances (dict[str, Instance]): Mapping of instance UID to Instance object
-        thumbnail (dict): The thumbnail metadata for this series (TODO)
+        custom_tags (dict): Any additional user defined data
     """
 
     study_uid: str
     series_uid: str
     instances: dict[str, Instance] = field(default_factory=dict)
-    thumbnail: ThumbnailMetadata = None
+    custom_tags: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         # TODO version handling once we have a new version
@@ -78,17 +70,7 @@ class SeriesMetadata:
             for instance_uid, instance_dict in cod_dict.get("instances", {}).items()
         }
 
-        # Parse thumbnail
-        thumbnail = None
-        if series_metadata_dict["thumbnail"] is not None:
-            thumbnail = ThumbnailMetadata(**series_metadata_dict["thumbnail"])
-
-        return cls(
-            study_uid=study_uid,
-            series_uid=series_uid,
-            instances=instances,
-            thumbnail=thumbnail,
-        )
+        return cls(study_uid=study_uid, series_uid=series_uid, instances=instances)
 
     @classmethod
     def from_bytes(cls, bytes: bytes) -> "SeriesMetadata":
