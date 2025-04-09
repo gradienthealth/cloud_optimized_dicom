@@ -12,21 +12,34 @@ class TestMetadataLoad(unittest.TestCase):
     def test_metadata_load(self):
         with open(os.path.join(self.test_data_dir, "valid_metadata.json"), "rb") as f:
             metadata = SeriesMetadata.from_bytes(f.read())
+
+        # make sure all expected cod metadata is present
+        self.assertListEqual(
+            list(metadata.instances.keys()),
+            [
+                "1.2.826.0.1.3680043.8.498.62425593669867971606161001484111987783",
+                "1.2.826.0.1.3680043.8.498.50975770268315387059815637280790177891",
+            ],
+        )
+        self.assertEqual(
+            metadata.study_uid,
+            "1.2.826.0.1.3680043.8.498.74099735861445455864877203680881240932",
+        )
+        self.assertEqual(
+            metadata.series_uid,
+            "1.2.826.0.1.3680043.8.498.22808106348136061249548865750821275070",
+        )
+
+        # check some random metadata value for thoroughness
         self.assertEqual(
             metadata.instances[
                 "1.2.826.0.1.3680043.8.498.62425593669867971606161001484111987783"
             ].metadata["00080000"]["Value"],
             [612],
         )
-        self.assertEqual(
-            metadata.instances[
-                "1.2.826.0.1.3680043.8.498.62425593669867971606161001484111987783"
-            ].metadata["00080008"]["Value"],
-            ["ORIGINAL", "PRIMARY", "LOCALIZER"],
-        )
-        self.assertEqual(
-            metadata.instances[
-                "1.2.826.0.1.3680043.8.498.62425593669867971606161001484111987783"
-            ].metadata["00080016"]["Value"],
-            ["1.2.840.10008.5.1.4.1.1.2"],
+
+        # make sure thumbnail custom tags are present
+        self.assertListEqual(
+            list(metadata.custom_tags["thumbnail"].keys()),
+            ["uri", "thumbnail_index_to_instance_frame", "instances", "version"],
         )
