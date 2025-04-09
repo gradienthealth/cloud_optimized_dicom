@@ -1,6 +1,6 @@
 import logging
 from itertools import groupby
-from typing import Iterator, Callable
+from typing import Callable, Iterator
 
 from google.cloud import storage
 
@@ -30,7 +30,9 @@ def query_result_to_codobjects(
     )
 
 
-def query_result_to_instances(query_result: dict, uid_hash_func:Callable[[str], str]=None) -> list[Instance]:
+def query_result_to_instances(
+    query_result: dict, uid_hash_func: Callable[[str], str] = None
+) -> list[Instance]:
     """Convert a bigquery results dict into a list of instances"""
     assert "files" in query_result
     assert isinstance(query_result["files"], list)
@@ -61,13 +63,18 @@ def query_result_to_instances(query_result: dict, uid_hash_func:Callable[[str], 
         instances.append(instance)
     return instances
 
-def get_uids_for_cod_obj(uid_tuple: tuple[str, str], instances: list[Instance]) -> tuple[str,str]:
+
+def get_uids_for_cod_obj(
+    uid_tuple: tuple[str, str], instances: list[Instance]
+) -> tuple[str, str]:
     """Given the study/series UIDs from the groupby() call, which are true UIDs,
     Determine whether hashed uids are available/should be used (all instances have a uid_hash_func provided).
     Return hashed study/series UIDs if so, otherwise return standard UIDs."""
     instance_uid_hash_func = instances[0].uid_hash_func
     # sanity check: all instances must have same hash func (it could be None which is ok)
-    assert all(i.uid_hash_func == instance_uid_hash_func for i in instances), "not all instances have the same uid hash function"
+    assert all(
+        i.uid_hash_func == instance_uid_hash_func for i in instances
+    ), "not all instances have the same uid hash function"
     # if hash func is provided, return hashed study/series uids for use in cod obj path
     study_uid, series_uid = uid_tuple
     if instance_uid_hash_func is not None:
@@ -75,12 +82,13 @@ def get_uids_for_cod_obj(uid_tuple: tuple[str, str], instances: list[Instance]) 
     # if we get here, hash func is None. Just return standard UIDs
     return study_uid, series_uid
 
+
 def instances_to_codobj_tuples(
     client: storage.Client,
     instances: list[Instance],
     datastore_path: str,
     validate_datastore_path: bool = True,
-    lock: bool = True
+    lock: bool = True,
 ) -> Iterator[tuple[CODObject, list[Instance]]]:
     """Group instances by study/series, make codobjects, and yield (codobj, instances) pairs"""
     # need to set client on instances before sorting (may have to fetch them)
@@ -105,7 +113,9 @@ def instances_to_codobj_tuples(
     ):
         # form instances into list
         instances_list = list(series_instances)
-        study_uid, series_uid = get_uids_for_cod_obj(study_series_uid_tuple, instances_list)
+        study_uid, series_uid = get_uids_for_cod_obj(
+            study_series_uid_tuple, instances_list
+        )
         try:
             cod_obj = CODObject(
                 datastore_path=datastore_path,

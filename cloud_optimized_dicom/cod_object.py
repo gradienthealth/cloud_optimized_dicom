@@ -333,7 +333,7 @@ class CODObject:
         cod_object = CODObject(**serialized_obj, client=client, lock=lock)
         cod_object._metadata = SeriesMetadata.from_dict(metadata_dict)
         return cod_object
-    
+
     def cleanup_temp_dir(self):
         """Clean temp dir (if not done already)"""
         # clean up temp dir
