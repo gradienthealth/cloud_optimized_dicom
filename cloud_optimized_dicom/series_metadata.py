@@ -86,6 +86,11 @@ class SeriesMetadata:
         )
 
     @classmethod
+    def from_bytes(cls, bytes: bytes) -> "SeriesMetadata":
+        """Class method to create a SeriesMetadata object from a bytes object."""
+        return cls.from_dict(json.loads(bytes))
+
+    @classmethod
     def from_blob(cls, blob: storage.Blob) -> "SeriesMetadata":
-        """Class method to create a SeriesMetadata object from a blob."""
-        return cls.from_dict(json.loads(blob.download_as_bytes()))
+        """Class method to create a SeriesMetadata object from a GCS blob."""
+        return cls.from_bytes(blob.download_as_bytes())
