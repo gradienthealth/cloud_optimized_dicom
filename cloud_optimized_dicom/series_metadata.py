@@ -50,6 +50,13 @@ class SeriesMetadata:
         # if the hash function is not None, then the series is hashed
         self._is_hashed = hash_funcs.pop() is not None
 
+    def add_custom_tag(self, tag_name: str, tag_value, overwrite_existing=False):
+        """Add a custom tag to the series metadata"""
+        # Raise error if tag exists and we're not overwriting existing tags
+        if hasattr(self.custom_tags, tag_name) and not overwrite_existing:
+            raise ValueError(f"Metadata tag {tag_name} already exists (and overwrite_existing=False)")
+        self.custom_tags[tag_name] = tag_value
+
     def to_dict(self) -> dict:
         # TODO version handling once we have a new version
         # prior to dict creation, make sure _is_hashed is set correctly
