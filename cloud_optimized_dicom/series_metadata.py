@@ -15,54 +15,32 @@ class SeriesMetadata:
     Parameters:
         study_uid (str): The study UID of this series (should match `CODObject.study_uid`)
         series_uid (str): The series UID of this series (should match `CODObject.series_uid`)
+        hashed_uids (bool): Flag indicating whether the series uses de-identified UIDs.
         instances (dict[str, Instance]): Mapping of instance UID to Instance object
         custom_tags (dict): Any additional user defined data
-        _is_hashed (bool): Private property indicating whether the series uses de-identified UIDs.
         If loading existing metadata, this is inferred by the presence of the key `deid_study_uid` as opposed to `study_uid`.
         If creating new metadata, this is inferred by the presence/absence of `instance.uid_hash_func` for any instances that have been added.
     """
 
     study_uid: str
     series_uid: str
+    hashed_uids: bool
     instances: dict[str, Instance] = field(default_factory=dict)
     custom_tags: dict = field(default_factory=dict)
-    _is_hashed: bool = False
-
-    def _infer_is_hashed(self):
-        """It is possible to infer that a series is hashed in the following ways:
-        1. Pre-existing metadata: `_is_hashed` was already set to True on load, because `deid_study_uid` was present (instead of `study_uid`)
-        2. Creating new metadata: all of the instances have the same `uid_hash_func` (which is not None)
-        """
-        # case 1: already set
-        if self._is_hashed:
-            return
-        # if there are no instances, we cannot infer if the series is hashed
-        if len(self.instances) == 0:
-            # TODO should this be a warning? Raising an error for visibility for now
-            raise ValueError("Series has no instances, cannot infer if it is hashed")
-        # case 2: new metadata
-        hash_funcs = set(instance.uid_hash_func for instance in self.instances.values())
-        # we should never see multiple different hash functions for a series
-        if len(hash_funcs) != 1:
-            raise ValueError(
-                "Series has instances with multiple different uid_hash_funcs, which should be impossible"
-            )
-        # if the hash function is not None, then the series is hashed
-        self._is_hashed = hash_funcs.pop() is not None
 
     def add_custom_tag(self, tag_name: str, tag_value, overwrite_existing=False):
         """Add a custom tag to the series metadata"""
         # Raise error if tag exists and we're not overwriting existing tags
         if hasattr(self.custom_tags, tag_name) and not overwrite_existing:
-            raise ValueError(f"Metadata tag {tag_name} already exists (and overwrite_existing=False)")
+            raise ValueError(
+                f"Metadata tag {tag_name} already exists (and overwrite_existing=False)"
+            )
         self.custom_tags[tag_name] = tag_value
 
     def to_dict(self) -> dict:
         # TODO version handling once we have a new version
-        # prior to dict creation, make sure _is_hashed is set correctly
-        self._infer_is_hashed()
-        study_uid_key = "deid_study_uid" if self._is_hashed else "study_uid"
-        series_uid_key = "deid_series_uid" if self._is_hashed else "series_uid"
+        study_uid_key = "deid_study_uid" if self.hashed_uids else "study_uid"
+        series_uid_key = "deid_series_uid" if self.hashed_uids else "series_uid"
         base_dict = {
             study_uid_key: self.study_uid,
             series_uid_key: self.series_uid,
@@ -114,9 +92,9 @@ class SeriesMetadata:
         return cls(
             study_uid=study_uid,
             series_uid=series_uid,
+            hashed_uids=is_hashed,
             instances=instances,
             custom_tags=custom_tags,
-            _is_hashed=is_hashed,
         )
 
     @classmethod

@@ -109,6 +109,7 @@ class TestDeid(unittest.TestCase):
             study_uid=example_hash_function(self.test_study_uid),
             series_uid=example_hash_function(self.test_series_uid),
             lock=False,
+            hashed_uids=True,
         )
         # expect no error: hashed uids will be used, so the instance belongs to the cod_object
         hashed_cod_object.assert_instance_belongs_to_cod_object(instance)

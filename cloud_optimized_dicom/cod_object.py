@@ -33,6 +33,7 @@ class CODObject:
         study_uid: str - The study_uid of the series.
         series_uid: str - The series_uid of the series.
         lock: bool - If `True`, acquire a lock on initialization. If `False`, no changes made on this object will be synced to the datastore.
+        hashed_uids: bool - Flag whether UIDs are hashed. If `True`, Instances appended to this CODObject must have a `uid_hash_func`.
         create_if_missing: bool - If `False`, raise an error if series does not yet exist in the datastore.
         temp_dir: str - If a temp_dir with data pertaining to this series already exists, provide it here.
         override_errors: bool - If `True`, delete any existing error.log and upload a new one.
@@ -49,6 +50,7 @@ class CODObject:
         series_uid: str,
         lock: bool,
         # fields user can set but does not have to
+        hashed_uids: bool = False,
         create_if_missing: bool = True,
         temp_dir: str = None,
         override_errors: bool = False,
@@ -63,6 +65,7 @@ class CODObject:
         self.study_uid = study_uid
         self.series_uid = series_uid
         self._validate_uids()
+        self.hashed_uids = hashed_uids
         self._metadata = metadata
         self.temp_dir = temp_dir
         self.override_errors = override_errors
@@ -175,7 +178,9 @@ class CODObject:
             self._metadata = SeriesMetadata.from_blob(metadata_blob)
         elif create_if_missing:
             self._metadata = SeriesMetadata(
-                study_uid=self.study_uid, series_uid=self.series_uid
+                study_uid=self.study_uid,
+                series_uid=self.series_uid,
+                hashed_uids=self.hashed_uids,
             )
         else:
             raise CODObjectNotFoundError(
@@ -295,13 +300,21 @@ class CODObject:
     def assert_instance_belongs_to_cod_object(self, instance: Instance):
         """Compare relevant instance study/series UIDS (hashed if uid_hash_func provided, standard if not) to COD object study/series UIDs.
 
-        Raises:
-            AssertionError if the instance does not belong to the COD object.
+        Raises an AssertionError if any of the following are true:
+            - CODObject DOES have hashed UIDs but instance does NOT have a uid_hash_func
+            - CODObject does NOT have hashed UIDs but instance DOES have a uid_hash_func
+            - instance study/series UIDs don't match COD object study/series UIDs
         """
-        if instance.uid_hash_func:
+        if self.hashed_uids:
+            assert (
+                instance.uid_hash_func
+            ), f"CODObject {self.as_log} has hashed UIDs but instance is missing uid_hash_func: {instance}"
             relevant_study_uid = instance.hashed_study_uid()
             relevant_series_uid = instance.hashed_series_uid()
         else:
+            assert (
+                not instance.uid_hash_func
+            ), f"CODObject {self.as_log} does not have hashed UIDs but instance has uid_hash_func: {instance}"
             relevant_study_uid = instance.study_uid()
             relevant_series_uid = instance.series_uid()
         assert (
