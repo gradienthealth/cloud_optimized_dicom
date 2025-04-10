@@ -113,7 +113,7 @@ def instances_to_codobj_tuples(
     ):
         # form instances into list
         instances_list = list(series_instances)
-        study_uid, series_uid, is_hashed = get_uids_for_cod_obj(
+        study_uid, series_uid, hashed_uids = get_uids_for_cod_obj(
             study_series_uid_tuple, instances_list
         )
         try:
@@ -123,7 +123,7 @@ def instances_to_codobj_tuples(
                 study_uid=study_uid,
                 series_uid=series_uid,
                 lock=lock,
-                is_hashed=is_hashed
+                hashed_uids=hashed_uids
             )
             num_series += 1
             yield (cod_obj, instances_list)
