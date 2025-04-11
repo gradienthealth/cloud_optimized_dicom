@@ -37,7 +37,7 @@ class TestDeid(unittest.TestCase):
         )
         cls.datastore_path = "gs://siskin-172863-temp/cod_tests/dicomweb"
 
-    def test_hash_func_provided(self):
+    def test_instance_hashing(self):
         """Test the cod_object hash_func_provided property"""
         instance = Instance(
             dicom_uri="gs://bucket/path/to/file.dcm",
@@ -62,7 +62,7 @@ class TestDeid(unittest.TestCase):
             instance.hashed_study_uid(trust_hints_if_available=True), "1.2.3.5"
         )
 
-    def test_hash_func_not_provided(self):
+    def test_instance_no_hash_func(self):
         """Test that trying to get a hashed uid without a hash function raises an error"""
         instance = Instance(
             dicom_uri="gs://bucket/path/to/file.dcm",
@@ -102,14 +102,11 @@ class TestDeid(unittest.TestCase):
         # expect an error: hashed uids will be used, so the instance will not belong to the cod_object
         with self.assertRaises(AssertionError):
             cod_object.assert_instance_belongs_to_cod_object(instance)
-        # make a new cod_object with the hashed uids
-        hashed_cod_object = CODObject(
-            datastore_path=self.datastore_path,
-            client=self.client,
-            study_uid=example_hash_function(self.test_study_uid),
-            series_uid=example_hash_function(self.test_series_uid),
-            lock=False,
-            hashed_uids=True,
-        )
-        # expect no error: hashed uids will be used, so the instance belongs to the cod_object
-        hashed_cod_object.assert_instance_belongs_to_cod_object(instance)
+        # if the cod_object instead had hashed_uids=True, but still had the original uids, the instance would NOT belong (true_uid != hashed_uid)
+        cod_object.hashed_uids = True
+        with self.assertRaises(AssertionError):
+            cod_object.assert_instance_belongs_to_cod_object(instance)
+        # finally, if the cod_object had the hashed uids, and the instance had the hashed uids, the instance would belong
+        cod_object.study_uid = example_hash_function(self.test_study_uid)
+        cod_object.series_uid = example_hash_function(self.test_series_uid)
+        cod_object.assert_instance_belongs_to_cod_object(instance)
