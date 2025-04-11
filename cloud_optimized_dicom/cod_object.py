@@ -306,7 +306,7 @@ class CODObject:
             if tar_instances[instance_uid] != instance.crc32c():
                 metrics.TAR_METADATA_CRC32C_MISMATCH.inc()
                 raise HashMismatchError(
-                    f"CRC32c mismatch between tar and metadata: {instance}"
+                    f"Hash mismatch between tar and metadata: {instance}"
                 )
         # Sanity check: tar and metadata must have the same number of instances
         if len(tar_instances) != len(self._metadata.instances):
@@ -333,6 +333,7 @@ class CODObject:
         # If we get here all checks have passed and it is safe to delete the dependencies
         deleted_dependencies = []
         for instance in self._metadata.instances.values():
+            instance.transport_params = dict(client=self.client)
             deleted_dependencies.extend(
                 instance.delete_dependencies(
                     dryrun=dryrun, validate_blob_hash=validate_blob_hash
