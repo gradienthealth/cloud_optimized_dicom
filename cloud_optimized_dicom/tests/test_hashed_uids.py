@@ -110,3 +110,21 @@ class TestDeid(unittest.TestCase):
         cod_object.study_uid = example_hash_function(self.test_study_uid)
         cod_object.series_uid = example_hash_function(self.test_series_uid)
         cod_object.assert_instance_belongs_to_cod_object(instance)
+
+    def test_accidental_double_hash(self):
+        """Test that instances do not belong if cod_object accidentally hashed uids twice"""
+        hashed_study_uid = example_hash_function(self.test_study_uid)
+        hashed_series_uid = example_hash_function(self.test_series_uid)
+        twice_hashed_study_uid = example_hash_function(hashed_study_uid)
+        twice_hashed_series_uid = example_hash_function(hashed_series_uid)
+        cod_object = CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=twice_hashed_study_uid,
+            series_uid=twice_hashed_series_uid,
+            lock=False,
+            hashed_uids=True,
+        )
+        instance = Instance(dicom_uri=self.local_instance_path)
+        with self.assertRaises(AssertionError):
+            cod_object.assert_instance_belongs_to_cod_object(instance)
