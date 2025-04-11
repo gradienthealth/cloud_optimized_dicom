@@ -128,3 +128,40 @@ class TestDeid(unittest.TestCase):
         instance = Instance(dicom_uri=self.local_instance_path)
         with self.assertRaises(AssertionError):
             cod_object.assert_instance_belongs_to_cod_object(instance)
+
+    def test_cod_obj_metadata_hashed_uids(self):
+        """Test that cod_obj metadata hashed_uids property is correctly set"""
+        # append a DEID instance to a cod object
+        cod_object = CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=example_hash_function(self.test_study_uid),
+            series_uid=example_hash_function(self.test_series_uid),
+            lock=False,
+            hashed_uids=True,
+        )
+        instance = Instance(
+            dicom_uri=self.local_instance_path, uid_hash_func=example_hash_function
+        )
+        append_result = cod_object.append([instance], dirty=True)
+        # verify append success
+        self.assertEqual(append_result.new[0], instance)
+        metadata_dict = cod_object.get_metadata(dirty=True).to_dict()
+        # because the cod_object has hashed_uids=True, the metadata should have deid_uids
+        self.assertEqual(
+            metadata_dict["deid_study_uid"], example_hash_function(self.test_study_uid)
+        )
+        self.assertEqual(
+            metadata_dict["deid_series_uid"],
+            example_hash_function(self.test_series_uid),
+        )
+        # the original uids should not be present in the metadata
+        self.assertNotIn("study_uid", metadata_dict)
+        self.assertNotIn("series_uid", metadata_dict)
+        # the metadata should contain the single instance we appended
+        instances_dict = metadata_dict["cod"]["instances"]
+        self.assertEqual(len(instances_dict), 1)
+        # this instance should have the hashed UID
+        self.assertIn(instance.hashed_instance_uid(), instances_dict)
+        # the original UID should not be present
+        self.assertNotIn(instance.instance_uid(), instances_dict)
