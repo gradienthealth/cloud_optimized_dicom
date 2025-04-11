@@ -21,11 +21,14 @@ class CleanOpOnUnlockedCODObjectError(CODError):
 class ErrorLogExistsError(CODError):
     """Exception raised on CODObject initialization when error.log already exists in the datastore"""
 
+
 class TarValidationError(CODError):
     """Base class of exception for integrity check related failures"""
 
+
 class TarMissingInstanceError(TarValidationError):
     """Exception raised on CODObject integrity check when the series metadata contains an instance that is not in the tar"""
+
 
 class HashMismatchError(TarValidationError):
     """Exception raised on CODObject integrity check when there is a mismatch between the crc32c hash in the metadata and the one computed from the tar"""

@@ -9,13 +9,22 @@ from google.cloud.storage.retry import DEFAULT_RETRY
 from ratarmountcore import open as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
-from cloud_optimized_dicom.utils import generate_ptr_crc32c
 from cloud_optimized_dicom.appender import CODAppender
-from cloud_optimized_dicom.errors import CODObjectNotFoundError, ErrorLogExistsError, TarValidationError, TarMissingInstanceError, HashMismatchError
+from cloud_optimized_dicom.errors import (
+    CODObjectNotFoundError,
+    ErrorLogExistsError,
+    HashMismatchError,
+    TarMissingInstanceError,
+    TarValidationError,
+)
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
-from cloud_optimized_dicom.utils import public_method, upload_and_count
+from cloud_optimized_dicom.utils import (
+    generate_ptr_crc32c,
+    public_method,
+    upload_and_count,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -306,7 +315,9 @@ class CODObject:
             )
 
     @public_method
-    def delete_dependencies(self, dryrun=False, dirty=False, validate_blob_hash=False) -> list[str]:
+    def delete_dependencies(
+        self, dryrun=False, dirty=False, validate_blob_hash=False
+    ) -> list[str]:
         """Run an integrity check, loop over all instances, delete their dependencies. Lock is REQUIRED (`dirty=False` always).
 
         Raises an error if validation fails (to be try/caught by the caller);

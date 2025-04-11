@@ -69,7 +69,8 @@ def get_uids_for_cod_obj(
 ) -> tuple[str, str]:
     """Given the study/series UIDs from the groupby() call, which are true UIDs,
     Determine whether hashed uids are available/should be used (all instances have a uid_hash_func provided).
-    Return hashed study/series UIDs if so, otherwise return standard UIDs. Also return a bool representing whether they're hashed"""
+    Return hashed study/series UIDs if so, otherwise return standard UIDs. Also return a bool representing whether they're hashed
+    """
     instance_uid_hash_func = instances[0].uid_hash_func
     # sanity check: all instances must have same hash func (it could be None which is ok)
     assert all(
@@ -78,7 +79,11 @@ def get_uids_for_cod_obj(
     # if hash func is provided, return hashed study/series uids for use in cod obj path
     study_uid, series_uid = uid_tuple
     if instance_uid_hash_func is not None:
-        return instance_uid_hash_func(study_uid), instance_uid_hash_func(series_uid), True
+        return (
+            instance_uid_hash_func(study_uid),
+            instance_uid_hash_func(series_uid),
+            True,
+        )
     # if we get here, hash func is None. Just return standard UIDs
     return study_uid, series_uid, False
 
@@ -123,7 +128,7 @@ def instances_to_codobj_tuples(
                 study_uid=study_uid,
                 series_uid=series_uid,
                 lock=lock,
-                hashed_uids=hashed_uids
+                hashed_uids=hashed_uids,
             )
             num_series += 1
             yield (cod_obj, instances_list)
