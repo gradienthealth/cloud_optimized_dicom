@@ -6,10 +6,12 @@ from tempfile import TemporaryDirectory
 from google.cloud import storage
 from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
 from google.cloud.storage.retry import DEFAULT_RETRY
+from ratarmountcore import open as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
+from cloud_optimized_dicom.utils import generate_ptr_crc32c
 from cloud_optimized_dicom.appender import CODAppender
-from cloud_optimized_dicom.errors import CODObjectNotFoundError, ErrorLogExistsError
+from cloud_optimized_dicom.errors import CODObjectNotFoundError, ErrorLogExistsError, TarValidationError, TarMissingInstanceError, HashMismatchError
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
@@ -267,6 +269,72 @@ class CODObject:
             f"GRADIENT_STATE_LOGS:UPLOADING_ERROR_LOG:{self.as_log}:{message}"
         )
         error_blob.upload_from_string(message)
+
+    @public_method
+    def integrity_check(self):
+        """
+        Check the integrity of the CODObject by verifying that the tar and metadata are consistent.
+        """
+        # fetch the tar and index
+        self._force_fetch_tar(fetch_index=True)
+        # Attempt to open the tar using the index file. If they do not match, this will raise an error and we will know there's a desync
+        with rmc_open(self.tar_file_path, indexFile=self.index_file_path) as archive:
+            # generate a dict of instance_uid -> crc32c for each instance in the tar
+            tar_instances = {}
+            for instance in archive.listDir("instances"):
+                file_info = archive.getFileInfo(f"instances/{instance}")
+                with archive.open(file_info) as f:
+                    tar_instances[os.path.splitext(instance)[0]] = generate_ptr_crc32c(
+                        f
+                    )
+        # Verify that each instance in the CODObject's metadata matches the tar (including crc32c)
+        for instance in self._metadata.instances.values():
+            if instance.deid_instance_uid not in tar_instances:
+                metrics.DEPS_MISSING_FROM_TAR.inc()
+                raise TarMissingInstanceError(
+                    f"Instance found in metadata but not in tar: {instance.as_log}"
+                )
+            if tar_instances[instance.deid_instance_uid] != instance.crc32c:
+                metrics.TAR_METADATA_CRC32C_MISMATCH.inc()
+                raise HashMismatchError(
+                    f"CRC32c mismatch between tar and metadata: {instance.as_log}"
+                )
+        # Sanity check: tar and metadata must have the same number of instances
+        if len(tar_instances) != len(self._metadata.instances):
+            raise TarValidationError(
+                f"Different number of instances found in tar vs. metadata: {len(tar_instances)} != {len(self._metadata.instances)}"
+            )
+
+    @public_method
+    def delete_dependencies(self, dryrun=False, dirty=False, validate_blob_hash=False) -> list[str]:
+        """Run an integrity check, loop over all instances, delete their dependencies. Lock is REQUIRED (`dirty=False` always).
+
+        Raises an error if validation fails (to be try/caught by the caller);
+        the idea being that such a failure will leave a hanging lock, effectively bricking the CODObject until a developer
+        goes in manually and figures out what went wrong.
+
+        If `validate_blob_hash=False`, blobs to delete will NOT have their crc32c checked prior to deletion (save $$$).
+
+        Returns:
+            The list of URIs that got deleted
+        """
+        self.integrity_check()
+        # If we get here all checks have passed and it is safe to delete the dependencies
+        deleted_dependencies = []
+        for instance in self._metadata.instances.values():
+            deleted_dependencies.extend(
+                instance.delete_dependencies(
+                    dryrun=dryrun, validate_blob_hash=validate_blob_hash
+                )
+            )
+        # log the dependencies that were deleted
+        if dryrun:
+            logger.info(
+                f"GRADIENT_STATE_LOGS:DRYRUN:WOULD_DELETE:{deleted_dependencies}"
+            )
+        else:
+            logger.info(f"GRADIENT_STATE_LOGS:DELETED:{deleted_dependencies}")
+        return deleted_dependencies
 
     # Internal operations
     def _force_fetch_tar(self, fetch_index: bool = True):

@@ -49,3 +49,16 @@ STORAGE_CLASS_COUNTERS: dict[str, dict[str, Metrics.DelegatingCounter]] = {
         ARCHIVE_STORAGE_CLASS: ARCHIVE_CREATE_COUNTER,
     },
 }
+
+# deletion metrics
+DEPS_MISSING_FROM_TAR = Metrics.counter(__name__, "deps_missing_from_tar")
+TAR_METADATA_CRC32C_MISMATCH = Metrics.counter(__name__, "tar_metadata_crc32c_mismatch")
+DEP_DOES_NOT_EXIST = Metrics.counter(__name__, "dep_does_not_exist")
+NULL_DEPENDENCY = Metrics.counter(__name__, "null_dependency")
+NESTED_DEPENDENCY = Metrics.counter(__name__, "nested_dependency")
+INSTANCE_BLOB_CRC32C_MISMATCH = Metrics.counter(
+    __name__, "instance_blob_crc32c_mismatch"
+)
+SERIES_DELETIONS_FAILED = Metrics.counter(__name__, "series_deletions_failed")
+SERIES_DELETED = Metrics.counter(__name__, "series_deleted")
+COD_OBJS_NOT_FOUND = Metrics.counter(__name__, "cod_objs_not_found")
