@@ -303,7 +303,7 @@ class CODObject:
                 raise TarMissingInstanceError(
                     f"Instance UID found in metadata but not in tar: {instance_uid} (options: {tar_instances.keys()})"
                 )
-            if tar_instances[instance_uid] != instance.crc32c:
+            if tar_instances[instance_uid] != instance.crc32c():
                 metrics.TAR_METADATA_CRC32C_MISMATCH.inc()
                 raise HashMismatchError(
                     f"CRC32c mismatch between tar and metadata: {instance}"
