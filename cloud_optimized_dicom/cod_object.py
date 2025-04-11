@@ -297,16 +297,16 @@ class CODObject:
                         f
                     )
         # Verify that each instance in the CODObject's metadata matches the tar (including crc32c)
-        for instance in self._metadata.instances.values():
-            if instance.deid_instance_uid not in tar_instances:
+        for instance_uid, instance in self._metadata.instances.items():
+            if instance_uid not in tar_instances:
                 metrics.DEPS_MISSING_FROM_TAR.inc()
                 raise TarMissingInstanceError(
-                    f"Instance found in metadata but not in tar: {instance.as_log}"
+                    f"Instance UID found in metadata but not in tar: {instance_uid} (options: {tar_instances.keys()})"
                 )
-            if tar_instances[instance.deid_instance_uid] != instance.crc32c:
+            if tar_instances[instance_uid] != instance.crc32c:
                 metrics.TAR_METADATA_CRC32C_MISMATCH.inc()
                 raise HashMismatchError(
-                    f"CRC32c mismatch between tar and metadata: {instance.as_log}"
+                    f"CRC32c mismatch between tar and metadata: {instance}"
                 )
         # Sanity check: tar and metadata must have the same number of instances
         if len(tar_instances) != len(self._metadata.instances):

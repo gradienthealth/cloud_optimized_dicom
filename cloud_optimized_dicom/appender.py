@@ -390,13 +390,15 @@ class CODAppender:
         """
         # Add new instances to metadata
         for instance in instances_added_to_tar:
+            # get hashed uid if series is hashed, standard if not
+            uid = instance.hashed_instance_uid() if self.cod_object.hashed_uids else instance.instance_uid()
             # TODO: deid?
             output_uri = (
-                f"{self.cod_object.tar_uri}://instances/{instance.instance_uid()}"
+                f"{self.cod_object.tar_uri}://instances/{uid}.dcm"
             )
             instance.extract_metadata(output_uri)
             instance.dicom_uri = output_uri
-            self.cod_object._metadata.instances[instance.instance_uid()] = instance
+            self.cod_object._metadata.instances[uid] = instance
         # if we added any instances, metadata is now desynced
         self.cod_object._metadata_synced = (
             False if len(instances_added_to_tar) > 0 else True

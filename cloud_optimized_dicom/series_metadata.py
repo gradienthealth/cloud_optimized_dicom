@@ -16,7 +16,7 @@ class SeriesMetadata:
         study_uid (str): The study UID of this series (should match `CODObject.study_uid`)
         series_uid (str): The series UID of this series (should match `CODObject.series_uid`)
         hashed_uids (bool): Flag indicating whether the series uses de-identified UIDs.
-        instances (dict[str, Instance]): Mapping of instance UID to Instance object
+        instances (dict[str, Instance]): Mapping of instance UID (hashed if `hashed_uids=True`) to Instance object
         custom_tags (dict): Any additional user defined data
         If loading existing metadata, this is inferred by the presence of the key `deid_study_uid` as opposed to `study_uid`.
         If creating new metadata, this is inferred by the presence/absence of `instance.uid_hash_func` for any instances that have been added.
