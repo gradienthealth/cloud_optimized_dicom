@@ -519,6 +519,8 @@ class Instance:
         """
         if self._temp_file:
             self._temp_file.close()
+            if os.path.exists(self._temp_file.name):
+                os.remove(self._temp_file.name)
 
     def __del__(self):
         """
