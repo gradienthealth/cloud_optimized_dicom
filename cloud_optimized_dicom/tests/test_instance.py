@@ -104,3 +104,21 @@ class TestInstance(unittest.TestCase):
         instance = Instance(dicom_uri=self.local_instance_path)
         assert instance._has_pixeldata is None  # Verify it's None before fetch
         self.assertTrue(instance.has_pixeldata)
+
+    def test_temp_file_cleanup(self):
+        """Test that the temp file is cleaned up when the instance is deleted"""
+        # make a temp file with valid dicom data
+        temp_file = tempfile.NamedTemporaryFile(suffix="_TEST.dcm", delete=False)
+        with open(temp_file.name, "wb") as out:
+            with open(os.path.join(self.test_data_dir, "valid.dcm"), "rb") as in_file:
+                out.write(in_file.read())
+        # make an instance with the temp file
+        instance = Instance(dicom_uri=temp_file.name, _temp_file=temp_file)
+        self.assertIsNotNone(instance._temp_file)
+        # make sure we can read the instance
+        with instance.open() as f:
+            ds = pydicom.dcmread(f)
+            self.assertEqual(ds.SOPInstanceUID, self.test_instance_uid)
+        # delete the instance - this should clean up the temp file
+        del instance
+        self.assertFalse(os.path.exists(temp_file.name))
