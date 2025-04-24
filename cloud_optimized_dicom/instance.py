@@ -50,6 +50,7 @@ class Instance:
     uid_hash_func: Callable[[str], str] = None
 
     # private internal fields
+    _temp_file: tempfile._TemporaryFileWrapper = None
     _metadata: dict = None
     _custom_offset_tables: dict = None
     _diff_hash_dupe_paths: list[str] = field(default_factory=list)
@@ -84,6 +85,7 @@ class Instance:
         if not is_remote(self.dicom_uri):
             return
 
+        # initialize temp file
         self._temp_file = tempfile.NamedTemporaryFile(suffix=".dcm", delete=False)
 
         # read remote file into local temp file
@@ -515,7 +517,7 @@ class Instance:
         """
         Delete the temporary file, if it exists.
         """
-        if hasattr(self, "_temp_file"):
+        if self._temp_file:
             self._temp_file.close()
 
     def __del__(self):
