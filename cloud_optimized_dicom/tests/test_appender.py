@@ -21,13 +21,8 @@ class TestAppender(unittest.TestCase):
         cls.test_series_uid = "1.2.276.0.50.192168001092.11156604.14547392.303"
         cls.test_study_uid = "1.2.276.0.50.192168001092.11156604.14547392.4"
         cls.local_instance_path = os.path.join(cls.test_data_dir, "valid.dcm")
-        cls.client = storage.Client(
-            project="gradient-pacs-siskin-172863",
-            client_options=ClientOptions(
-                quota_project_id="gradient-pacs-siskin-172863"
-            ),
-        )
-        cls.datastore_path = "gs://siskin-172863-temp/cod_tests/dicomweb"
+        cls.client = storage.Client()
+        cls.datastore_path = "gs://cod-test-bucket/test_datastore/dicomweb"
 
     def setUp(self):
         # before running each test, make sure datastore_path is empty
