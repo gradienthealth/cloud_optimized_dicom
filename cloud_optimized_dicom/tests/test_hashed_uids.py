@@ -1,6 +1,8 @@
 import os
 import unittest
+from tempfile import NamedTemporaryFile
 
+import pydicom
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 
@@ -165,3 +167,29 @@ class TestDeid(unittest.TestCase):
         self.assertIn(instance.hashed_instance_uid(), instances_dict)
         # the original UID should not be present
         self.assertNotIn(instance.instance_uid(), instances_dict)
+
+    def test_append_diff_hash_dupe_with_hashed_uids(self):
+        """Test that a diff hash dupe is detected with hashed uids"""
+        cod_object = CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=example_hash_function(self.test_study_uid),
+            series_uid=example_hash_function(self.test_series_uid),
+            lock=False,
+            hashed_uids=True,
+        )
+        instance = Instance(
+            dicom_uri=self.local_instance_path, uid_hash_func=example_hash_function
+        )
+        append_result = cod_object.append([instance], dirty=True)
+        self.assertEqual(append_result.new[0], instance)
+        # make a diff hash dupe
+        with NamedTemporaryFile(suffix=".dcm") as f:
+            with pydicom.dcmread(self.local_instance_path) as ds:
+                ds.add_new((0x1234, 0x5678), "DS", "12345678")
+                ds.save_as(f.name)
+            diff_hash_dupe = Instance(
+                dicom_uri=f.name, uid_hash_func=example_hash_function
+            )
+            append_result = cod_object.append([diff_hash_dupe], dirty=True)
+            self.assertEqual(append_result.conflict[0], diff_hash_dupe)

@@ -76,6 +76,62 @@ class TestAppender(unittest.TestCase):
         self.assertEqual(len(same), 0)
         self.assertEqual(len(conflict), 0)
 
+    def test_append_true_dupe(self):
+        cod_obj = CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=False,
+        )
+        # start by appending instance normally
+        instance = Instance(dicom_uri=self.local_instance_path)
+        new, same, conflict, errors = cod_obj.append([instance], dirty=True)
+        self.assertEqual(len(errors), 0)
+        self.assertEqual(len(new), 1)
+        self.assertEqual(len(same), 0)
+        self.assertEqual(len(conflict), 0)
+        # now append the same instance again, which should be a duplicate
+        new, same, conflict, errors = cod_obj.append([instance], dirty=True)
+        self.assertEqual(len(errors), 0)
+        self.assertEqual(len(new), 0)
+        self.assertEqual(len(same), 1)
+        self.assertEqual(len(conflict), 0)
+
+    def test_append_diff_hash_dupe(self):
+        cod_obj = CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=False,
+        )
+        # start by appending instance normally
+        instance = Instance(dicom_uri=self.local_instance_path)
+        new, same, conflict, errors = cod_obj.append([instance], dirty=True)
+        self.assertEqual(len(errors), 0)
+        self.assertEqual(len(new), 1)
+        self.assertEqual(len(same), 0)
+        self.assertEqual(len(conflict), 0)
+        self.assertEqual(len(cod_obj._metadata.instances), 1)
+        self.assertEqual(
+            cod_obj._metadata.instances[instance.instance_uid()].crc32c(),
+            instance.crc32c(),
+        )
+        # make a diff hash dupe
+        with NamedTemporaryFile(suffix=".dcm") as f:
+            with pydicom.dcmread(self.local_instance_path) as ds:
+                ds.add_new((0x1234, 0x5678), "DS", "12345678")
+                ds.save_as(f.name)
+            self.assertTrue(os.path.exists(f.name))
+            diff_hash_dupe = Instance(dicom_uri=f.name)
+            self.assertNotEqual(diff_hash_dupe.crc32c(), instance.crc32c())
+            new, same, conflict, errors = cod_obj.append([diff_hash_dupe], dirty=True)
+            self.assertEqual(len(errors), 0)
+            self.assertEqual(len(new), 0)
+            self.assertEqual(len(same), 0)
+            self.assertEqual(len(conflict), 1)
+
     def test_append_and_sync(self):
         cod_obj = CODObject(
             client=self.client,
