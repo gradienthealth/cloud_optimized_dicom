@@ -311,7 +311,7 @@ class CODAppender:
             logger.warning(
                 f"Skipping duplicate instance (diff hash): {dupe_instance} (duplicate of {existing_instance.dicom_uri})"
             )
-            if existing_instance.append_diff_hash_dupe(dupe_instance):
+            if existing_instance.append_diff_hash_dupe(dupe_instance._original_path):
                 # metadata is now desynced because we added to diff_hash_dupe_paths
                 self.cod_object._metadata_synced = False
 
