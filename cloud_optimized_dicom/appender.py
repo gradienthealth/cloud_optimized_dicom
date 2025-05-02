@@ -201,6 +201,23 @@ class CODAppender:
                 self.append_result.errors.append((instance, e))
         return instances_in_series
 
+    def _get_instance_uid_for_comparison(
+        self, instance: Instance, trust_hints_if_available: bool = False
+    ) -> str:
+        """
+        Get the instance uid for comparison. If the cod object uses hashed uids,
+        return the hashed uid, otherwise return the standard uid.
+        """
+        return (
+            instance.hashed_instance_uid(
+                trust_hints_if_available=trust_hints_if_available
+            )
+            if self.cod_object.hashed_uids
+            else instance.instance_uid(
+                trust_hints_if_available=trust_hints_if_available
+            )
+        )
+
     def _calculate_state_change(self, instances: list[Instance]) -> StateChange:
         """For each file in the grouping, determine if it is NEW, SAME, or DIFF
         compared to the current series metadata json which contains instance_uid and crc32c values
@@ -224,7 +241,9 @@ class CODAppender:
         for new_instance in instances:
             try:
                 # if deid instance id isn't in existing metadata dict, this file must be new
-                instance_uid = new_instance.instance_uid(trust_hints_if_available=True)
+                instance_uid = self._get_instance_uid_for_comparison(
+                    new_instance, trust_hints_if_available=True
+                )
                 if instance_uid not in self.cod_object._metadata.instances:
                     state_change.new.append((new_instance, None, None))
                     continue
@@ -323,8 +342,8 @@ class CODAppender:
         Returns:
             instances_added_to_tar (list): list of instances that got added to the tar successfully
         """
-        # If a tarball already exists, download it (no need to get index, will be recalculated anyways)
-        if len(self.cod_object._metadata.instances) > 0:
+        # If a tarball already exists (and this is a clean append), download it (no need to get index, will be recalculated anyways)
+        if len(self.cod_object._metadata.instances) > 0 and self.cod_object.lock:
             self.cod_object._force_fetch_tar(fetch_index=False)
 
         instances_added_to_tar = self._create_or_append_tar(
@@ -372,8 +391,9 @@ class CODAppender:
         """
         Given a tar on disk, open it with ratarmountcore and save the index to `cod_object.index_file_path`.
         """
-        # at this point the index should not exist. Assert this
-        assert not os.path.exists(self.cod_object.index_file_path)
+        # index needs to be recreated if it already exists
+        if os.path.exists(self.cod_object.index_file_path):
+            os.remove(self.cod_object.index_file_path)
         # explicitly bypass property getter to avoid AttributeError: does not exist
         with rmc_open(
             self.cod_object.tar_file_path,
