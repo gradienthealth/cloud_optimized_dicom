@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import find_packages, setup
 
 setup(
     name="cloud-optimized-dicom",
@@ -8,7 +8,11 @@ setup(
     author="Cal Nightingale",
     author_email="cal@gradienthealth.io",
     license="MIT",
-    packages=["cloud_optimized_dicom"],
+    packages=find_packages(),
+    include_package_data=True,
+    package_data={
+        "": ["pydicom/src/pydicom/**/*"],
+    },
     install_requires=[
         "smart-open==7.1.0",
         "ratarmountcore==0.8.0",
