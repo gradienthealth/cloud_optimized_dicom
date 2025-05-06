@@ -3,12 +3,12 @@ from io import BytesIO
 from unittest.mock import patch
 
 import numpy as np
-from pydicom.dataset import Dataset, FileMetaDataset
-from pydicom.encaps import encapsulate
-from pydicom.errors import InvalidDicomError
-from pydicom.uid import generate_uid
 
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
+from cloud_optimized_dicom.pydicom.src.pydicom.dataset import Dataset, FileMetaDataset
+from cloud_optimized_dicom.pydicom.src.pydicom.encaps import encapsulate
+from cloud_optimized_dicom.pydicom.src.pydicom.errors import InvalidDicomError
+from cloud_optimized_dicom.pydicom.src.pydicom.uid import generate_uid
 
 
 def _generate_random_pixel_data(length: int) -> bytes:

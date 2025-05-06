@@ -1,15 +1,6 @@
 import os
-import sys
 import unittest
-
-# Add pydicom submodule src directory to Python path
-from pathlib import Path
 from tempfile import NamedTemporaryFile
-
-pydicom_src_dir = Path(__file__).parent.parent.parent / "pydicom" / "src" / "pydicom"
-if str(pydicom_src_dir) not in sys.path:
-    print(f"Adding to path: {pydicom_src_dir}")
-    sys.path.insert(0, str(pydicom_src_dir))
 
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
