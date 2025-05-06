@@ -1,0 +1,3 @@
+[submodule "cloud_optimized_dicom/pydicom"]
+	path = cloud_optimized_dicom/pydicom
+	url = https://github.com/pydicom/pydicom.git
