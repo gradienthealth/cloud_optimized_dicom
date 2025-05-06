@@ -10,7 +10,6 @@ setup(
     license="MIT",
     packages=["cloud_optimized_dicom"],
     install_requires=[
-        "pydicom",
         "smart-open==7.1.0",
         "ratarmountcore==0.8.0",
         "numpy",
