@@ -10,9 +10,9 @@ from ratarmountcore import open as rmc_open
 from smart_open import open as smart_open
 
 import cloud_optimized_dicom.metrics as metrics
-from cloud_optimized_dicom import pydicom3
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 from cloud_optimized_dicom.hints import Hints
+from cloud_optimized_dicom.pydicom3 import DataElement, dcmread
 from cloud_optimized_dicom.utils import (
     DICOM_PREAMBLE,
     _delete_gcs_dep,
@@ -108,7 +108,7 @@ class Instance:
         """
         # populate all true values
         with self.open() as f:
-            with pydicom3.dcmread(f, defer_size=1024) as ds:
+            with dcmread(f, defer_size=1024) as ds:
                 self._instance_uid = getattr(ds, "SOPInstanceUID")
                 self._series_uid = getattr(ds, "SeriesInstanceUID")
                 self._study_uid = getattr(ds, "StudyInstanceUID")
@@ -327,12 +327,12 @@ class Instance:
         Extract metadata from the instance, populating self._metadata and self._custom_offset_tables
         """
         with self.open() as f:
-            with pydicom3.dcmread(f, defer_size=1024) as ds:
+            with dcmread(f, defer_size=1024) as ds:
                 # set custom offset tables
                 self._custom_offset_tables = get_multiframe_offset_tables(ds)
 
                 # define custom bulk data handler to include the head 512 bytes of overlarge elements
-                def bulk_data_handler(el: pydicom3.DataElement) -> str:
+                def bulk_data_handler(el: DataElement) -> str:
                     """Given a bulk data element, return a dict containing this instance's output_uri
                     and the head 512 bytes of the element"""
                     # TODO would be nice to find a way to include the tail 512 bytes as well

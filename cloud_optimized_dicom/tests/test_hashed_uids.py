@@ -5,10 +5,10 @@ from tempfile import NamedTemporaryFile
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 
-from cloud_optimized_dicom import pydicom3
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.instance import Instance
+from cloud_optimized_dicom.pydicom3 import FileDataset, Tag, dcmread
 
 
 def example_hash_function(uid: str) -> str:
@@ -185,7 +185,7 @@ class TestDeid(unittest.TestCase):
         self.assertEqual(append_result.new[0], instance)
         # make a diff hash dupe
         with NamedTemporaryFile(suffix=".dcm") as f:
-            with pydicom3.dcmread(self.local_instance_path) as ds:
+            with dcmread(self.local_instance_path) as ds:
                 ds.add_new((0x1234, 0x5678), "DS", "12345678")
                 ds.save_as(f.name)
             diff_hash_dupe = Instance(
