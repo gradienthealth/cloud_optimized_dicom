@@ -4,11 +4,8 @@ from unittest.mock import patch
 
 import numpy as np
 
+from cloud_optimized_dicom import pydicom3
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
-from cloud_optimized_dicom.pydicom.src.pydicom.dataset import Dataset, FileMetaDataset
-from cloud_optimized_dicom.pydicom.src.pydicom.encaps import encapsulate
-from cloud_optimized_dicom.pydicom.src.pydicom.errors import InvalidDicomError
-from cloud_optimized_dicom.pydicom.src.pydicom.uid import generate_uid
 
 
 def _generate_random_pixel_data(length: int) -> bytes:
@@ -21,7 +18,7 @@ def create_sample_dataset(
     is_pixeldata_encapsulated=True,
     include_eot=False,
     include_bot=False,
-) -> Dataset:
+) -> pydicom3.dataset.Dataset:
     """
     Creates a sample DICOM dataset.
 
@@ -34,25 +31,25 @@ def create_sample_dataset(
     Returns:
         pydicom.Dataset: A sample DICOM dataset created using the given parameters.
     """
-    file_meta = FileMetaDataset()
-    file_meta.MediaStorageSOPClassUID = generate_uid()
-    file_meta.MediaStorageSOPInstanceUID = generate_uid()
-    file_meta.TransferSyntaxUID = generate_uid()
+    file_meta = pydicom3.dataset.FileMetaDataset()
+    file_meta.MediaStorageSOPClassUID = pydicom3.uid.generate_uid()
+    file_meta.MediaStorageSOPInstanceUID = pydicom3.uid.generate_uid()
+    file_meta.TransferSyntaxUID = pydicom3.uid.generate_uid()
 
-    ds = Dataset()
+    ds = pydicom3.dataset.Dataset()
     ds.file_meta = file_meta
 
     ds.PatientName = "Test^Patient"
     ds.PatientID = "123456"
-    ds.StudyInstanceUID = generate_uid()
-    ds.SeriesInstanceUID = generate_uid()
-    ds.SOPInstanceUID = generate_uid()
+    ds.StudyInstanceUID = pydicom3.uid.generate_uid()
+    ds.SeriesInstanceUID = pydicom3.uid.generate_uid()
+    ds.SOPInstanceUID = pydicom3.uid.generate_uid()
     ds.NumberOfFrames = number_of_frames
 
     raw_pixeldata = [_generate_random_pixel_data(200) for _ in range(number_of_frames)]
 
     if is_pixeldata_encapsulated:
-        pixelData = encapsulate(raw_pixeldata, has_bot=include_bot)
+        pixelData = pydicom3.encaps.encapsulate(raw_pixeldata, has_bot=include_bot)
     else:
         pixelData = bytes([item for sublist in raw_pixeldata for item in sublist])
 
@@ -196,8 +193,8 @@ class TestMultiframeOffsetTable(unittest.TestCase):
             include_eot=False,
             include_bot=False,
         )
-        mock_generate_pixel_data_fragment_offsets.side_effect = InvalidDicomError(
-            "Test error"
+        mock_generate_pixel_data_fragment_offsets.side_effect = (
+            pydicom3.errors.InvalidDicomError("Test error")
         )
 
         get_multiframe_offset_tables(dataset)

@@ -10,7 +10,7 @@ from ratarmountcore import open as rmc_open
 from smart_open import open as smart_open
 
 import cloud_optimized_dicom.metrics as metrics
-import cloud_optimized_dicom.pydicom.src.pydicom as pydicom3
+from cloud_optimized_dicom import pydicom3
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.utils import (

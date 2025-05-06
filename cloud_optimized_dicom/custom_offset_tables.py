@@ -1,10 +1,7 @@
 import logging
 from typing import Generator, Tuple
 
-from cloud_optimized_dicom.pydicom.src.pydicom import DataElement, Dataset
-from cloud_optimized_dicom.pydicom.src.pydicom.errors import InvalidDicomError
-from cloud_optimized_dicom.pydicom.src.pydicom.filebase import DicomBytesIO
-from cloud_optimized_dicom.pydicom.src.pydicom.tag import Tag
+from cloud_optimized_dicom import pydicom3
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -15,7 +12,7 @@ BOT_PER_ELEMENT_SIZE = 4
 
 
 def _generate_pixel_data_fragment_extended(
-    fp: DicomBytesIO,
+    fp: pydicom3.filebase.DicomFileLike,
 ) -> Generator[Tuple[bytes, int], None, None]:
     """
     Based on PyDICOM generate_pixel_data_fragment
@@ -45,7 +42,7 @@ def _generate_pixel_data_fragment_extended(
     # fragment after the Basic Offset Table
     while True:
         try:
-            tag = Tag(fp.read_tag())
+            tag = pydicom3.tag.Tag(fp.read_tag())
         except EOFError:
             break
 
@@ -92,7 +89,7 @@ def _get_offsets_for_encapsulated_pixeldata(
         It uses the `_generate_pixel_data_fragment_extended` function to iterate over the
         fragments of the pixel data and calculates the offsets and file positions accordingly.
     """
-    dicom_bytes_io = DicomBytesIO(pixel_data)
+    dicom_bytes_io = pydicom3.filebase.DicomBytesIO(pixel_data)
     dicom_bytes_io.is_little_endian = True
 
     fragment_count = 0
@@ -159,7 +156,7 @@ def _get_offsets_for_encapsulated_pixeldata(
 
 def _get_offsets_for_uncompressed_pixeldata(
     pixel_data_offset: int,
-    pixel_data_element: DataElement,
+    pixel_data_element: pydicom3.dataset.DataElement,
     num_of_frames: int,
 ) -> Generator[Tuple[int, int, int], None, None]:
     """
@@ -188,7 +185,7 @@ def _get_offsets_for_uncompressed_pixeldata(
 
 
 def _generate_pixel_data_fragment_offsets(
-    dataset: Dataset,
+    dataset: pydicom3.dataset.Dataset,
 ) -> Generator[Tuple[int, int, int], None, None]:
     """
     DICOM Standard :
@@ -226,7 +223,7 @@ def _generate_pixel_data_fragment_offsets(
     pixel_data_offset = pixel_data_element.file_tell
 
     if not pixel_data_offset:
-        raise InvalidDicomError("Pixel data not found in the DICOM")
+        raise pydicom3.errors.InvalidDicomError("Pixel data not found in the DICOM")
 
     if not pixel_data_element.is_undefined_length:
         num_of_frames = int(dataset["NumberOfFrames"].value)
@@ -242,7 +239,7 @@ def _generate_pixel_data_fragment_offsets(
         )
 
 
-def get_multiframe_offset_tables(dataset: Dataset) -> dict:
+def get_multiframe_offset_tables(dataset: pydicom3.dataset.Dataset) -> dict:
     """
     Get offset tables for multiframe datasets.
 
@@ -284,7 +281,7 @@ def get_multiframe_offset_tables(dataset: Dataset) -> dict:
 
     except (EOFError, ValueError):
         logger.warning("Some errors occured when creating Offset table")
-    except InvalidDicomError as error:
+    except pydicom3.errors.InvalidDicomError as error:
         logger.warning(str(error))
 
     return result

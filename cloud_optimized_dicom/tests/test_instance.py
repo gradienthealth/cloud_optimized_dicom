@@ -3,7 +3,7 @@ import tarfile
 import tempfile
 import unittest
 
-import cloud_optimized_dicom.pydicom.src.pydicom as pydicom3
+from cloud_optimized_dicom import pydicom3
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.utils import is_remote
 

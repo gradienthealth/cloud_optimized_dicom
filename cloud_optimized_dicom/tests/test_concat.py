@@ -8,7 +8,7 @@ from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
 
-import cloud_optimized_dicom.pydicom.src.pydicom as pydicom3
+from cloud_optimized_dicom import pydicom3
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Hints, Instance
 from cloud_optimized_dicom.query_parsing import query_result_to_codobjects

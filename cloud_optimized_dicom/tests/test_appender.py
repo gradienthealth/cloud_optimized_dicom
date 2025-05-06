@@ -5,7 +5,7 @@ from tempfile import NamedTemporaryFile
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 
-import cloud_optimized_dicom.pydicom.src.pydicom as pydicom3
+from cloud_optimized_dicom import pydicom3
 from cloud_optimized_dicom.appender import CODAppender
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.hints import Hints
