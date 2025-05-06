@@ -21,3 +21,9 @@ def fake_version(name):
 
 
 importlib.metadata.version = fake_version
+
+pydicom3 = importlib.import_module("pydicom")
+
+# undo the patch now that we've imported pydicom
+importlib.metadata.version = _real_version
+sys.path.pop(0)
