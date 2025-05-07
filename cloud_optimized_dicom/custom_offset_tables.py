@@ -1,10 +1,13 @@
 import logging
 from typing import Generator, Tuple
 
-from pydicom import DataElement, Dataset
-from pydicom.errors import InvalidDicomError
-from pydicom.filebase import DicomBytesIO
-from pydicom.tag import Tag
+from cloud_optimized_dicom.pydicom3 import (
+    DataElement,
+    Dataset,
+    DicomBytesIO,
+    InvalidDicomError,
+    Tag,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

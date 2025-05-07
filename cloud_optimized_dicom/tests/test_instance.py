@@ -3,9 +3,8 @@ import tarfile
 import tempfile
 import unittest
 
-import pydicom
-
 from cloud_optimized_dicom.instance import Instance
+from cloud_optimized_dicom.pydicom3 import FileDataset, Tag, dcmread
 from cloud_optimized_dicom.utils import is_remote
 
 
@@ -26,13 +25,13 @@ class TestInstance(unittest.TestCase):
     def test_local_open(self):
         instance = Instance(self.local_instance_path)
         with instance.open() as f:
-            ds = pydicom.dcmread(f)
+            ds = dcmread(f)
             self.assertEqual(ds.SOPInstanceUID, self.test_instance_uid)
 
     def test_remote_open(self):
         instance = Instance(self.remote_dicom_uri)
         with instance.open() as f:
-            ds = pydicom.dcmread(f)
+            ds = dcmread(f)
             self.assertEqual(ds.SOPInstanceUID, self.test_instance_uid)
 
     def test_validate(self):
@@ -117,7 +116,7 @@ class TestInstance(unittest.TestCase):
         self.assertIsNotNone(instance._temp_file)
         # make sure we can read the instance
         with instance.open() as f:
-            ds = pydicom.dcmread(f)
+            ds = dcmread(f)
             self.assertEqual(ds.SOPInstanceUID, self.test_instance_uid)
         # delete the instance - this should clean up the temp file
         del instance
