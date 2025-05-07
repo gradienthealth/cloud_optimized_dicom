@@ -146,7 +146,7 @@ class CODObject:
     # URI properties
     @property
     def datastore_series_uri(self) -> str:
-        """The URI of the series in the COD datastore."""
+        """The URI of the series in the COD datastore; i.e. `gs://<datastore_path>/studies/<study_uid>/series/<series_uid>`"""
         return os.path.join(
             self.datastore_path, "studies", self.study_uid, "series", self.series_uid
         )
