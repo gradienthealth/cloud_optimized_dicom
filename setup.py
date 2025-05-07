@@ -21,4 +21,9 @@ setup(
         "apache-beam[gcp]==2.63.0",
         "filetype==1.2.0",
     ],
+    extras_require={
+        "test": [
+            "pydicom==2.3.0",
+        ],
+    },
 )
