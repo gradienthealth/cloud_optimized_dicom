@@ -233,6 +233,10 @@ class Instance:
             self.study_uid(trust_hints_if_available=trust_hints_if_available)
         )
 
+    def get_instance_uid(self, hashed: bool):
+        """instance_uid getter method that returns the instance_uid or hashed_instance_uid, dpepending on the `hashed` flag"""
+        return self.hashed_instance_uid() if hashed else self.instance_uid()
+
     def open(self):
         """
         Open an instance and return a file pointer to its bytes, which can be given to pydicom.dcmread()

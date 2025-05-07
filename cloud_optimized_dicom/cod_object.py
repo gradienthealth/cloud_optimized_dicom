@@ -22,6 +22,7 @@ from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
+    is_remote,
     public_method,
     upload_and_count,
 )
@@ -263,6 +264,7 @@ class CODObject:
             assert (
                 self._metadata
             ), "Metadata sync attempted but CODObject has no metadata"
+            self._set_dicom_uris_to_datastore()
             self._gzip_and_upload_metadata()
             self._metadata_synced = True
         # now that the tar has been synced,
@@ -380,6 +382,15 @@ class CODObject:
             metrics.STORAGE_CLASS_COUNTERS["GET"][index_blob.storage_class].inc()
         # we just fetched the tar, so it is guaranteed to be in the same state as the datastore
         self._tar_synced = True
+
+    def _set_dicom_uris_to_datastore(self):
+        """Set the dicom_uri of each instance to the datastore URI"""
+        for instance in self._metadata.instances.values():
+            # skip remote .tar instances as they are already in the datastore
+            if is_remote(instance.dicom_uri) and instance.is_nested_in_tar:
+                continue
+            uid = instance.get_instance_uid(hashed=self.hashed_uids)
+            instance.dicom_uri = f"{self.tar_uri}://instances/{uid}.dcm"
 
     def _gzip_and_upload_metadata(self):
         """
