@@ -353,6 +353,18 @@ class CODObject:
             logger.info(f"GRADIENT_STATE_LOGS:DELETED:{deleted_dependencies}")
         return deleted_dependencies
 
+    @public_method
+    def pull_tar(self, dirty: bool = False):
+        """Pull tar and index from GCS to local temp dir,
+        modify local origin path of instances to point to local tar.
+        Ensure multiple instance.open within the series won't result in multiple GCS GET operations.
+        """
+        self._force_fetch_tar(fetch_index=True)
+        for instance_uid, instance in self.get_metadata(
+            create_if_missing=False, dirty=dirty
+        ).instances.items():
+            instance.dicom_uri = f"{self.tar_file_path}://instances/{instance_uid}.dcm"
+
     # Internal operations
     def _force_fetch_tar(self, fetch_index: bool = True):
         """Download the tarball (and index) from GCS.
