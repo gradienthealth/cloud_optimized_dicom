@@ -139,6 +139,11 @@ class CODObject:
         return _tar_file_path
 
     @property
+    def tar_is_empty(self) -> bool:
+        """Check if the tar file is empty."""
+        return os.path.getsize(self.tar_file_path) == EMPTY_TAR_SIZE
+
+    @property
     def index_file_path(self) -> str:
         """The path to the index file for this series in the temporary directory."""
         return os.path.join(self.get_temp_dir().name, f"index.sqlite")
@@ -241,7 +246,7 @@ class CODObject:
         self._locker.verify()
         # sync tar
         if not self._tar_synced:
-            if os.path.getsize(self.tar_file_path) == EMPTY_TAR_SIZE:
+            if self.tar_is_empty:
                 logger.warning(f"Skipping tar sync - tar is empty: {self.as_log}")
                 return
             assert os.path.exists(
