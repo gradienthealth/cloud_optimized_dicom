@@ -31,3 +31,5 @@ from pydicom.uid import generate_uid
 # undo the patch now that we've imported pydicom
 importlib.metadata.version = _real_version
 sys.path.pop(0)
+
+__version__ = "3.0.1"
