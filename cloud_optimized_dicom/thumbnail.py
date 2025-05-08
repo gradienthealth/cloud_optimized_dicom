@@ -4,10 +4,19 @@ import pydicom3
 
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
+from cloud_optimized_dicom.metrics import SERIES_MISSING_PIXEL_DATA
 
 logger = logging.getLogger(__name__)
 
 SORTING_ATTRIBUTES = {"InstanceNumber": "00200013", "SliceLocation": "00201041"}
+
+
+class ThumbnailError(Exception):
+    """Error generating thumbnail."""
+
+
+class NoPixelDataError(ThumbnailError):
+    """Instances have no pixel data."""
 
 
 def _sort_instances(instances: list[Instance]) -> list[Instance]:
@@ -31,16 +40,29 @@ def _sort_instances(instances: list[Instance]) -> list[Instance]:
     return instances
 
 
+def _remove_instances_without_pixeldata(
+    cod_obj: CODObject, instances: list[Instance]
+) -> list[Instance]:
+    """Remove instances that do not have pixel data."""
+    num_instances = len(instances)
+    instances = [instance for instance in instances if instance.has_pixeldata]
+    if len(instances) == 0:
+        SERIES_MISSING_PIXEL_DATA.inc()
+        raise NoPixelDataError(
+            f"None of the {num_instances} instances have pixel data for cod object {cod_obj}"
+        )
+    return instances
+
+
 def generate_thumbnail(cod_obj: CODObject, dirty: bool = False):
     """Generate a thumbnail for a COD object."""
     # fetch the tar, if it's not already fetched
     if cod_obj.tar_is_empty:
         cod_obj.pull_tar(dirty=dirty)
 
-    # fetch list of instances
     instances = cod_obj.get_metadata(dirty=dirty).instances.values()
-    # filter out instances without pixel data
-    instances = [instance for instance in instances if instance.has_pixeldata]
+    assert len(instances) > 0, "COD object has no instances"
+    instances = _remove_instances_without_pixeldata(cod_obj, instances)
     instances = _sort_instances(instances)
     with instances[0].open() as f:
         ds = pydicom3.dcmread(f)
