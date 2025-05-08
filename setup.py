@@ -11,8 +11,8 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
-        "smart-open==7.1.0",
-        "ratarmountcore==0.8.0",
+        "smart-open==7.0.4",
+        "ratarmountcore==0.7.1",
         "numpy",
         "google-cloud-storage==2.19.0",
         "apache-beam[gcp]==2.63.0",
