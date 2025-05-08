@@ -4,13 +4,14 @@ import os
 import tempfile
 import unittest
 
+import pydicom3
+import pydicom3.tag
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
 
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Hints, Instance
-from cloud_optimized_dicom.pydicom3 import FileDataset, Tag, dcmread
 from cloud_optimized_dicom.query_parsing import query_result_to_codobjects
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
@@ -175,7 +176,7 @@ class TestConcat(unittest.TestCase):
                     data = tar.read(
                         instance._byte_offsets[1] - instance._byte_offsets[0]
                     )
-                    with dcmread(io.BytesIO(data)) as ds:
+                    with pydicom3.dcmread(io.BytesIO(data)) as ds:
                         self.assertEqual(ds.SOPInstanceUID, instance.instance_uid())
 
     def test_dupe_instance(self):
@@ -260,11 +261,11 @@ class TestConcat(unittest.TestCase):
         v2_blob = storage.Blob.from_string(v2_uri, client=self.client)
         v1_blob.upload_from_filename(dcm_path)
         # change something (cause hash mismatch)
-        ds = dcmread(dcm_path)
+        ds = pydicom3.dcmread(dcm_path)
         study_uid = getattr(ds, "StudyInstanceUID")
         series_uid = getattr(ds, "SeriesInstanceUID")
         instance_uid = getattr(ds, "SOPInstanceUID")
-        ds.add_new(Tag(0x6001, 0x0010), "LO", "Gradient Health")
+        ds.add_new(pydicom3.tag.Tag(0x6001, 0x0010), "LO", "Gradient Health")
         with tempfile.NamedTemporaryFile() as temp_file:
             ds.save_as(temp_file.name)
             v2_blob.upload_from_filename(temp_file.name)
