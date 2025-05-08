@@ -1,0 +1,22 @@
+name: lint_and_format
+
+on: 
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  lint_and_format:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+        cache: 'pip'
+    - run: pip install autoflake black isort pytype
+    - run: autoflake --check-diff .
+    - run: black --check --diff .
+    - run: isort --check-only --diff .
