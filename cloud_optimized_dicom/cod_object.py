@@ -487,3 +487,29 @@ class CODObject:
         # Regardless of exception(s), we still want to clean up the temp dir
         # self.cleanup_temp_dir() TODO reimplement
         return False  # Don't suppress any exceptions
+
+    @classmethod
+    def from_uri(
+        cls,
+        uri: str,
+        client: storage.Client,
+        lock: bool,
+        hashed_uids: bool,
+        create_if_missing: bool,
+    ):
+        """Create a CODObject from a URI"""
+        if not is_remote(uri) or "/studies/" not in uri or "/series/" not in uri:
+            raise ValueError(f"Invalid COD URI: {uri}")
+        datastore_uri, overflow = uri.split("/studies/", 1)
+        study_uid, series_and_overflow = overflow.split("/series/", 1)
+        # remove all possible overflow from the series uid: subfile names, tar extension
+        series_uid = series_and_overflow.split("/", 1)[0].rstrip(".tar")
+        return cls(
+            datastore_path=datastore_uri,
+            client=client,
+            study_uid=study_uid,
+            series_uid=series_uid,
+            lock=lock,
+            hashed_uids=hashed_uids,
+            create_if_missing=create_if_missing,
+        )
