@@ -2,6 +2,7 @@ import os
 import unittest
 from tempfile import NamedTemporaryFile
 
+import pydicom3
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 
@@ -9,7 +10,6 @@ from cloud_optimized_dicom.appender import CODAppender
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.instance import Instance
-from cloud_optimized_dicom.pydicom3 import FileDataset, dcmread
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 
@@ -120,7 +120,7 @@ class TestAppender(unittest.TestCase):
         )
         # make a diff hash dupe
         with NamedTemporaryFile(suffix=".dcm") as f:
-            with dcmread(self.local_instance_path) as ds:
+            with pydicom3.dcmread(self.local_instance_path) as ds:
                 ds.add_new((0x1234, 0x5678), "DS", "12345678")
                 ds.save_as(f.name)
             self.assertTrue(os.path.exists(f.name))
@@ -259,7 +259,7 @@ class TestAppender(unittest.TestCase):
 
         # create a corrupt dicom (has proper header but then is garbage)
         with NamedTemporaryFile(suffix=".dcm") as f:
-            with FileDataset(
+            with pydicom3.FileDataset(
                 f.name, {}, is_little_endian=True, is_implicit_VR=False
             ) as ds:
                 ds.StudyInstanceUID = (
