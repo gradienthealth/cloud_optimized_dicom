@@ -17,7 +17,7 @@ setup(
         "google-cloud-storage==2.19.0",
         "apache-beam[gcp]==2.63.0",
         "filetype==1.2.0",
-        "pydicom @ git+https://github.com/gradienthealth/pydicom-3.git",
+        "pydicom3 @ git+https://github.com/gradienthealth/pydicom-3.git",
     ],
     extras_require={
         "test": [
