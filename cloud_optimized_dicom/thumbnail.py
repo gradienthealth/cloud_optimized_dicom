@@ -3,6 +3,7 @@ import logging
 import pydicom3
 
 from cloud_optimized_dicom.cod_object import CODObject
+from cloud_optimized_dicom.img_utils import decode_pixel_data
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.metrics import SERIES_MISSING_PIXEL_DATA
 
@@ -64,6 +65,8 @@ def generate_thumbnail(cod_obj: CODObject, dirty: bool = False):
     assert len(instances) > 0, "COD object has no instances"
     instances = _remove_instances_without_pixeldata(cod_obj, instances)
     instances = _sort_instances(instances)
-    with instances[0].open() as f:
-        ds = pydicom3.dcmread(f)
-        print(ds.StudyInstanceUID)
+    for instance in instances:
+        with instance.open() as f:
+            ds = pydicom3.dcmread(f, defer_size=1024)
+            ds = decode_pixel_data(ds)
+            print(ds.SOPInstanceUID)
