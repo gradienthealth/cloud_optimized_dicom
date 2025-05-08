@@ -62,3 +62,9 @@ INSTANCE_BLOB_CRC32C_MISMATCH = Metrics.counter(
 SERIES_DELETIONS_FAILED = Metrics.counter(__name__, "series_deletions_failed")
 SERIES_DELETED = Metrics.counter(__name__, "series_deleted")
 COD_OBJS_NOT_FOUND = Metrics.counter(__name__, "cod_objs_not_found")
+
+# thumbnail metrics
+THUMBNAIL_NAMESPACE = f"{NAMESPACE}:thumbnail"
+SERIES_MISSING_PIXEL_DATA = Metrics.counter(
+    THUMBNAIL_NAMESPACE, "series_missing_pixel_data"
+)
