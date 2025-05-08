@@ -1,4 +1,3 @@
-import os
 import unittest
 
 from google.api_core.client_options import ClientOptions
@@ -13,28 +12,22 @@ from cloud_optimized_dicom.utils import delete_uploaded_blobs
 class TestThumbnail(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
-        cls.test_instance_uid = "1.2.276.0.50.192168001092.11156604.14547392.313"
-        cls.test_series_uid = "1.2.276.0.50.192168001092.11156604.14547392.303"
-        cls.test_study_uid = "1.2.276.0.50.192168001092.11156604.14547392.4"
-        cls.local_instance_path = os.path.join(cls.test_data_dir, "valid.dcm")
+        cls.series_uri = "gs://auritus-681591-pacs-deid/v1.0/dicomweb/studies/1.2.826.0.1.3680043.8.498.10001512690545661607117237232241841743/series/1.2.826.0.1.3680043.8.498.51513628843911584889313064629860199507"
         cls.client = storage.Client(
-            project="gradient-pacs-siskin-172863",
+            project="gradient-pacs-auritus-681591",
             client_options=ClientOptions(
-                quota_project_id="gradient-pacs-siskin-172863"
+                quota_project_id="gradient-pacs-auritus-681591"
             ),
         )
         cls.datastore_path = "gs://siskin-172863-temp/cod_thumbnail_tests/dicomweb"
         delete_uploaded_blobs(cls.client, [cls.datastore_path])
 
     def test_generate_thumbnail(self):
-        instance = Instance(dicom_uri=self.local_instance_path)
-        with CODObject(
-            datastore_path=self.datastore_path,
+        with CODObject.from_uri(
+            uri=self.series_uri,
             client=self.client,
-            study_uid=self.test_study_uid,
-            series_uid=self.test_series_uid,
             lock=False,
+            hashed_uids=True,
+            create_if_missing=False,
         ) as cod_obj:
-            cod_obj.append([instance], dirty=True)
             generate_thumbnail(cod_obj, dirty=True)
