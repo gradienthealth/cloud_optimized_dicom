@@ -16,8 +16,12 @@ class ThumbnailError(Exception):
     """Error generating thumbnail."""
 
 
-class NoPixelDataError(ThumbnailError):
-    """Instances have no pixel data."""
+class SeriesMissingPixelDataError(ThumbnailError):
+    """Series has no pixel data."""
+
+
+class NoExtractablePixelDataError(ThumbnailError):
+    """Series has pixel data, but we failed to extract any of it."""
 
 
 def _sort_instances(instances: list[Instance]) -> list[Instance]:
@@ -49,10 +53,44 @@ def _remove_instances_without_pixeldata(
     instances = [instance for instance in instances if instance.has_pixeldata]
     if len(instances) == 0:
         SERIES_MISSING_PIXEL_DATA.inc()
-        raise NoPixelDataError(
+        raise SeriesMissingPixelDataError(
             f"None of the {num_instances} instances have pixel data for cod object {cod_obj}"
         )
     return instances
+
+
+def _generate_thumbnail_frames(cod_obj: CODObject, instances: list[Instance]):
+    """Iterate through instances and generate thumbnail frames.
+
+    Returns:
+        all_frames: list of thumbnail frames, in the form of raw numpy ndarrays
+        thumbnail_instance_metadata: dict mapping instance uids to metadata for all frames in the instance
+        thumbnail_index_to_instance_frame: convenience list mapping thumbnail index to instance uid and frame index
+        (i.e. `thumbnail_index_to_instance_frame[4] = (some_uid, 0)` means the 5th thumbnail frame = 1st frame of instance `some_uid`)
+    """
+    all_frames = []
+    thumbnail_instance_metadata = {}
+    thumbnail_index_to_instance_frame = []
+    for instance in instances:
+        with instance.open() as f:
+            instance_uid = instance.get_instance_uid(hashed=cod_obj.hashed_uids)
+            instance_frame_metadata = []
+            for instance_frame_index, frame in enumerate(pydicom3.iter_pixels(f)):
+                thumbnail_frame, anchors = resize_pad_and_anchor_frame(frame)
+                # append thumbnail frame to list of all frames
+                all_frames.append(thumbnail_frame)
+                # append frame-level metadata to list of metadata for all of this instance's frames
+                instance_frame_metadata.append(
+                    {"thumbnail_index": len(all_frames) - 1, "anchors": anchors}
+                )
+                # update the list mapping index in overall thumbnail to index within instance (i.e 5th thumbnail frame = 3rd frame of instance 2)
+                thumbnail_index_to_instance_frame.append(
+                    (instance_uid, instance_frame_index)
+                )
+            thumbnail_instance_metadata[instance_uid] = {
+                "frames": instance_frame_metadata
+            }
+    return all_frames, thumbnail_instance_metadata, thumbnail_index_to_instance_frame
 
 
 def generate_thumbnail(cod_obj: CODObject, dirty: bool = False):
@@ -65,8 +103,20 @@ def generate_thumbnail(cod_obj: CODObject, dirty: bool = False):
     assert len(instances) > 0, "COD object has no instances"
     instances = _remove_instances_without_pixeldata(cod_obj, instances)
     instances = _sort_instances(instances)
-    for instance in instances:
-        with instance.open() as f:
-            ds = pydicom3.dcmread(f, defer_size=1024)
-            ds = decode_pixel_data(ds)
-            print(ds.SOPInstanceUID)
+    all_frames, thumbnail_instance_metadata, thumbnail_index_to_instance_frame = (
+        _generate_thumbnail_frames(cod_obj, instances)
+    )
+    if len(all_frames) == 0:
+        raise NoExtractablePixelDataError(
+            f"Failed to extract pixel data from all {str(len(instances))} instances that have some for {cod_obj}"
+        )
+    elif len(all_frames) == 1:
+        return (
+            all_frames,
+            thumbnail_instance_metadata,
+            thumbnail_index_to_instance_frame,
+        )
+    else:
+        # TODO: implement thumbnail generation
+        pass
+    return all_frames, thumbnail_instance_metadata, thumbnail_index_to_instance_frame
