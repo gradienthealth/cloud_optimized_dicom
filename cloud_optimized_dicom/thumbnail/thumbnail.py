@@ -8,9 +8,10 @@ from google.cloud import storage
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
-from cloud_optimized_dicom.thumbnail.save_utils import (
+from cloud_optimized_dicom.thumbnail.utils import (
     _convert_frame_to_jpg,
     _convert_frames_to_mp4,
+    _generate_thumbnail_frame_and_anchors,
 )
 from cloud_optimized_dicom.utils import upload_and_count_bytes
 
@@ -66,12 +67,6 @@ def _remove_instances_without_pixeldata(
     return instances
 
 
-def _resize_pad_and_anchor_frame(
-    frame: np.ndarray,
-) -> tuple[np.ndarray, list[tuple[int, int]]]:
-    raise NotImplementedError("Not implemented")
-
-
 def _generate_thumbnail_frames(
     cod_obj: CODObject,
     instances: list[Instance],
@@ -93,7 +88,7 @@ def _generate_thumbnail_frames(
             instance_uid = instance_to_instance_uid[instance]
             instance_frame_metadata = []
             for instance_frame_index, frame in enumerate(pydicom3.iter_pixels(f)):
-                thumbnail_frame, anchors = _resize_pad_and_anchor_frame(frame)
+                thumbnail_frame, anchors = _generate_thumbnail_frame_and_anchors(frame)
                 # append thumbnail frame to list of all frames
                 all_frames.append(thumbnail_frame)
                 # append frame-level metadata to list of metadata for all of this instance's frames
@@ -116,13 +111,15 @@ def _save_thumbnail(cod_obj: CODObject, all_frames: list[np.ndarray]):
             f"Failed to extract pixel data from all {str(len(cod_obj._metadata.instances))} instances for {cod_obj}"
         )
     elif len(all_frames) == 1:
-        thumbnail_uri = os.path.join(cod_obj.datastore_series_uri, "thumbnail.jpg")
+        os.path.join(cod_obj.datastore_series_uri, "thumbnail.jpg")
         thumbnail_bytes = _convert_frame_to_jpg(all_frames[0])
     else:
-        thumbnail_uri = os.path.join(cod_obj.datastore_series_uri, "thumbnail.mp4")
-        thumbnail_bytes = _convert_frames_to_mp4(all_frames)
-    thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=cod_obj.client)
-    upload_and_count_bytes(thumbnail_blob, thumbnail_bytes)
+        os.path.join(cod_obj.datastore_series_uri, "thumbnail.mp4")
+        thumbnail_bytes = _convert_frames_to_mp4(
+            all_frames, output_path="./thumbnail.mp4"
+        )
+    # thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=cod_obj.client)
+    # upload_and_count_bytes(thumbnail_blob, thumbnail_bytes)
 
 
 def _save_thumbnail_metadata():
