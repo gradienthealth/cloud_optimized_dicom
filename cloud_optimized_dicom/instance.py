@@ -515,3 +515,30 @@ class Instance:
         Custom destructor that calls self.cleanup()
         """
         self.cleanup()
+
+    def __hash__(self):
+        """Make Instance hashable based on its unique identifiers."""
+        # Use a tuple of the UIDs as the basis for the hash
+        # We use trust_hints_if_available=True to avoid unnecessary validation
+        return hash(
+            (
+                self.instance_uid(trust_hints_if_available=True),
+                self.series_uid(trust_hints_if_available=True),
+                self.study_uid(trust_hints_if_available=True),
+            )
+        )
+
+    def __eq__(self, other):
+        """We say that two instances are equal if they have the same UIDs."""
+        # instance cannot be equal to non-instance
+        if not isinstance(other, Instance):
+            return False
+        # TODO: should we not trust hints here? Leaning no b/c anyone who bothers implementing hints in their pipeline is aware fo the risk of false positives
+        return (
+            self.instance_uid(trust_hints_if_available=True)
+            == other.instance_uid(trust_hints_if_available=True)
+            and self.series_uid(trust_hints_if_available=True)
+            == other.series_uid(trust_hints_if_available=True)
+            and self.study_uid(trust_hints_if_available=True)
+            == other.study_uid(trust_hints_if_available=True)
+        )

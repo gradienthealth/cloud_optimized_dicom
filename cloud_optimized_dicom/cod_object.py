@@ -24,7 +24,7 @@ from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
     is_remote,
     public_method,
-    upload_and_count,
+    upload_and_count_file,
 )
 
 logger = logging.getLogger(__name__)
@@ -256,8 +256,8 @@ class CODObject:
             tar_blob = storage.Blob.from_string(self.tar_uri, client=self.client)
             tar_blob.storage_class = tar_storage_class
             index_blob = storage.Blob.from_string(self.index_uri, client=self.client)
-            upload_and_count(index_blob, self.index_file_path)
-            upload_and_count(tar_blob, self.tar_file_path)
+            upload_and_count_file(index_blob, self.index_file_path)
+            upload_and_count_file(tar_blob, self.tar_file_path)
             self._tar_synced = True
         # sync metadata
         if not self._metadata_synced:

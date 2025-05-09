@@ -5,7 +5,7 @@ from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
-from cloud_optimized_dicom.thumbnail import generate_thumbnail
+from cloud_optimized_dicom.thumbnail.thumbnail import generate_thumbnail
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 

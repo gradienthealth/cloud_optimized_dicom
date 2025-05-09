@@ -1,11 +1,18 @@
 import logging
+import os
 
+import numpy as np
 import pydicom3
+from google.cloud import storage
 
+import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.cod_object import CODObject
-from cloud_optimized_dicom.img_utils import decode_pixel_data
 from cloud_optimized_dicom.instance import Instance
-from cloud_optimized_dicom.metrics import SERIES_MISSING_PIXEL_DATA
+from cloud_optimized_dicom.thumbnail.save_utils import (
+    _convert_frame_to_jpg,
+    _convert_frames_to_mp4,
+)
+from cloud_optimized_dicom.utils import upload_and_count_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +59,24 @@ def _remove_instances_without_pixeldata(
     num_instances = len(instances)
     instances = [instance for instance in instances if instance.has_pixeldata]
     if len(instances) == 0:
-        SERIES_MISSING_PIXEL_DATA.inc()
+        metrics.SERIES_MISSING_PIXEL_DATA.inc()
         raise SeriesMissingPixelDataError(
             f"None of the {num_instances} instances have pixel data for cod object {cod_obj}"
         )
     return instances
 
 
-def _generate_thumbnail_frames(cod_obj: CODObject, instances: list[Instance]):
+def _resize_pad_and_anchor_frame(
+    frame: np.ndarray,
+) -> tuple[np.ndarray, list[tuple[int, int]]]:
+    raise NotImplementedError("Not implemented")
+
+
+def _generate_thumbnail_frames(
+    cod_obj: CODObject,
+    instances: list[Instance],
+    instance_to_instance_uid: dict[Instance, str],
+):
     """Iterate through instances and generate thumbnail frames.
 
     Returns:
@@ -73,10 +90,10 @@ def _generate_thumbnail_frames(cod_obj: CODObject, instances: list[Instance]):
     thumbnail_index_to_instance_frame = []
     for instance in instances:
         with instance.open() as f:
-            instance_uid = instance.get_instance_uid(hashed=cod_obj.hashed_uids)
+            instance_uid = instance_to_instance_uid[instance]
             instance_frame_metadata = []
             for instance_frame_index, frame in enumerate(pydicom3.iter_pixels(f)):
-                thumbnail_frame, anchors = resize_pad_and_anchor_frame(frame)
+                thumbnail_frame, anchors = _resize_pad_and_anchor_frame(frame)
                 # append thumbnail frame to list of all frames
                 all_frames.append(thumbnail_frame)
                 # append frame-level metadata to list of metadata for all of this instance's frames
@@ -93,30 +110,51 @@ def _generate_thumbnail_frames(cod_obj: CODObject, instances: list[Instance]):
     return all_frames, thumbnail_instance_metadata, thumbnail_index_to_instance_frame
 
 
+def _save_thumbnail(cod_obj: CODObject, all_frames: list[np.ndarray]):
+    if len(all_frames) == 0:
+        raise NoExtractablePixelDataError(
+            f"Failed to extract pixel data from all {str(len(cod_obj._metadata.instances))} instances for {cod_obj}"
+        )
+    elif len(all_frames) == 1:
+        thumbnail_uri = os.path.join(cod_obj.datastore_series_uri, "thumbnail.jpg")
+        thumbnail_bytes = _convert_frame_to_jpg(all_frames[0])
+    else:
+        thumbnail_uri = os.path.join(cod_obj.datastore_series_uri, "thumbnail.mp4")
+        thumbnail_bytes = _convert_frames_to_mp4(all_frames)
+    thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=cod_obj.client)
+    upload_and_count_bytes(thumbnail_blob, thumbnail_bytes)
+
+
+def _save_thumbnail_metadata():
+    raise NotImplementedError("Not implemented")
+
+
+def _generate_instance_lookup_dict(
+    cod_obj: CODObject, dirty: bool = False
+) -> dict[Instance, str]:
+    """Generate a dictionary mapping instances to their instance UIDs.
+    (thumbnail metadata requires instance UIDs)
+    """
+    return {
+        instance: instance_uid
+        for instance_uid, instance in cod_obj.get_metadata(
+            dirty=dirty
+        ).instances.items()
+    }
+
+
 def generate_thumbnail(cod_obj: CODObject, dirty: bool = False):
     """Generate a thumbnail for a COD object."""
     # fetch the tar, if it's not already fetched
     if cod_obj.tar_is_empty:
         cod_obj.pull_tar(dirty=dirty)
 
-    instances = cod_obj.get_metadata(dirty=dirty).instances.values()
+    instance_to_instance_uid = _generate_instance_lookup_dict(cod_obj, dirty)
+    instances = list(instance_to_instance_uid.keys())
     assert len(instances) > 0, "COD object has no instances"
     instances = _remove_instances_without_pixeldata(cod_obj, instances)
     instances = _sort_instances(instances)
     all_frames, thumbnail_instance_metadata, thumbnail_index_to_instance_frame = (
-        _generate_thumbnail_frames(cod_obj, instances)
+        _generate_thumbnail_frames(cod_obj, instances, instance_to_instance_uid)
     )
-    if len(all_frames) == 0:
-        raise NoExtractablePixelDataError(
-            f"Failed to extract pixel data from all {str(len(instances))} instances that have some for {cod_obj}"
-        )
-    elif len(all_frames) == 1:
-        return (
-            all_frames,
-            thumbnail_instance_metadata,
-            thumbnail_index_to_instance_frame,
-        )
-    else:
-        # TODO: implement thumbnail generation
-        pass
-    return all_frames, thumbnail_instance_metadata, thumbnail_index_to_instance_frame
+    _save_thumbnail(cod_obj, all_frames)

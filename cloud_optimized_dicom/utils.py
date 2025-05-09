@@ -53,9 +53,15 @@ def is_remote(uri: str) -> bool:
     return any(uri.startswith(prefix) for prefix in REMOTE_IDENTIFIERS)
 
 
-def upload_and_count(blob: storage.Blob, file_path: str):
+def upload_and_count_file(blob: storage.Blob, file_path: str):
     """Wraps `blob.upload_from_filename` with the proper beam creation counter metric"""
     blob.upload_from_filename(file_path, retry=DEFAULT_RETRY)
+    metrics.STORAGE_CLASS_COUNTERS["CREATE"][blob.storage_class].inc()
+
+
+def upload_and_count_bytes(blob: storage.Blob, bytes: bytes):
+    """Wraps `blob.upload_from_string` with the proper beam creation counter metric"""
+    blob.upload_from_string(bytes, retry=DEFAULT_RETRY)
     metrics.STORAGE_CLASS_COUNTERS["CREATE"][blob.storage_class].inc()
 
 
