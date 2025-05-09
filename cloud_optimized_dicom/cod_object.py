@@ -22,8 +22,9 @@ from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
+    is_remote,
     public_method,
-    upload_and_count,
+    upload_and_count_file,
 )
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,11 @@ class CODObject:
         return _tar_file_path
 
     @property
+    def tar_is_empty(self) -> bool:
+        """Check if the tar file is empty."""
+        return os.path.getsize(self.tar_file_path) == EMPTY_TAR_SIZE
+
+    @property
     def index_file_path(self) -> str:
         """The path to the index file for this series in the temporary directory."""
         return os.path.join(self.get_temp_dir().name, f"index.sqlite")
@@ -241,7 +247,7 @@ class CODObject:
         self._locker.verify()
         # sync tar
         if not self._tar_synced:
-            if os.path.getsize(self.tar_file_path) == EMPTY_TAR_SIZE:
+            if self.tar_is_empty:
                 logger.warning(f"Skipping tar sync - tar is empty: {self.as_log}")
                 return
             assert os.path.exists(
@@ -250,14 +256,15 @@ class CODObject:
             tar_blob = storage.Blob.from_string(self.tar_uri, client=self.client)
             tar_blob.storage_class = tar_storage_class
             index_blob = storage.Blob.from_string(self.index_uri, client=self.client)
-            upload_and_count(index_blob, self.index_file_path)
-            upload_and_count(tar_blob, self.tar_file_path)
+            upload_and_count_file(index_blob, self.index_file_path)
+            upload_and_count_file(tar_blob, self.tar_file_path)
             self._tar_synced = True
         # sync metadata
         if not self._metadata_synced:
             assert (
                 self._metadata
             ), "Metadata sync attempted but CODObject has no metadata"
+            self._set_dicom_uris_to_datastore()
             self._gzip_and_upload_metadata()
             self._metadata_synced = True
         # now that the tar has been synced,
@@ -348,6 +355,18 @@ class CODObject:
             logger.info(f"GRADIENT_STATE_LOGS:DELETED:{deleted_dependencies}")
         return deleted_dependencies
 
+    @public_method
+    def pull_tar(self, dirty: bool = False):
+        """Pull tar and index from GCS to local temp dir,
+        modify local origin path of instances to point to local tar.
+        Ensure multiple instance.open within the series won't result in multiple GCS GET operations.
+        """
+        self._force_fetch_tar(fetch_index=True)
+        for instance_uid, instance in self.get_metadata(
+            create_if_missing=False, dirty=dirty
+        ).instances.items():
+            instance.dicom_uri = f"{self.tar_file_path}://instances/{instance_uid}.dcm"
+
     # Internal operations
     def _force_fetch_tar(self, fetch_index: bool = True):
         """Download the tarball (and index) from GCS.
@@ -363,6 +382,15 @@ class CODObject:
             metrics.STORAGE_CLASS_COUNTERS["GET"][index_blob.storage_class].inc()
         # we just fetched the tar, so it is guaranteed to be in the same state as the datastore
         self._tar_synced = True
+
+    def _set_dicom_uris_to_datastore(self):
+        """Set the dicom_uri of each instance to the datastore URI"""
+        for instance in self._metadata.instances.values():
+            # skip remote .tar instances as they are already in the datastore
+            if is_remote(instance.dicom_uri) and instance.is_nested_in_tar:
+                continue
+            uid = instance.get_instance_uid(hashed=self.hashed_uids)
+            instance.dicom_uri = f"{self.tar_uri}://instances/{uid}.dcm"
 
     def _gzip_and_upload_metadata(self):
         """
@@ -459,3 +487,29 @@ class CODObject:
         # Regardless of exception(s), we still want to clean up the temp dir
         # self.cleanup_temp_dir() TODO reimplement
         return False  # Don't suppress any exceptions
+
+    @classmethod
+    def from_uri(
+        cls,
+        uri: str,
+        client: storage.Client,
+        lock: bool,
+        hashed_uids: bool,
+        create_if_missing: bool,
+    ):
+        """Create a CODObject from a URI"""
+        if not is_remote(uri) or "/studies/" not in uri or "/series/" not in uri:
+            raise ValueError(f"Invalid COD URI: {uri}")
+        datastore_uri, overflow = uri.split("/studies/", 1)
+        study_uid, series_and_overflow = overflow.split("/series/", 1)
+        # remove all possible overflow from the series uid: subfile names, tar extension
+        series_uid = series_and_overflow.split("/", 1)[0].rstrip(".tar")
+        return cls(
+            datastore_path=datastore_uri,
+            client=client,
+            study_uid=study_uid,
+            series_uid=series_uid,
+            lock=lock,
+            hashed_uids=hashed_uids,
+            create_if_missing=create_if_missing,
+        )
