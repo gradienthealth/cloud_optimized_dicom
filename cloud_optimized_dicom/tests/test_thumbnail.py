@@ -2,6 +2,9 @@ import os
 import unittest
 
 import cv2
+import numpy as np
+import pydicom3
+import pydicom3.encaps
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 
@@ -81,17 +84,7 @@ class TestThumbnail(unittest.TestCase):
     def setUp(self):
         delete_uploaded_blobs(self.client, [self.datastore_path])
 
-    def test_gen_multiframe(self):
-        # TODO: failing because pixeldata is blacked out. get a better test case.
-        dicom_path = os.path.join(self.test_data_dir, "multiframe.dcm")
-        cod_obj = ingest_and_generate_thumbnail(
-            [dicom_path], self.datastore_path, self.client
-        )
-        validate_thumbnail(
-            self, cod_obj, expected_frame_count=38, save_loc="./thumbnail.mp4"
-        )
-
-    def test_gen_singleframe(self):
+    def test_gen_jpg(self):
         dicom_path = os.path.join(self.test_data_dir, "valid.dcm")
         cod_obj = ingest_and_generate_thumbnail(
             [dicom_path], self.datastore_path, self.client
@@ -99,3 +92,21 @@ class TestThumbnail(unittest.TestCase):
         validate_thumbnail(
             self, cod_obj, expected_frame_count=1, save_loc="./thumbnail.jpg"
         )
+
+    def test_gen_mp4(self):
+        series_folder = os.path.join(self.test_data_dir, "series")
+        dicom_paths = [
+            os.path.join(series_folder, f)
+            for f in os.listdir(series_folder)
+            if f.endswith(".dcm")
+        ]
+        cod_obj = ingest_and_generate_thumbnail(
+            dicom_paths, self.datastore_path, self.client
+        )
+        validate_thumbnail(
+            self, cod_obj, expected_frame_count=10, save_loc="./thumbnail.mp4"
+        )
+
+    def test_gen_multiframe(self):
+        # TODO: get a multiframe dicom and test it!
+        pass

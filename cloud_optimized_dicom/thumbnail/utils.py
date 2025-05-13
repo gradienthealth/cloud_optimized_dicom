@@ -30,8 +30,8 @@ def _convert_frames_to_mp4(
     if any(frame.shape[:2] != (height, width) for frame in frames):
         raise ValueError("All frames must have the same shape.")
 
-    # Check if the image is color or grayscale
-    isColor = len(frames[0].shape) > 2
+    # if any frames are color, we must write a color video
+    thumbnail_is_color = any(len(frame.shape) > 2 for frame in frames)
 
     # Initialize the video writer, using XVID codec
     out = cv2.VideoWriter(
@@ -39,21 +39,32 @@ def _convert_frames_to_mp4(
         fourcc=cv2.VideoWriter_fourcc(*"avc1"),
         fps=fps,
         frameSize=(width, height),
-        isColor=isColor,
+        isColor=thumbnail_is_color,
     )
 
+    def _process_frame(frame: np.ndarray) -> np.ndarray:
+        """For color thumbnails, convert frame to BGR format. No conversion is necessary for grayscale thumbnails.
+        After formatting, normalize the frame (0-255), set data type to uint8, and return.
+        """
+        if thumbnail_is_color:
+            if len(frame.shape) == 2:
+                # Convert grayscale frame to BGR
+                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+            elif frame.shape[2] == 3:
+                # Assume frame shape of 3 -> standard RGB
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            elif frame.shape[2] == 4:
+                # Assume frame shape of 4 -> RGBA
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+        elif len(frame.shape) > 2:
+            # no conversion is necessary for grayscale frames in a grayscale thumbnail
+            raise ValueError(
+                f"Unsupported frame shape for grayscale thumbnail: {frame.shape}"
+            )
+        return cv2.normalize(frame, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)
+
     for frame in frames:
-        # Normalize and convert frame to uint8
-        frame_uint8 = cv2.normalize(frame, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)
-
-        # Handle color space conversion for color frames
-        if isColor:
-            if frame_uint8.shape[2] == 3:  # RGB frame, convert to BGR
-                frame_uint8 = cv2.cvtColor(frame_uint8, cv2.COLOR_RGB2BGR)
-            elif frame_uint8.shape[2] == 4:  # RGBA frame, convert to BGR
-                frame_uint8 = cv2.cvtColor(frame_uint8, cv2.COLOR_RGBA2BGR)
-
-        out.write(frame_uint8)
+        out.write(_process_frame(frame))
 
     out.release()
     print(f"Saved MP4 to: {output_path}")
