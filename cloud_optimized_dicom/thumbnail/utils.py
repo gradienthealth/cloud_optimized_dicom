@@ -7,6 +7,7 @@ from google.cloud import storage
 
 DEFAULT_FPS = 4
 DEFAULT_QUALITY = 60
+DEFAULT_SIZE = 128
 
 
 # Utility functions having to do with converting a numpy array of pixel data into jpgs and mp4s
@@ -25,7 +26,6 @@ def _convert_frames_to_mp4(
     height, width = frames[0].shape[:2]
     if any(frame.shape[:2] != (height, width) for frame in frames):
         raise ValueError("All frames must have the same shape.")
-    print(f"got {len(frames)} frames of shape {str(frames[0].shape)}")
 
     # Check if the image is color or grayscale
     isColor = len(frames[0].shape) > 2
@@ -69,16 +69,14 @@ def _generate_thumbnail_frame_and_anchors(
 
     Returns:
         Tuple containing:
-        - The thumbnail as a numpy array (always 128x128)
+        - The thumbnail as a numpy array (always DEFAULT_SIZE x DEFAULT_SIZE)
         - A dictionary of anchor points mapping between original and thumbnail coordinates
     """
-    # for now, just return the original frame
-    return pixel_array, {}
     # Get original dimensions
     height, width = pixel_array.shape[:2]
 
-    # Calculate scaling factor to fit the longer dimension to 128
-    scale = 128 / max(height, width)
+    # Calculate scaling factor to fit the longer dimension to DEFAULT_SIZE
+    scale = DEFAULT_SIZE / max(height, width)
 
     # Calculate new dimensions while maintaining aspect ratio
     new_height = int(height * scale)
@@ -89,15 +87,17 @@ def _generate_thumbnail_frame_and_anchors(
         pixel_array, (new_width, new_height), interpolation=cv2.INTER_AREA
     )
 
-    # Create a black square canvas of size 128x128
+    # Create a black square canvas of size DEFAULT_SIZE x DEFAULT_SIZE
     if len(pixel_array.shape) == 2:  # Grayscale
-        thumbnail = np.zeros((128, 128), dtype=pixel_array.dtype)
+        thumbnail = np.zeros((DEFAULT_SIZE, DEFAULT_SIZE), dtype=pixel_array.dtype)
     else:  # Multi-sample (e.g., RGB)
-        thumbnail = np.zeros((128, 128, pixel_array.shape[2]), dtype=pixel_array.dtype)
+        thumbnail = np.zeros(
+            (DEFAULT_SIZE, DEFAULT_SIZE, pixel_array.shape[2]), dtype=pixel_array.dtype
+        )
 
     # Calculate position to paste the resized image (centered)
-    y_offset = (128 - new_height) // 2
-    x_offset = (128 - new_width) // 2
+    y_offset = (DEFAULT_SIZE - new_height) // 2
+    x_offset = (DEFAULT_SIZE - new_width) // 2
 
     # Place the resized image in the center of the square
     thumbnail[y_offset : y_offset + new_height, x_offset : x_offset + new_width] = (
