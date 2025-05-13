@@ -1,3 +1,4 @@
+import random
 import unittest
 from io import BytesIO
 from unittest.mock import patch
@@ -6,7 +7,6 @@ import numpy as np
 import pydicom3
 import pydicom3.encaps
 import pydicom3.errors
-import pydicom3.uid
 
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 
@@ -14,6 +14,15 @@ from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tab
 def _generate_random_pixel_data(length: int) -> bytes:
     random_array = np.random.randint(0, 256, size=length, dtype=np.uint8)
     return random_array.tobytes()
+
+
+def _generate_uid() -> str:
+    prefix = "1.2.826.0.1.3680043.8.498."
+    total_length = 64
+    last_section_length = total_length - len(prefix)
+    last_section = "".join(random.choices("0123456789", k=last_section_length))
+    uid = prefix + last_section
+    return uid
 
 
 def create_sample_dataset(
@@ -35,18 +44,18 @@ def create_sample_dataset(
         pydicom.Dataset: A sample DICOM dataset created using the given parameters.
     """
     file_meta = pydicom3.FileMetaDataset()
-    file_meta.MediaStorageSOPClassUID = pydicom3.uid.generate_uid()
-    file_meta.MediaStorageSOPInstanceUID = pydicom3.uid.generate_uid()
-    file_meta.TransferSyntaxUID = pydicom3.uid.generate_uid()
+    file_meta.MediaStorageSOPClassUID = _generate_uid()
+    file_meta.MediaStorageSOPInstanceUID = _generate_uid()
+    file_meta.TransferSyntaxUID = _generate_uid()
 
     ds = pydicom3.Dataset()
     ds.file_meta = file_meta
 
     ds.PatientName = "Test^Patient"
     ds.PatientID = "123456"
-    ds.StudyInstanceUID = pydicom3.uid.generate_uid()
-    ds.SeriesInstanceUID = pydicom3.uid.generate_uid()
-    ds.SOPInstanceUID = pydicom3.uid.generate_uid()
+    ds.StudyInstanceUID = _generate_uid()
+    ds.SeriesInstanceUID = _generate_uid()
+    ds.SOPInstanceUID = _generate_uid()
     ds.NumberOfFrames = number_of_frames
 
     raw_pixeldata = [_generate_random_pixel_data(200) for _ in range(number_of_frames)]
