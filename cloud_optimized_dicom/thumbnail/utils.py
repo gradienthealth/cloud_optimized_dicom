@@ -17,6 +17,7 @@ def _convert_frame_to_jpg(frame: np.ndarray) -> bytes:
 def _convert_frames_to_mp4(
     frames: list[np.ndarray], output_path: str, fps: int = DEFAULT_FPS
 ):
+    """Convert `frames` to an mp4 and save to `output_path`"""
     if not frames:
         raise ValueError("Frame list is empty.")
 
