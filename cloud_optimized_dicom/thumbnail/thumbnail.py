@@ -105,21 +105,27 @@ def _generate_thumbnail_frames(
     return all_frames, thumbnail_instance_metadata, thumbnail_index_to_instance_frame
 
 
-def _save_thumbnail(cod_obj: CODObject, all_frames: list[np.ndarray]):
-    """Given the frames of a thumbnail, convert to mp4 or jpg as appropriate and upload to datastore."""
+def _generate_thumbnail_bytes(
+    cod_obj: CODObject, all_frames: list[np.ndarray]
+) -> bytes:
+    """Given the frames of a thumbnail, convert to mp4 or jpg as appropriate and upload to datastore.
+
+    Returns:
+        thumbnail_bytes: the bytes of the thumbnail
+    """
     if len(all_frames) == 0:
         raise NoExtractablePixelDataError(
             f"Failed to extract pixel data from all {str(len(cod_obj._metadata.instances))} instances for {cod_obj}"
         )
     thumbnail_name = "thumbnail.mp4" if len(all_frames) > 1 else "thumbnail.jpg"
-    thumbnail_uri = os.path.join(cod_obj.datastore_series_uri, thumbnail_name)
     temp_path = os.path.join(cod_obj.temp_dir.name, thumbnail_name)
     if thumbnail_name == "jpg":
         _convert_frame_to_jpg(all_frames[0], output_path=temp_path)
     else:
         _convert_frames_to_mp4(all_frames, output_path=temp_path)
-    thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=cod_obj.client)
-    upload_and_count_file(thumbnail_blob, temp_path)
+    with open(temp_path, "rb") as f:
+        thumbnail_bytes = f.read()
+    return thumbnail_bytes
 
 
 def _save_thumbnail_metadata():
@@ -154,4 +160,9 @@ def generate_thumbnail(cod_obj: CODObject, dirty: bool = False):
     all_frames, thumbnail_instance_metadata, thumbnail_index_to_instance_frame = (
         _generate_thumbnail_frames(cod_obj, instances, instance_to_instance_uid)
     )
-    _save_thumbnail(cod_obj, all_frames)
+    thumbnail_bytes = _generate_thumbnail_bytes(cod_obj, all_frames)
+    return (
+        thumbnail_bytes,
+        thumbnail_instance_metadata,
+        thumbnail_index_to_instance_frame,
+    )
