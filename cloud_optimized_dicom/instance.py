@@ -246,7 +246,7 @@ class Instance:
             ptr = self._open_tar()
         else:
             ptr = open(self.dicom_uri, "rb")
-        assert file_is_dicom(ptr)
+        assert file_is_dicom(ptr), f"File is not a valid DICOM: {self.dicom_uri}"
         return ptr
 
     def _open_tar(self):
