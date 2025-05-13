@@ -8,6 +8,7 @@ from google.cloud import storage
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.thumbnail.thumbnail import generate_thumbnail
+from cloud_optimized_dicom.thumbnail.utils import DEFAULT_SIZE
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 
@@ -31,9 +32,12 @@ def validate_thumbnail(
     testcls: unittest.TestCase,
     cod_obj: CODObject,
     expected_frame_count: int,
-    expected_frame_size: tuple[int, int] = (100, 100),
+    expected_frame_size: tuple[int, int] = (DEFAULT_SIZE, DEFAULT_SIZE),
+    save_loc: str = None,
 ):
-    cap = cv2.VideoCapture(os.path.join(cod_obj.temp_dir.name, "thumbnail.mp4"))
+    thumbnail_name = "thumbnail.mp4" if expected_frame_count > 1 else "thumbnail.jpg"
+    thumbnail_path = os.path.join(cod_obj.temp_dir.name, thumbnail_name)
+    cap = cv2.VideoCapture(thumbnail_path)
     if not cap.isOpened():
         raise ValueError("Failed to open video stream.")
 
@@ -45,9 +49,22 @@ def validate_thumbnail(
         int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
     )
 
+    # Check content variation for each frame
+    for _ in range(frame_count):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        # Calculate standard deviation of pixel values
+        std_dev = frame.std()
+        # Assert that there is meaningful variation (not a blank/black image)
+        testcls.assertGreater(std_dev, 10.0, "Thumbnail appears to be blank or uniform")
+
     cap.release()
     testcls.assertEqual(frame_count, expected_frame_count)
     testcls.assertEqual(frame_size, expected_frame_size)
+    if save_loc:
+        with open(save_loc, "wb") as f, open(thumbnail_path, "rb") as f2:
+            f.write(f2.read())
 
 
 class TestThumbnail(unittest.TestCase):
@@ -64,9 +81,21 @@ class TestThumbnail(unittest.TestCase):
     def setUp(self):
         delete_uploaded_blobs(self.client, [self.datastore_path])
 
-    def test_generate_multiframe_thumbnail(self):
+    def test_gen_multiframe(self):
+        # TODO: failing because pixeldata is blacked out. get a better test case.
         dicom_path = os.path.join(self.test_data_dir, "multiframe.dcm")
         cod_obj = ingest_and_generate_thumbnail(
             [dicom_path], self.datastore_path, self.client
         )
-        validate_thumbnail(self, cod_obj, expected_frame_count=38)
+        validate_thumbnail(
+            self, cod_obj, expected_frame_count=38, save_loc="./thumbnail.mp4"
+        )
+
+    def test_gen_singleframe(self):
+        dicom_path = os.path.join(self.test_data_dir, "valid.dcm")
+        cod_obj = ingest_and_generate_thumbnail(
+            [dicom_path], self.datastore_path, self.client
+        )
+        validate_thumbnail(
+            self, cod_obj, expected_frame_count=1, save_loc="./thumbnail.jpg"
+        )

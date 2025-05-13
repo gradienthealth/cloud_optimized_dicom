@@ -56,7 +56,7 @@ def _sort_instances(instances: list[Instance]) -> list[Instance]:
 def _remove_instances_without_pixeldata(
     cod_obj: CODObject, instances: list[Instance]
 ) -> list[Instance]:
-    """Remove instances that do not have pixel data."""
+    """Remove instances that do not have pixel data. Raise an error if no instances have pixel data."""
     num_instances = len(instances)
     instances = [instance for instance in instances if instance.has_pixeldata]
     if len(instances) == 0:
@@ -119,7 +119,7 @@ def _generate_thumbnail_bytes(
         )
     thumbnail_name = "thumbnail.mp4" if len(all_frames) > 1 else "thumbnail.jpg"
     temp_path = os.path.join(cod_obj.temp_dir.name, thumbnail_name)
-    if thumbnail_name == "jpg":
+    if len(all_frames) == 1:
         _convert_frame_to_jpg(all_frames[0], output_path=temp_path)
     else:
         _convert_frames_to_mp4(all_frames, output_path=temp_path)
