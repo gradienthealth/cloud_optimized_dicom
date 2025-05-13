@@ -27,16 +27,27 @@ def ingest_and_generate_thumbnail(
         return cod_obj
 
 
-def validate_thumbnail(testcls, cod_obj: CODObject, expected_frame_count: int):
+def validate_thumbnail(
+    testcls,
+    cod_obj: CODObject,
+    expected_frame_count: int,
+    expected_frame_size: tuple[int, int] = (100, 100),
+):
     cap = cv2.VideoCapture(os.path.join(cod_obj.temp_dir.name, "thumbnail.mp4"))
     if not cap.isOpened():
         raise ValueError("Failed to open video stream.")
 
     # Get the total number of frames
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    # get frame size (width, height)
+    frame_size = (
+        int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+    )
 
     cap.release()
     testcls.assertEqual(frame_count, expected_frame_count)
+    testcls.assertEqual(frame_size, expected_frame_size)
 
 
 class TestThumbnail(unittest.TestCase):
