@@ -1,5 +1,6 @@
 import logging
 import os
+from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pydicom3
@@ -13,7 +14,7 @@ from cloud_optimized_dicom.thumbnail.utils import (
     _convert_frames_to_mp4,
     _generate_thumbnail_frame_and_anchors,
 )
-from cloud_optimized_dicom.utils import upload_and_count_bytes
+from cloud_optimized_dicom.utils import upload_and_count_file
 
 logger = logging.getLogger(__name__)
 
@@ -106,20 +107,22 @@ def _generate_thumbnail_frames(
 
 
 def _save_thumbnail(cod_obj: CODObject, all_frames: list[np.ndarray]):
+    """Given the frames of a thumbnail, convert to mp4 or jpg as appropriate and upload to datastore."""
     if len(all_frames) == 0:
         raise NoExtractablePixelDataError(
             f"Failed to extract pixel data from all {str(len(cod_obj._metadata.instances))} instances for {cod_obj}"
         )
-    elif len(all_frames) == 1:
-        os.path.join(cod_obj.datastore_series_uri, "thumbnail.jpg")
-        thumbnail_bytes = _convert_frame_to_jpg(all_frames[0])
-    else:
-        os.path.join(cod_obj.datastore_series_uri, "thumbnail.mp4")
-        thumbnail_bytes = _convert_frames_to_mp4(
-            all_frames, output_path="./thumbnail.mp4"
-        )
-    # thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=cod_obj.client)
-    # upload_and_count_bytes(thumbnail_blob, thumbnail_bytes)
+    thumbnail_suffix = "mp4" if len(all_frames) > 1 else "jpg"
+    thumbnail_uri = os.path.join(
+        cod_obj.datastore_series_uri, f"thumbnail.{thumbnail_suffix}"
+    )
+    with NamedTemporaryFile(suffix=thumbnail_suffix) as temp_file:
+        if thumbnail_suffix == "jpg":
+            _convert_frame_to_jpg(all_frames[0], output_path=temp_file.name)
+        else:
+            _convert_frames_to_mp4(all_frames, output_path=temp_file.name)
+        thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=cod_obj.client)
+        upload_and_count_file(thumbnail_blob, temp_file.name)
 
 
 def _save_thumbnail_metadata():
