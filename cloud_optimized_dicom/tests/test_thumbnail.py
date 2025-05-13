@@ -28,7 +28,7 @@ def ingest_and_generate_thumbnail(
 
 
 def validate_thumbnail(
-    testcls,
+    testcls: unittest.TestCase,
     cod_obj: CODObject,
     expected_frame_count: int,
     expected_frame_size: tuple[int, int] = (100, 100),
