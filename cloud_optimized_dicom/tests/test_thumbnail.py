@@ -1,5 +1,7 @@
+import os
 import unittest
 
+import cv2
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 
@@ -9,25 +11,51 @@ from cloud_optimized_dicom.thumbnail.thumbnail import generate_thumbnail
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 
+def ingest_and_generate_thumbnail(
+    instance_paths: list[str], datastore_path: str, client: storage.Client
+):
+    instances = [Instance(dicom_uri=path) for path in instance_paths]
+    with CODObject(
+        datastore_path=datastore_path,
+        client=client,
+        study_uid=instances[0].study_uid(),
+        series_uid=instances[0].series_uid(),
+        lock=False,
+    ) as cod_obj:
+        cod_obj.append(instances, dirty=True)
+        generate_thumbnail(cod_obj, dirty=True)
+        return cod_obj
+
+
+def validate_thumbnail(testcls, cod_obj: CODObject, expected_frame_count: int):
+    cap = cv2.VideoCapture(os.path.join(cod_obj.temp_dir.name, "thumbnail.mp4"))
+    if not cap.isOpened():
+        raise ValueError("Failed to open video stream.")
+
+    # Get the total number of frames
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    cap.release()
+    testcls.assertEqual(frame_count, expected_frame_count)
+
+
 class TestThumbnail(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.series_uri = "gs://auritus-681591-pacs-deid/v1.0/dicomweb/studies/1.2.826.0.1.3680043.8.498.10001512690545661607117237232241841743/series/1.2.826.0.1.3680043.8.498.51513628843911584889313064629860199507"
+        cls.test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
+        cls.project = "gradient-pacs-siskin-172863"
         cls.client = storage.Client(
-            project="gradient-pacs-auritus-681591",
-            client_options=ClientOptions(
-                quota_project_id="gradient-pacs-auritus-681591"
-            ),
+            project=cls.project,
+            client_options=ClientOptions(quota_project_id=cls.project),
         )
         cls.datastore_path = "gs://siskin-172863-temp/cod_thumbnail_tests/dicomweb"
-        delete_uploaded_blobs(cls.client, [cls.datastore_path])
 
-    def test_generate_thumbnail(self):
-        with CODObject.from_uri(
-            uri=self.series_uri,
-            client=self.client,
-            lock=False,
-            hashed_uids=True,
-            create_if_missing=False,
-        ) as cod_obj:
-            generate_thumbnail(cod_obj, dirty=True)
+    def setUp(self):
+        delete_uploaded_blobs(self.client, [self.datastore_path])
+
+    def test_generate_multiframe_thumbnail(self):
+        dicom_path = os.path.join(self.test_data_dir, "multiframe.dcm")
+        cod_obj = ingest_and_generate_thumbnail(
+            [dicom_path], self.datastore_path, self.client
+        )
+        validate_thumbnail(self, cod_obj, expected_frame_count=38)
