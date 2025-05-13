@@ -1,6 +1,5 @@
 import logging
 import os
-from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pydicom3
@@ -112,17 +111,15 @@ def _save_thumbnail(cod_obj: CODObject, all_frames: list[np.ndarray]):
         raise NoExtractablePixelDataError(
             f"Failed to extract pixel data from all {str(len(cod_obj._metadata.instances))} instances for {cod_obj}"
         )
-    thumbnail_suffix = "mp4" if len(all_frames) > 1 else "jpg"
-    thumbnail_uri = os.path.join(
-        cod_obj.datastore_series_uri, f"thumbnail.{thumbnail_suffix}"
-    )
-    with NamedTemporaryFile(suffix=thumbnail_suffix) as temp_file:
-        if thumbnail_suffix == "jpg":
-            _convert_frame_to_jpg(all_frames[0], output_path=temp_file.name)
-        else:
-            _convert_frames_to_mp4(all_frames, output_path=temp_file.name)
-        thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=cod_obj.client)
-        upload_and_count_file(thumbnail_blob, temp_file.name)
+    thumbnail_name = "thumbnail.mp4" if len(all_frames) > 1 else "thumbnail.jpg"
+    thumbnail_uri = os.path.join(cod_obj.datastore_series_uri, thumbnail_name)
+    temp_path = os.path.join(cod_obj.temp_dir.name, thumbnail_name)
+    if thumbnail_name == "jpg":
+        _convert_frame_to_jpg(all_frames[0], output_path=temp_path)
+    else:
+        _convert_frames_to_mp4(all_frames, output_path=temp_path)
+    thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=cod_obj.client)
+    upload_and_count_file(thumbnail_blob, temp_path)
 
 
 def _save_thumbnail_metadata():
