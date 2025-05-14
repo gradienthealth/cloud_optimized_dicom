@@ -12,7 +12,6 @@ DEFAULT_SIZE = 128
 
 # Utility functions having to do with converting a numpy array of pixel data into jpgs and mp4s
 def _convert_frame_to_jpg(frame: np.ndarray, output_path: str):
-    print(f"converting frame to jpg at {output_path}")
     # Normalize and convert frame to uint8
     frame_uint8 = cv2.normalize(frame, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)
     cv2.imwrite(output_path, frame_uint8)
@@ -67,7 +66,6 @@ def _convert_frames_to_mp4(
         out.write(_process_frame(frame))
 
     out.release()
-    print(f"Saved MP4 to: {output_path}")
 
 
 def _generate_thumbnail_frame_and_anchors(
