@@ -73,6 +73,7 @@ class CODObject:
         metadata: SeriesMetadata = None,
         _tar_synced: bool = False,
         _metadata_synced: bool = True,
+        _thumbnail_synced: bool = False,
     ):
         self.datastore_path = datastore_path
         self.client = client
@@ -104,6 +105,8 @@ class CODObject:
             self.get_metadata(create_if_missing=create_if_missing, dirty=True)
         self._tar_synced = _tar_synced
         self._metadata_synced = _metadata_synced
+        # if the thumbnail exists, it is not synced (we did not fetch it)
+        self._thumbnail_synced = self.get_custom_tag("thumbnail", dirty=True) is None
 
     def _validate_uids(self):
         """Validate the UIDs are valid DICOM UIDs (TODO make this more robust, for now just check length)"""
@@ -115,11 +118,6 @@ class CODObject:
     def lock(self) -> bool:
         """Read-only property for lock status."""
         return self._locker is not None
-
-    @property
-    def as_log(self) -> str:
-        """Return a string representation of the CODObject for logging purposes."""
-        return f"{self.datastore_series_uri}"
 
     # Temporary directory management
     def get_temp_dir(self) -> TemporaryDirectory:
@@ -150,6 +148,15 @@ class CODObject:
     def index_file_path(self) -> str:
         """The path to the index file for this series in the temporary directory."""
         return os.path.join(self.get_temp_dir().name, f"index.sqlite")
+
+    @property
+    def thumbnail_file_path(self) -> str:
+        """The path to the thumbnail file for this series in the temporary directory."""
+        num_instances_with_pixel_data = sum(
+            1 for i in self._metadata.instances.values() if i.has_pixeldata
+        )
+        thumbnail_type = "mp4" if num_instances_with_pixel_data > 1 else "jpg"
+        return os.path.join(self.get_temp_dir().name, f"thumbnail.{thumbnail_type}")
 
     # URI properties
     @property
@@ -242,7 +249,7 @@ class CODObject:
         """
         # prior to sync, make some assertions
         if self._tar_synced and self._metadata_synced:
-            logger.warning(f"Nothing to sync: {self.as_log}")
+            logger.warning(f"Nothing to sync: {self}")
             return
         # design choice: it's worth the API call to verify lock prior to sync
         # TODO consider removing this if we never see lock changes in the wild
@@ -250,7 +257,7 @@ class CODObject:
         # sync tar
         if not self._tar_synced:
             if self.tar_is_empty:
-                logger.warning(f"Skipping tar sync - tar is empty: {self.as_log}")
+                logger.warning(f"Skipping tar sync - tar is empty: {self}")
                 return
             assert os.path.exists(
                 self.index_file_path
@@ -269,9 +276,28 @@ class CODObject:
             self._set_dicom_uris_to_datastore()
             self._gzip_and_upload_metadata()
             self._metadata_synced = True
+        # handle thumbnail sync if necessary
+        self._sync_thumbnail()
         # now that the tar has been synced,
         # single overall sync message
-        logger.info(f"GRADIENT_STATE_LOGS:SYNCED_SUCCESSFULLY:{self.as_log}")
+        logger.info(f"GRADIENT_STATE_LOGS:SYNCED_SUCCESSFULLY:{self}")
+
+    def _sync_thumbnail(self):
+        """Sync the thumbnail to the datastore if it exists"""
+        if self._thumbnail_synced:
+            logger.info(f"Skipping thumbnail sync - thumbnail already synced: {self}")
+            return
+        thumbnail_metadata = self.get_custom_tag("thumbnail")
+        if thumbnail_metadata is None:
+            logger.info(f"Skipping thumbnail sync - thumbnail does not exist: {self}")
+            return
+        # upload thumbnail to datastore
+        thumbnail_blob = storage.Blob.from_string(
+            thumbnail_metadata["uri"], client=self.client
+        )
+        thumbnail_blob.upload_from_filename(self.thumbnail_file_path)
+        # we just synced the thumbnail, so it is guaranteed to be in the same state as the datastore
+        self._thumbnail_synced = True
 
     @public_method
     def add_custom_tag(
@@ -285,6 +311,8 @@ class CODObject:
         self.get_metadata(dirty=dirty)._add_custom_tag(
             tag_name, tag_value, overwrite_existing
         )
+        # modifying metadata means it is not synced to the datastore
+        self._metadata_synced = False
 
     @public_method
     def get_custom_tag(self, tag_name: str, dirty: bool = False) -> Optional[dict]:
@@ -298,10 +326,29 @@ class CODObject:
         Args:
             overwrite_existing: Whether to overwrite the existing thumbnail, if it exists.
             dirty: Whether the operation is dirty.
+
+        Returns:
+            The local path to the thumbnail after saving it to disk (or `None` if no thumbnail was generated)
         """
-        generate_thumbnail(
+        return generate_thumbnail(
             cod_obj=self, overwrite_existing=overwrite_existing, dirty=dirty
         )
+
+    @public_method
+    def fetch_thumbnail(self, dirty: bool = False) -> str:
+        """Fetch the thumbnail for a COD object. Returns the local path to the thumbnail after downloading it. Raises an error if the thumbnail does not exist."""
+        thumbnail_metadata = self.get_custom_tag("thumbnail", dirty=dirty)
+        if thumbnail_metadata is None:
+            raise ValueError(f"Thumbnail not found for {self}")
+        thumbnail_uri = thumbnail_metadata["uri"]
+        thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=self.client)
+        thumbnail_local_path = os.path.join(
+            self.get_temp_dir().name, thumbnail_uri.split("/")[-1]
+        )
+        thumbnail_blob.download_to_filename(thumbnail_local_path)
+        # we just fetched the thumbnail, so it is guaranteed to be in the same state as the datastore
+        self._thumbnail_synced = True
+        return thumbnail_local_path
 
     @public_method
     def upload_error_log(self, message: str):
@@ -310,12 +357,10 @@ class CODObject:
         if error_blob.exists():
             # because an error.log existing should cause cod objects to fail initialization,
             # it should be impossible for error.log to exist when this method is called
-            msg = f"GRADIENT_STATE_LOGS:ERROR_LOG_ALREADY_EXISTS:{self.as_log}"
+            msg = f"GRADIENT_STATE_LOGS:ERROR_LOG_ALREADY_EXISTS:{self}"
             logger.critical(msg)
             raise ErrorLogExistsError(msg)
-        logger.warning(
-            f"GRADIENT_STATE_LOGS:UPLOADING_ERROR_LOG:{self.as_log}:{message}"
-        )
+        logger.warning(f"GRADIENT_STATE_LOGS:UPLOADING_ERROR_LOG:{self}:{message}")
         error_blob.upload_from_string(message)
 
     @public_method
@@ -448,19 +493,19 @@ class CODObject:
         if self.hashed_uids:
             assert (
                 instance.uid_hash_func
-            ), f"CODObject {self.as_log} has hashed UIDs but instance is missing uid_hash_func: {instance}"
+            ), f"CODObject {self} has hashed UIDs but instance is missing uid_hash_func: {instance}"
             relevant_study_uid = instance.hashed_study_uid()
             relevant_series_uid = instance.hashed_series_uid()
         else:
             assert (
                 not instance.uid_hash_func
-            ), f"CODObject {self.as_log} does not have hashed UIDs but instance has uid_hash_func: {instance}"
+            ), f"CODObject {self} does not have hashed UIDs but instance has uid_hash_func: {instance}"
             relevant_study_uid = instance.study_uid()
             relevant_series_uid = instance.series_uid()
         assert (
             relevant_study_uid == self.study_uid
             and relevant_series_uid == self.series_uid
-        ), f"Instance {instance} does not belong to COD object {self.as_log}"
+        ), f"Instance {instance} does not belong to COD object {self}"
 
     # Serialization methods
     def serialize(self) -> dict:
