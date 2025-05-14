@@ -159,8 +159,8 @@ def generate_thumbnail(
 
     Args:
         cod_obj: The COD object to generate a thumbnail for.
-        overwrite_existing: Whether to overwrite the existing thumbnail.
-        dirty: Whether to dirty the COD object.
+        overwrite_existing: Whether to overwrite the existing thumbnail, if it exists.
+        dirty: Whether the operation is dirty.
     """
     if (
         cod_obj.get_custom_tag("thumbnail", dirty=dirty) is not None

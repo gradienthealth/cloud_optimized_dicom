@@ -293,7 +293,12 @@ class CODObject:
 
     @public_method
     def generate_thumbnail(self, overwrite_existing: bool = False, dirty: bool = False):
-        """Generate a thumbnail for the COD object."""
+        """Generate a thumbnail for a COD object.
+
+        Args:
+            overwrite_existing: Whether to overwrite the existing thumbnail, if it exists.
+            dirty: Whether the operation is dirty.
+        """
         generate_thumbnail(
             cod_obj=self, overwrite_existing=overwrite_existing, dirty=dirty
         )
