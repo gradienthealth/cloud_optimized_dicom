@@ -90,9 +90,7 @@ class TestThumbnail(unittest.TestCase):
         cod_obj = ingest_and_generate_thumbnail(
             [dicom_path], self.datastore_path, self.client
         )
-        validate_thumbnail(
-            self, cod_obj, expected_frame_count=1, save_loc="./thumbnail.jpg"
-        )
+        validate_thumbnail(self, cod_obj, expected_frame_count=1)
 
     def test_gen_monochrome2(self):
         """Test thumbnail generation for a single frame DICOM file (MONOCHROME2)"""
@@ -100,9 +98,7 @@ class TestThumbnail(unittest.TestCase):
         cod_obj = ingest_and_generate_thumbnail(
             [dicom_path], self.datastore_path, self.client
         )
-        validate_thumbnail(
-            self, cod_obj, expected_frame_count=1, save_loc="./thumbnail.jpg"
-        )
+        validate_thumbnail(self, cod_obj, expected_frame_count=1)
 
     def test_gen_mp4_mixed_phot_interp(self):
         """Test thumbnail generation for a series of DICOM files with different photometric interpretations (YBR_RCT and MONOCHROME2)"""
@@ -115,9 +111,7 @@ class TestThumbnail(unittest.TestCase):
         cod_obj = ingest_and_generate_thumbnail(
             dicom_paths, self.datastore_path, self.client
         )
-        validate_thumbnail(
-            self, cod_obj, expected_frame_count=10, save_loc="./thumbnail.mp4"
-        )
+        validate_thumbnail(self, cod_obj, expected_frame_count=10)
 
     def test_gen_mp4_ybr_rct_multiframe(self):
         """Test thumbnail generation for a multiframe DICOM file (YBR_RCT)"""
@@ -125,6 +119,4 @@ class TestThumbnail(unittest.TestCase):
         cod_obj = ingest_and_generate_thumbnail(
             [multiframe_path], self.datastore_path, self.client
         )
-        validate_thumbnail(
-            self, cod_obj, expected_frame_count=78, save_loc="./thumbnail.mp4"
-        )
+        validate_thumbnail(self, cod_obj, expected_frame_count=78)
