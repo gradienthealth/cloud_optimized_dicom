@@ -120,3 +120,31 @@ class TestThumbnail(unittest.TestCase):
             [multiframe_path], self.datastore_path, self.client
         )
         validate_thumbnail(self, cod_obj, expected_frame_count=78)
+
+    def test_sync_and_fetch(self):
+        """Test thumbnail generation and sync"""
+        # create and sync thumbnail
+        instance = Instance(
+            dicom_uri=os.path.join(self.test_data_dir, "monochrome1.dcm")
+        )
+        with CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=instance.study_uid(),
+            series_uid=instance.series_uid(),
+            lock=True,
+        ) as cod_obj:
+            cod_obj.append([instance])
+            cod_obj.generate_thumbnail()
+            cod_obj.sync()
+        # with a new cod object, fetch and validate thumbnail
+        with CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=instance.study_uid(),
+            series_uid=instance.series_uid(),
+            lock=False,
+        ) as cod_obj:
+            thumbnail_path = cod_obj.fetch_thumbnail(dirty=True)
+            self.assertTrue(os.path.exists(thumbnail_path))
+            validate_thumbnail(self, cod_obj, expected_frame_count=1)
