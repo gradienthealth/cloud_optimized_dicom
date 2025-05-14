@@ -84,6 +84,16 @@ class TestThumbnail(unittest.TestCase):
     def setUp(self):
         delete_uploaded_blobs(self.client, [self.datastore_path])
 
+    def test_gen_jpg_monochrome1(self):
+        """Test thumbnail generation for a single frame DICOM file (MONOCHROME1)"""
+        dicom_path = os.path.join(self.test_data_dir, "monochrome1.dcm")
+        cod_obj = ingest_and_generate_thumbnail(
+            [dicom_path], self.datastore_path, self.client
+        )
+        validate_thumbnail(
+            self, cod_obj, expected_frame_count=1, save_loc="./thumbnail.jpg"
+        )
+
     def test_gen_jpg_monochrome2(self):
         """Test thumbnail generation for a single frame DICOM file (MONOCHROME2)"""
         dicom_path = os.path.join(self.test_data_dir, "monochrome2.dcm")
