@@ -106,16 +106,17 @@ def _generate_thumbnail_frames(
                 "frames": instance_frame_metadata
             }
     thumbnail_metadata = {
-        "uri": None,  # will be set later
+        "uri": os.path.join(
+            cod_obj.datastore_series_uri,
+            f"thumbnail.{'mp4' if len(all_frames) > 1 else 'jpg'}",
+        ),
         "thumbnail_index_to_instance_frame": thumbnail_index_to_instance_frame,
         "instances": thumbnail_instance_metadata,
     }
     return all_frames, thumbnail_metadata
 
 
-def _generate_thumbnail_bytes(
-    cod_obj: "CODObject", all_frames: list[np.ndarray]
-) -> bytes:
+def _save_thumbnail_to_disk(cod_obj: "CODObject", all_frames: list[np.ndarray]) -> str:
     """Given the frames of a thumbnail, convert to mp4 or jpg as appropriate and upload to datastore.
 
     Returns:
@@ -131,9 +132,7 @@ def _generate_thumbnail_bytes(
         _convert_frame_to_jpg(all_frames[0], output_path=temp_path)
     else:
         _convert_frames_to_mp4(all_frames, output_path=temp_path)
-    with open(temp_path, "rb") as f:
-        thumbnail_bytes = f.read()
-    return thumbnail_bytes
+    return temp_path
 
 
 def _generate_instance_lookup_dict(
@@ -180,11 +179,13 @@ def generate_thumbnail(
     all_frames, thumbnail_metadata = _generate_thumbnail_frames(
         cod_obj, instances, instance_to_instance_uid
     )
-    thumbnail_bytes = _generate_thumbnail_bytes(cod_obj, all_frames)
+    thumbnail_path = _save_thumbnail_to_disk(cod_obj, all_frames)
     cod_obj.add_custom_tag(
         tag_name="thumbnail",
         tag_value=thumbnail_metadata,
         overwrite_existing=True,
         dirty=dirty,
     )
-    return thumbnail_bytes, thumbnail_metadata
+    # we just generated the thumbnail, so it is not synced to the datastore
+    cod_obj._thumbnail_synced = False
+    return thumbnail_path
