@@ -147,8 +147,24 @@ def _generate_instance_lookup_dict(
     }
 
 
-def generate_thumbnail(cod_obj: CODObject, dirty: bool = False):
-    """Generate a thumbnail for a COD object."""
+def generate_thumbnail(
+    cod_obj: CODObject,
+    overwrite_existing: bool = False,
+    dirty: bool = False,
+):
+    """Generate a thumbnail for a COD object.
+
+    Args:
+        cod_obj: The COD object to generate a thumbnail for.
+        overwrite_existing: Whether to overwrite the existing thumbnail.
+        dirty: Whether to dirty the COD object.
+    """
+    if (
+        cod_obj.get_custom_tag("thumbnail", dirty=dirty) is not None
+        and not overwrite_existing
+    ):
+        logger.info(f"Skipping thumbnail generation for {cod_obj} (already exists)")
+        return
     # fetch the tar, if it's not already fetched
     if cod_obj.tar_is_empty:
         cod_obj.pull_tar(dirty=dirty)
@@ -162,9 +178,10 @@ def generate_thumbnail(cod_obj: CODObject, dirty: bool = False):
         cod_obj, instances, instance_to_instance_uid
     )
     thumbnail_bytes = _generate_thumbnail_bytes(cod_obj, all_frames)
-    cod_obj._metadata.add_custom_tag(
+    cod_obj.add_custom_tag(
         tag_name="thumbnail",
         tag_value=thumbnail_metadata,
         overwrite_existing=True,
+        dirty=dirty,
     )
     return thumbnail_bytes, thumbnail_metadata
