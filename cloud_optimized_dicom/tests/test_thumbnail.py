@@ -108,5 +108,10 @@ class TestThumbnail(unittest.TestCase):
         )
 
     def test_gen_multiframe(self):
-        # TODO: get a multiframe dicom and test it!
-        pass
+        multiframe_path = os.path.join(self.test_data_dir, "multiframe.dcm")
+        cod_obj = ingest_and_generate_thumbnail(
+            [multiframe_path], self.datastore_path, self.client
+        )
+        validate_thumbnail(
+            self, cod_obj, expected_frame_count=78, save_loc="./thumbnail.mp4"
+        )
