@@ -21,6 +21,7 @@ from cloud_optimized_dicom.errors import (
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
+from cloud_optimized_dicom.thumbnail.thumbnail import generate_thumbnail
 from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
     is_remote,
@@ -289,6 +290,13 @@ class CODObject:
     def get_custom_tag(self, tag_name: str, dirty: bool = False) -> Optional[dict]:
         """Get a custom tag from the metadata. Returns `None` if the tag does not exist."""
         return self.get_metadata(dirty=dirty).custom_tags.get(tag_name, None)
+
+    @public_method
+    def generate_thumbnail(self, overwrite_existing: bool = False, dirty: bool = False):
+        """Generate a thumbnail for the COD object."""
+        generate_thumbnail(
+            cod_obj=self, overwrite_existing=overwrite_existing, dirty=dirty
+        )
 
     @public_method
     def upload_error_log(self, message: str):

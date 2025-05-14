@@ -27,7 +27,7 @@ def ingest_and_generate_thumbnail(
         lock=False,
     ) as cod_obj:
         cod_obj.append(instances, dirty=True)
-        generate_thumbnail(cod_obj, dirty=True)
+        cod_obj.generate_thumbnail(dirty=True)
         return cod_obj
 
 

@@ -1,12 +1,12 @@
 import logging
 import os
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pydicom3
 from google.cloud import storage
 
 import cloud_optimized_dicom.metrics as metrics
-from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.thumbnail.utils import (
     _convert_frame_to_jpg,
@@ -14,6 +14,9 @@ from cloud_optimized_dicom.thumbnail.utils import (
     _generate_thumbnail_frame_and_anchors,
 )
 from cloud_optimized_dicom.utils import upload_and_count_file
+
+if TYPE_CHECKING:
+    from cloud_optimized_dicom.cod_object import CODObject
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +57,7 @@ def _sort_instances(instances: list[Instance]) -> list[Instance]:
 
 
 def _remove_instances_without_pixeldata(
-    cod_obj: CODObject, instances: list[Instance]
+    cod_obj: "CODObject", instances: list[Instance]
 ) -> list[Instance]:
     """Remove instances that do not have pixel data. Raise an error if no instances have pixel data."""
     num_instances = len(instances)
@@ -68,7 +71,7 @@ def _remove_instances_without_pixeldata(
 
 
 def _generate_thumbnail_frames(
-    cod_obj: CODObject,
+    cod_obj: "CODObject",
     instances: list[Instance],
     instance_to_instance_uid: dict[Instance, str],
 ):
@@ -111,7 +114,7 @@ def _generate_thumbnail_frames(
 
 
 def _generate_thumbnail_bytes(
-    cod_obj: CODObject, all_frames: list[np.ndarray]
+    cod_obj: "CODObject", all_frames: list[np.ndarray]
 ) -> bytes:
     """Given the frames of a thumbnail, convert to mp4 or jpg as appropriate and upload to datastore.
 
@@ -134,7 +137,7 @@ def _generate_thumbnail_bytes(
 
 
 def _generate_instance_lookup_dict(
-    cod_obj: CODObject, dirty: bool = False
+    cod_obj: "CODObject", dirty: bool = False
 ) -> dict[Instance, str]:
     """Generate a dictionary mapping instances to their instance UIDs.
     (thumbnail metadata requires instance UIDs)
@@ -148,7 +151,7 @@ def _generate_instance_lookup_dict(
 
 
 def generate_thumbnail(
-    cod_obj: CODObject,
+    cod_obj: "CODObject",
     overwrite_existing: bool = False,
     dirty: bool = False,
 ):
