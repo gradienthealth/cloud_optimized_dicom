@@ -102,7 +102,12 @@ def _generate_thumbnail_frames(
             thumbnail_instance_metadata[instance_uid] = {
                 "frames": instance_frame_metadata
             }
-    return all_frames, thumbnail_instance_metadata, thumbnail_index_to_instance_frame
+    thumbnail_metadata = {
+        "uri": None,  # will be set later
+        "thumbnail_index_to_instance_frame": thumbnail_index_to_instance_frame,
+        "instances": thumbnail_instance_metadata,
+    }
+    return all_frames, thumbnail_metadata
 
 
 def _generate_thumbnail_bytes(
@@ -126,10 +131,6 @@ def _generate_thumbnail_bytes(
     with open(temp_path, "rb") as f:
         thumbnail_bytes = f.read()
     return thumbnail_bytes
-
-
-def _save_thumbnail_metadata():
-    raise NotImplementedError("Not implemented")
 
 
 def _generate_instance_lookup_dict(
@@ -157,12 +158,13 @@ def generate_thumbnail(cod_obj: CODObject, dirty: bool = False):
     assert len(instances) > 0, "COD object has no instances"
     instances = _remove_instances_without_pixeldata(cod_obj, instances)
     instances = _sort_instances(instances)
-    all_frames, thumbnail_instance_metadata, thumbnail_index_to_instance_frame = (
-        _generate_thumbnail_frames(cod_obj, instances, instance_to_instance_uid)
+    all_frames, thumbnail_metadata = _generate_thumbnail_frames(
+        cod_obj, instances, instance_to_instance_uid
     )
     thumbnail_bytes = _generate_thumbnail_bytes(cod_obj, all_frames)
-    return (
-        thumbnail_bytes,
-        thumbnail_instance_metadata,
-        thumbnail_index_to_instance_frame,
+    cod_obj._metadata.add_custom_tag(
+        tag_name="thumbnail",
+        tag_value=thumbnail_metadata,
+        overwrite_existing=True,
     )
+    return thumbnail_bytes, thumbnail_metadata
