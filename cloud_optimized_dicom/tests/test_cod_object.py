@@ -3,10 +3,10 @@ import unittest
 
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
+from pydicom3 import dcmread
 
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
-from cloud_optimized_dicom.pydicom3 import dcmread
 from cloud_optimized_dicom.utils import is_remote
 
 
