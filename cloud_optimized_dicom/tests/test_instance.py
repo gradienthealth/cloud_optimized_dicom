@@ -15,7 +15,7 @@ class TestInstance(unittest.TestCase):
         cls.test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
         cls.remote_dicom_uri = "https://code.oak-tree.tech/oak-tree/medical-imaging/dcmjs/-/raw/master/test/sample-dicom.dcm?ref_type=heads&inline=false"
         cls.test_instance_uid = "1.2.276.0.50.192168001092.11156604.14547392.313"
-        cls.local_instance_path = os.path.join(cls.test_data_dir, "valid.dcm")
+        cls.local_instance_path = os.path.join(cls.test_data_dir, "monochrome2.dcm")
 
     def test_remote_detection(self):
         self.assertTrue(is_remote("s3://bucket/path/to/file.dcm"))
@@ -110,7 +110,9 @@ class TestInstance(unittest.TestCase):
         # make a temp file with valid dicom data
         temp_file = tempfile.NamedTemporaryFile(suffix="_TEST.dcm", delete=False)
         with open(temp_file.name, "wb") as out:
-            with open(os.path.join(self.test_data_dir, "valid.dcm"), "rb") as in_file:
+            with open(
+                os.path.join(self.test_data_dir, "monochrome2.dcm"), "rb"
+            ) as in_file:
                 out.write(in_file.read())
         # make an instance with the temp file
         instance = Instance(dicom_uri=temp_file.name, _temp_file=temp_file)

@@ -20,7 +20,7 @@ class TestAppender(unittest.TestCase):
         cls.test_instance_uid = "1.2.276.0.50.192168001092.11156604.14547392.313"
         cls.test_series_uid = "1.2.276.0.50.192168001092.11156604.14547392.303"
         cls.test_study_uid = "1.2.276.0.50.192168001092.11156604.14547392.4"
-        cls.local_instance_path = os.path.join(cls.test_data_dir, "valid.dcm")
+        cls.local_instance_path = os.path.join(cls.test_data_dir, "monochrome2.dcm")
         cls.client = storage.Client(
             project="gradient-pacs-siskin-172863",
             client_options=ClientOptions(

@@ -252,7 +252,7 @@ class TestConcat(unittest.TestCase):
         We would expect to see this second version NOT DELETED (flagged for manual_review).
         """
         dcm_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "test_data", "valid.dcm"
+            os.path.dirname(os.path.abspath(__file__)), "test_data", "monochrome2.dcm"
         )
         # upload a version of the dicom
         v1_uri = f"{PLAYGROUND_URI_PREFIX}/version1.dcm"
