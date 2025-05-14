@@ -2,6 +2,7 @@ import logging
 import os
 import tarfile
 from tempfile import TemporaryDirectory
+from typing import Optional
 
 from google.cloud import storage
 from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
@@ -270,6 +271,24 @@ class CODObject:
         # now that the tar has been synced,
         # single overall sync message
         logger.info(f"GRADIENT_STATE_LOGS:SYNCED_SUCCESSFULLY:{self.as_log}")
+
+    @public_method
+    def add_custom_tag(
+        self,
+        tag_name: str,
+        tag_value: dict,
+        overwrite_existing: bool = True,
+        dirty: bool = False,
+    ):
+        """Add a custom tag to the metadata"""
+        self.get_metadata(dirty=dirty)._add_custom_tag(
+            tag_name, tag_value, overwrite_existing
+        )
+
+    @public_method
+    def get_custom_tag(self, tag_name: str, dirty: bool = False) -> Optional[dict]:
+        """Get a custom tag from the metadata. Returns `None` if the tag does not exist."""
+        return self.get_metadata(dirty=dirty).custom_tags.get(tag_name, None)
 
     @public_method
     def upload_error_log(self, message: str):
