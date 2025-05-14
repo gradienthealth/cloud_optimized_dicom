@@ -84,7 +84,7 @@ class TestThumbnail(unittest.TestCase):
     def setUp(self):
         delete_uploaded_blobs(self.client, [self.datastore_path])
 
-    def test_gen_jpg_monochrome1(self):
+    def test_gen_monochrome1(self):
         """Test thumbnail generation for a single frame DICOM file (MONOCHROME1)"""
         dicom_path = os.path.join(self.test_data_dir, "monochrome1.dcm")
         cod_obj = ingest_and_generate_thumbnail(
@@ -94,7 +94,7 @@ class TestThumbnail(unittest.TestCase):
             self, cod_obj, expected_frame_count=1, save_loc="./thumbnail.jpg"
         )
 
-    def test_gen_jpg_monochrome2(self):
+    def test_gen_monochrome2(self):
         """Test thumbnail generation for a single frame DICOM file (MONOCHROME2)"""
         dicom_path = os.path.join(self.test_data_dir, "monochrome2.dcm")
         cod_obj = ingest_and_generate_thumbnail(
@@ -104,7 +104,7 @@ class TestThumbnail(unittest.TestCase):
             self, cod_obj, expected_frame_count=1, save_loc="./thumbnail.jpg"
         )
 
-    def test_gen_mix_of_photometric_interpretations(self):
+    def test_gen_mp4_mixed_phot_interp(self):
         """Test thumbnail generation for a series of DICOM files with different photometric interpretations (YBR_RCT and MONOCHROME2)"""
         series_folder = os.path.join(self.test_data_dir, "series")
         dicom_paths = [
@@ -119,7 +119,7 @@ class TestThumbnail(unittest.TestCase):
             self, cod_obj, expected_frame_count=10, save_loc="./thumbnail.mp4"
         )
 
-    def test_gen_ybr_rct_multiframe(self):
+    def test_gen_mp4_ybr_rct_multiframe(self):
         """Test thumbnail generation for a multiframe DICOM file (YBR_RCT)"""
         multiframe_path = os.path.join(self.test_data_dir, "ybr_rct_multiframe.dcm")
         cod_obj = ingest_and_generate_thumbnail(
