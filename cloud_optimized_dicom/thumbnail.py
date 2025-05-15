@@ -90,7 +90,9 @@ def _convert_frames_to_mp4(
             s=f"{width}x{height}",
             r=fps,
         )
-        .output(output_path, vcodec="libx264", pix_fmt="yuv420p", r=fps, loglevel="error")
+        .output(
+            output_path, vcodec="libx264", pix_fmt="yuv420p", r=fps, loglevel="error"
+        )
         .overwrite_output()
         .run_async(pipe_stdin=True)
     )
