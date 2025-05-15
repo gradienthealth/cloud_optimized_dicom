@@ -145,6 +145,10 @@ class TestThumbnail(unittest.TestCase):
             series_uid=instance.series_uid(),
             lock=False,
         ) as cod_obj:
+            # thumbnail is not synced - it exists in datastore, but we haven't pulled it
+            self.assertFalse(cod_obj._thumbnail_synced)
             thumbnail_path = cod_obj.fetch_thumbnail(dirty=True)
+            # thumbnail is now synced
+            self.assertTrue(cod_obj._thumbnail_synced)
             self.assertTrue(os.path.exists(thumbnail_path))
             validate_thumbnail(self, cod_obj, expected_frame_count=1)
