@@ -144,7 +144,9 @@ def public_method(func):
                     "Cannot perform clean operation on unlocked CODObject"
                 )
         elif self.lock:
-            logger.warning(f"Performing dirty operation on locked CODObject: {self}")
+            logger.warning(
+                f"Performing dirty operation '{func.__name__}' on locked CODObject: {self}"
+            )
         return func(self, *args, **kwargs)
 
     return wrapper

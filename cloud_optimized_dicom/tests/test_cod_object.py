@@ -7,7 +7,7 @@ from pydicom3 import dcmread
 
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
-from cloud_optimized_dicom.utils import is_remote
+from cloud_optimized_dicom.utils import delete_uploaded_blobs, is_remote
 
 
 class TestCODObject(unittest.TestCase):
@@ -66,6 +66,7 @@ class TestCODObject(unittest.TestCase):
 
     def test_pull_tar(self):
         """Test that pull_tar fetches the tar and index and updates the instance dicom_uri"""
+        delete_uploaded_blobs(self.client, [self.datastore_path])
         # append and sync an instance
         instance = Instance(dicom_uri=self.local_instance_path)
         with CODObject(
@@ -116,3 +117,20 @@ class TestCODObject(unittest.TestCase):
         for field in serialized:
             if not field.startswith("_"):
                 self.assertEqual(serialized[field], reserialized[field])
+
+    def test_instance_read_after_sync(self):
+        """Test that an instance can be read after a sync"""
+        delete_uploaded_blobs(self.client, [self.datastore_path])
+        with CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=True,
+        ) as cod_obj:
+            instance = Instance(dicom_uri=self.local_instance_path)
+            cod_obj.append([instance])
+            cod_obj.sync()
+            with instance.open() as f:
+                ds = dcmread(f)
+                self.assertEqual(ds.StudyInstanceUID, self.test_study_uid)
