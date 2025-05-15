@@ -90,7 +90,7 @@ def _convert_frames_to_mp4(
             s=f"{width}x{height}",
             r=fps,
         )
-        .output(output_path, vcodec="libx264", pix_fmt="yuv420p", r=fps)
+        .output(output_path, vcodec="libx264", pix_fmt="yuv420p", r=fps, loglevel="error")
         .overwrite_output()
         .run_async(pipe_stdin=True)
     )
@@ -321,6 +321,8 @@ def generate_thumbnail(
     )
     # we just generated the thumbnail, so it is not synced to the datastore
     cod_obj._thumbnail_synced = False
+    metrics.THUMBNAIL_SUCCESS_COUNTER.inc()
+    metrics.THUMBNAIL_BYTES_PROCESSED.inc(os.path.getsize(thumbnail_path))
     return thumbnail_path
 
 

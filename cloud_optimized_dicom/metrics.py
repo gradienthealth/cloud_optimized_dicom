@@ -68,3 +68,5 @@ THUMBNAIL_NAMESPACE = f"{NAMESPACE}:thumbnail"
 SERIES_MISSING_PIXEL_DATA = Metrics.counter(
     THUMBNAIL_NAMESPACE, "series_missing_pixel_data"
 )
+THUMBNAIL_SUCCESS_COUNTER = Metrics.counter(THUMBNAIL_NAMESPACE, "thumbnail_success")
+THUMBNAIL_BYTES_PROCESSED = Metrics.counter(THUMBNAIL_NAMESPACE, "thumbnail_bytes_processed")
