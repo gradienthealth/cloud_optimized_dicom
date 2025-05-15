@@ -1,7 +1,10 @@
+import dataclasses
 import logging
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Tuple
 
+import cv2
+import ffmpeg
 import numpy as np
 import pydicom3
 from google.cloud import storage
@@ -10,12 +13,17 @@ import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.utils import upload_and_count_file
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from cloud_optimized_dicom.cod_object import CODObject
 
 logger = logging.getLogger(__name__)
 
 SORTING_ATTRIBUTES = {"InstanceNumber": "00200013", "SliceLocation": "00201041"}
+DEFAULT_FPS = 4
+DEFAULT_QUALITY = 60
+DEFAULT_SIZE = 128
 
 
 class ThumbnailError(Exception):
@@ -28,18 +36,6 @@ class SeriesMissingPixelDataError(ThumbnailError):
 
 class NoExtractablePixelDataError(ThumbnailError):
     """Series has pixel data, but we failed to extract any of it."""
-
-
-from typing import Tuple
-
-import cv2
-import ffmpeg
-import numpy as np
-from google.cloud import storage
-
-DEFAULT_FPS = 4
-DEFAULT_QUALITY = 60
-DEFAULT_SIZE = 128
 
 
 # Utility functions having to do with converting a numpy array of pixel data into jpgs and mp4s
@@ -316,3 +312,82 @@ def generate_thumbnail(
     # we just generated the thumbnail, so it is not synced to the datastore
     cod_obj._thumbnail_synced = False
     return thumbnail_path
+
+
+@dataclasses.dataclass
+class ThumbnailCoordConverter:
+    orig_w: int
+    orig_h: int
+    thmb_ul_x: int
+    thmb_ul_y: int
+    thmb_br_x: int
+    thmb_br_y: int
+
+    @property
+    def thmb_w(self):
+        return self.thmb_br_x - self.thmb_ul_x
+
+    @property
+    def thmb_h(self):
+        return self.thmb_br_y - self.thmb_ul_y
+
+    def thumbnail_to_original(
+        self, thumbnail_coords: Tuple[float, float]
+    ) -> Tuple[float, float]:
+        """Convert a point in thumbnail space to original coordinate space"""
+        # Extract coordinates from the thumbnail_coords tuple
+        thmb_x, thmb_y = thumbnail_coords
+
+        # Check if the point is outside the bounds of the original image in the thumbnail
+        if not (
+            self.thmb_ul_x <= thmb_x <= self.thmb_br_x
+            and self.thmb_ul_y <= thmb_y <= self.thmb_br_y
+        ):
+            raise ValueError(
+                "The given thumbnail coordinates are outside the bounds of the original image in the thumbnail."
+            )
+
+        # Calculate the scaling factors between the thumbnail and the original image
+        scale_x = self.orig_w / self.thmb_w
+        scale_y = self.orig_h / self.thmb_h
+
+        # Map the thumbnail coordinates back to the original image
+        orig_x = (thmb_x - self.thmb_ul_x) * scale_x
+        orig_y = (thmb_y - self.thmb_ul_y) * scale_y
+        return orig_x, orig_y
+
+    def original_to_thumbnail(
+        self, original_coords: Tuple[float, float]
+    ) -> Tuple[float, float]:
+        """Convert a point in original coordinate space to thumbnail space"""
+        # Extract coordinates from the original_coords tuple
+        orig_x, orig_y = original_coords
+
+        # Check if the original coordinates are within the bounds of the original image
+        if not (0 <= orig_x <= self.orig_w and 0 <= orig_y <= self.orig_h):
+            raise ValueError(
+                "The given original coordinates are outside the bounds of the original image."
+            )
+
+        # Calculate the scaling factors between the original image and the thumbnail
+        scale_x = self.thmb_w / self.orig_w
+        scale_y = self.thmb_h / self.orig_h
+
+        # Map the original coordinates to the thumbnail
+        thmb_x = orig_x * scale_x + self.thmb_ul_x
+        thmb_y = orig_y * scale_y + self.thmb_ul_y
+        return thmb_x, thmb_y
+
+    @classmethod
+    def from_anchors(cls, anchors: dict) -> "ThumbnailCoordConverter":
+        try:
+            return ThumbnailCoordConverter(
+                orig_w=anchors["original_size"]["width"],
+                orig_h=anchors["original_size"]["height"],
+                thmb_ul_x=anchors["thumbnail_upper_left"]["col"],
+                thmb_ul_y=anchors["thumbnail_upper_left"]["row"],
+                thmb_br_x=anchors["thumbnail_bottom_right"]["col"],
+                thmb_br_y=anchors["thumbnail_bottom_right"]["row"],
+            )
+        except KeyError:
+            logger.exception(f"Anchors dict missing required fields: {anchors}")
