@@ -233,6 +233,10 @@ class Instance:
             self.study_uid(trust_hints_if_available=trust_hints_if_available)
         )
 
+    def get_instance_uid(self, hashed: bool):
+        """instance_uid getter method that returns the instance_uid or hashed_instance_uid, dpepending on the `hashed` flag"""
+        return self.hashed_instance_uid() if hashed else self.instance_uid()
+
     def open(self):
         """
         Open an instance and return a file pointer to its bytes, which can be given to pydicom.dcmread()
@@ -242,7 +246,7 @@ class Instance:
             ptr = self._open_tar()
         else:
             ptr = open(self.dicom_uri, "rb")
-        assert file_is_dicom(ptr)
+        assert file_is_dicom(ptr), f"File is not a valid DICOM: {self.dicom_uri}"
         return ptr
 
     def _open_tar(self):
@@ -511,3 +515,30 @@ class Instance:
         Custom destructor that calls self.cleanup()
         """
         self.cleanup()
+
+    def __hash__(self):
+        """Make Instance hashable based on its unique identifiers."""
+        # Use a tuple of the UIDs as the basis for the hash
+        # We use trust_hints_if_available=True to avoid unnecessary validation
+        return hash(
+            (
+                self.instance_uid(trust_hints_if_available=True),
+                self.series_uid(trust_hints_if_available=True),
+                self.study_uid(trust_hints_if_available=True),
+            )
+        )
+
+    def __eq__(self, other):
+        """We say that two instances are equal if they have the same UIDs."""
+        # instance cannot be equal to non-instance
+        if not isinstance(other, Instance):
+            return False
+        # TODO: should we not trust hints here? Leaning no b/c anyone who bothers implementing hints in their pipeline is aware fo the risk of false positives
+        return (
+            self.instance_uid(trust_hints_if_available=True)
+            == other.instance_uid(trust_hints_if_available=True)
+            and self.series_uid(trust_hints_if_available=True)
+            == other.series_uid(trust_hints_if_available=True)
+            and self.study_uid(trust_hints_if_available=True)
+            == other.study_uid(trust_hints_if_available=True)
+        )

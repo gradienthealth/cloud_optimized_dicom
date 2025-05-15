@@ -2,6 +2,7 @@ import logging
 import os
 import tarfile
 from tempfile import TemporaryDirectory
+from typing import Optional
 
 from google.cloud import storage
 from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
@@ -20,10 +21,12 @@ from cloud_optimized_dicom.errors import (
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
+from cloud_optimized_dicom.thumbnail.thumbnail import generate_thumbnail
 from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
+    is_remote,
     public_method,
-    upload_and_count,
+    upload_and_count_file,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,6 +73,7 @@ class CODObject:
         metadata: SeriesMetadata = None,
         _tar_synced: bool = False,
         _metadata_synced: bool = True,
+        _thumbnail_synced: bool = False,
     ):
         self.datastore_path = datastore_path
         self.client = client
@@ -101,6 +105,8 @@ class CODObject:
             self.get_metadata(create_if_missing=create_if_missing, dirty=True)
         self._tar_synced = _tar_synced
         self._metadata_synced = _metadata_synced
+        # if the thumbnail exists, it is not synced (we did not fetch it)
+        self._thumbnail_synced = self.get_custom_tag("thumbnail", dirty=True) is None
 
     def _validate_uids(self):
         """Validate the UIDs are valid DICOM UIDs (TODO make this more robust, for now just check length)"""
@@ -112,11 +118,6 @@ class CODObject:
     def lock(self) -> bool:
         """Read-only property for lock status."""
         return self._locker is not None
-
-    @property
-    def as_log(self) -> str:
-        """Return a string representation of the CODObject for logging purposes."""
-        return f"{self.datastore_series_uri}"
 
     # Temporary directory management
     def get_temp_dir(self) -> TemporaryDirectory:
@@ -139,9 +140,23 @@ class CODObject:
         return _tar_file_path
 
     @property
+    def tar_is_empty(self) -> bool:
+        """Check if the tar file is empty."""
+        return os.path.getsize(self.tar_file_path) == EMPTY_TAR_SIZE
+
+    @property
     def index_file_path(self) -> str:
         """The path to the index file for this series in the temporary directory."""
         return os.path.join(self.get_temp_dir().name, f"index.sqlite")
+
+    @property
+    def thumbnail_file_path(self) -> str:
+        """The path to the thumbnail file for this series in the temporary directory."""
+        num_instances_with_pixel_data = sum(
+            1 for i in self._metadata.instances.values() if i.has_pixeldata
+        )
+        thumbnail_type = "mp4" if num_instances_with_pixel_data > 1 else "jpg"
+        return os.path.join(self.get_temp_dir().name, f"thumbnail.{thumbnail_type}")
 
     # URI properties
     @property
@@ -234,15 +249,15 @@ class CODObject:
         """
         # prior to sync, make some assertions
         if self._tar_synced and self._metadata_synced:
-            logger.warning(f"Nothing to sync: {self.as_log}")
+            logger.warning(f"Nothing to sync: {self}")
             return
         # design choice: it's worth the API call to verify lock prior to sync
         # TODO consider removing this if we never see lock changes in the wild
         self._locker.verify()
         # sync tar
         if not self._tar_synced:
-            if os.path.getsize(self.tar_file_path) == EMPTY_TAR_SIZE:
-                logger.warning(f"Skipping tar sync - tar is empty: {self.as_log}")
+            if self.tar_is_empty:
+                logger.warning(f"Skipping tar sync - tar is empty: {self}")
                 return
             assert os.path.exists(
                 self.index_file_path
@@ -250,19 +265,90 @@ class CODObject:
             tar_blob = storage.Blob.from_string(self.tar_uri, client=self.client)
             tar_blob.storage_class = tar_storage_class
             index_blob = storage.Blob.from_string(self.index_uri, client=self.client)
-            upload_and_count(index_blob, self.index_file_path)
-            upload_and_count(tar_blob, self.tar_file_path)
+            upload_and_count_file(index_blob, self.index_file_path)
+            upload_and_count_file(tar_blob, self.tar_file_path)
             self._tar_synced = True
         # sync metadata
         if not self._metadata_synced:
             assert (
                 self._metadata
             ), "Metadata sync attempted but CODObject has no metadata"
+            self._set_dicom_uris_to_datastore()
             self._gzip_and_upload_metadata()
             self._metadata_synced = True
+        # handle thumbnail sync if necessary
+        self._sync_thumbnail()
         # now that the tar has been synced,
         # single overall sync message
-        logger.info(f"GRADIENT_STATE_LOGS:SYNCED_SUCCESSFULLY:{self.as_log}")
+        logger.info(f"GRADIENT_STATE_LOGS:SYNCED_SUCCESSFULLY:{self}")
+
+    def _sync_thumbnail(self):
+        """Sync the thumbnail to the datastore if it exists"""
+        if self._thumbnail_synced:
+            logger.info(f"Skipping thumbnail sync - thumbnail already synced: {self}")
+            return
+        thumbnail_metadata = self.get_custom_tag("thumbnail")
+        if thumbnail_metadata is None:
+            logger.info(f"Skipping thumbnail sync - thumbnail does not exist: {self}")
+            return
+        # upload thumbnail to datastore
+        thumbnail_blob = storage.Blob.from_string(
+            thumbnail_metadata["uri"], client=self.client
+        )
+        thumbnail_blob.upload_from_filename(self.thumbnail_file_path)
+        # we just synced the thumbnail, so it is guaranteed to be in the same state as the datastore
+        self._thumbnail_synced = True
+
+    @public_method
+    def add_custom_tag(
+        self,
+        tag_name: str,
+        tag_value: dict,
+        overwrite_existing: bool = True,
+        dirty: bool = False,
+    ):
+        """Add a custom tag to the metadata"""
+        self.get_metadata(dirty=dirty)._add_custom_tag(
+            tag_name, tag_value, overwrite_existing
+        )
+        # modifying metadata means it is not synced to the datastore
+        self._metadata_synced = False
+
+    @public_method
+    def get_custom_tag(self, tag_name: str, dirty: bool = False) -> Optional[dict]:
+        """Get a custom tag from the metadata. Returns `None` if the tag does not exist."""
+        return self.get_metadata(dirty=dirty).custom_tags.get(tag_name, None)
+
+    @public_method
+    def generate_thumbnail(self, overwrite_existing: bool = False, dirty: bool = False):
+        """Generate a thumbnail for a COD object.
+
+        Args:
+            overwrite_existing: Whether to overwrite the existing thumbnail, if it exists.
+            dirty: Whether the operation is dirty.
+
+        Returns:
+            The local path to the thumbnail after saving it to disk (or `None` if no thumbnail was generated)
+        """
+        return generate_thumbnail(
+            cod_obj=self, overwrite_existing=overwrite_existing, dirty=dirty
+        )
+
+    @public_method
+    def fetch_thumbnail(self, dirty: bool = False) -> str:
+        """Fetch the thumbnail for a COD object. Returns the local path to the thumbnail after downloading it. Raises an error if the thumbnail does not exist."""
+        thumbnail_metadata = self.get_custom_tag("thumbnail", dirty=dirty)
+        if thumbnail_metadata is None:
+            raise ValueError(f"Thumbnail not found for {self}")
+        thumbnail_uri = thumbnail_metadata["uri"]
+        thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=self.client)
+        thumbnail_local_path = os.path.join(
+            self.get_temp_dir().name, thumbnail_uri.split("/")[-1]
+        )
+        thumbnail_blob.download_to_filename(thumbnail_local_path)
+        # we just fetched the thumbnail, so it is guaranteed to be in the same state as the datastore
+        self._thumbnail_synced = True
+        return thumbnail_local_path
 
     @public_method
     def upload_error_log(self, message: str):
@@ -271,12 +357,10 @@ class CODObject:
         if error_blob.exists():
             # because an error.log existing should cause cod objects to fail initialization,
             # it should be impossible for error.log to exist when this method is called
-            msg = f"GRADIENT_STATE_LOGS:ERROR_LOG_ALREADY_EXISTS:{self.as_log}"
+            msg = f"GRADIENT_STATE_LOGS:ERROR_LOG_ALREADY_EXISTS:{self}"
             logger.critical(msg)
             raise ErrorLogExistsError(msg)
-        logger.warning(
-            f"GRADIENT_STATE_LOGS:UPLOADING_ERROR_LOG:{self.as_log}:{message}"
-        )
+        logger.warning(f"GRADIENT_STATE_LOGS:UPLOADING_ERROR_LOG:{self}:{message}")
         error_blob.upload_from_string(message)
 
     @public_method
@@ -348,6 +432,18 @@ class CODObject:
             logger.info(f"GRADIENT_STATE_LOGS:DELETED:{deleted_dependencies}")
         return deleted_dependencies
 
+    @public_method
+    def pull_tar(self, dirty: bool = False):
+        """Pull tar and index from GCS to local temp dir,
+        modify local origin path of instances to point to local tar.
+        Ensure multiple instance.open within the series won't result in multiple GCS GET operations.
+        """
+        self._force_fetch_tar(fetch_index=True)
+        for instance_uid, instance in self.get_metadata(
+            create_if_missing=False, dirty=dirty
+        ).instances.items():
+            instance.dicom_uri = f"{self.tar_file_path}://instances/{instance_uid}.dcm"
+
     # Internal operations
     def _force_fetch_tar(self, fetch_index: bool = True):
         """Download the tarball (and index) from GCS.
@@ -363,6 +459,15 @@ class CODObject:
             metrics.STORAGE_CLASS_COUNTERS["GET"][index_blob.storage_class].inc()
         # we just fetched the tar, so it is guaranteed to be in the same state as the datastore
         self._tar_synced = True
+
+    def _set_dicom_uris_to_datastore(self):
+        """Set the dicom_uri of each instance to the datastore URI"""
+        for instance in self._metadata.instances.values():
+            # skip remote .tar instances as they are already in the datastore
+            if is_remote(instance.dicom_uri) and instance.is_nested_in_tar:
+                continue
+            uid = instance.get_instance_uid(hashed=self.hashed_uids)
+            instance.dicom_uri = f"{self.tar_uri}://instances/{uid}.dcm"
 
     def _gzip_and_upload_metadata(self):
         """
@@ -388,19 +493,19 @@ class CODObject:
         if self.hashed_uids:
             assert (
                 instance.uid_hash_func
-            ), f"CODObject {self.as_log} has hashed UIDs but instance is missing uid_hash_func: {instance}"
+            ), f"CODObject {self} has hashed UIDs but instance is missing uid_hash_func: {instance}"
             relevant_study_uid = instance.hashed_study_uid()
             relevant_series_uid = instance.hashed_series_uid()
         else:
             assert (
                 not instance.uid_hash_func
-            ), f"CODObject {self.as_log} does not have hashed UIDs but instance has uid_hash_func: {instance}"
+            ), f"CODObject {self} does not have hashed UIDs but instance has uid_hash_func: {instance}"
             relevant_study_uid = instance.study_uid()
             relevant_series_uid = instance.series_uid()
         assert (
             relevant_study_uid == self.study_uid
             and relevant_series_uid == self.series_uid
-        ), f"Instance {instance} does not belong to COD object {self.as_log}"
+        ), f"Instance {instance} does not belong to COD object {self}"
 
     # Serialization methods
     def serialize(self) -> dict:
@@ -459,3 +564,29 @@ class CODObject:
         # Regardless of exception(s), we still want to clean up the temp dir
         # self.cleanup_temp_dir() TODO reimplement
         return False  # Don't suppress any exceptions
+
+    @classmethod
+    def from_uri(
+        cls,
+        uri: str,
+        client: storage.Client,
+        lock: bool,
+        hashed_uids: bool,
+        create_if_missing: bool,
+    ):
+        """Create a CODObject from a URI"""
+        if not is_remote(uri) or "/studies/" not in uri or "/series/" not in uri:
+            raise ValueError(f"Invalid COD URI: {uri}")
+        datastore_uri, overflow = uri.split("/studies/", 1)
+        study_uid, series_and_overflow = overflow.split("/series/", 1)
+        # remove all possible overflow from the series uid: subfile names, tar extension
+        series_uid = series_and_overflow.split("/", 1)[0].rstrip(".tar")
+        return cls(
+            datastore_path=datastore_uri,
+            client=client,
+            study_uid=study_uid,
+            series_uid=series_uid,
+            lock=lock,
+            hashed_uids=hashed_uids,
+            create_if_missing=create_if_missing,
+        )

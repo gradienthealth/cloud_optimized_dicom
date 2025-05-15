@@ -73,7 +73,7 @@ class CODAppender:
         self._handle_same(state_change.same)
         # Edge case: no NEW or DIFF state changes -> return early
         if not state_change.new and not state_change.diff:
-            logger.warning(f"No new instances: {self.cod_object.as_log}")
+            logger.warning(f"No new instances: {self.cod_object}")
             metrics.SERIES_DUPE_COUNTER.inc()
             return self.append_result
         # handle diff
@@ -134,7 +134,7 @@ class CODAppender:
         # raise an error if overall series is too large (to be caught by caller)
         if grouping_size > max_series_size * BYTES_PER_GB:
             raise ValueError(
-                f"Overlarge series: {self.cod_object.as_log} ({grouping_size} bytes) exceeds max_series_size: {max_series_size}gb"
+                f"Overlarge series: {self.cod_object} ({grouping_size} bytes) exceeds max_series_size: {max_series_size}gb"
             )
         # update append result
         self.append_result.errors.extend(errors)
@@ -412,15 +412,9 @@ class CODAppender:
         # Add new instances to metadata
         for instance in instances_added_to_tar:
             # get hashed uid if series is hashed, standard if not
-            uid = (
-                instance.hashed_instance_uid()
-                if self.cod_object.hashed_uids
-                else instance.instance_uid()
-            )
-            # TODO: deid?
+            uid = instance.get_instance_uid(hashed=self.cod_object.hashed_uids)
             output_uri = f"{self.cod_object.tar_uri}://instances/{uid}.dcm"
             instance.extract_metadata(output_uri)
-            instance.dicom_uri = output_uri
             self.cod_object._metadata.instances[uid] = instance
         # if we added any instances, metadata is now desynced
         self.cod_object._metadata_synced = (

@@ -13,7 +13,7 @@ class TestHints(unittest.TestCase):
     def test_empty_hints(self):
         hints = Hints()
         instance = Instance(
-            dicom_uri=os.path.join(self.test_data_dir, "valid.dcm"), hints=hints
+            dicom_uri=os.path.join(self.test_data_dir, "monochrome2.dcm"), hints=hints
         )
         self.assertTrue(instance.validate())
 
@@ -26,14 +26,14 @@ class TestHints(unittest.TestCase):
             crc32c="uEaR6w==",
         )
         instance = Instance(
-            dicom_uri=os.path.join(self.test_data_dir, "valid.dcm"), hints=hints
+            dicom_uri=os.path.join(self.test_data_dir, "monochrome2.dcm"), hints=hints
         )
         self.assertTrue(instance.validate())
 
     def test_bad_uid(self):
         hints = Hints(instance_uid="BAD_UID")
         instance = Instance(
-            dicom_uri=os.path.join(self.test_data_dir, "valid.dcm"), hints=hints
+            dicom_uri=os.path.join(self.test_data_dir, "monochrome2.dcm"), hints=hints
         )
         with self.assertRaises(AssertionError):
             instance.validate()
@@ -41,7 +41,7 @@ class TestHints(unittest.TestCase):
     def test_bad_size(self):
         hints = Hints(size=1000)
         instance = Instance(
-            dicom_uri=os.path.join(self.test_data_dir, "valid.dcm"), hints=hints
+            dicom_uri=os.path.join(self.test_data_dir, "monochrome2.dcm"), hints=hints
         )
         with self.assertRaises(AssertionError):
             instance.validate()
@@ -49,7 +49,7 @@ class TestHints(unittest.TestCase):
     def test_bad_crc32c(self):
         hints = Hints(crc32c="BAD_CRC32C")
         instance = Instance(
-            dicom_uri=os.path.join(self.test_data_dir, "valid.dcm"), hints=hints
+            dicom_uri=os.path.join(self.test_data_dir, "monochrome2.dcm"), hints=hints
         )
         with self.assertRaises(AssertionError):
             instance.validate()

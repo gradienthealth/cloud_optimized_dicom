@@ -28,7 +28,7 @@ class SeriesMetadata:
     instances: dict[str, Instance] = field(default_factory=dict)
     custom_tags: dict = field(default_factory=dict)
 
-    def add_custom_tag(self, tag_name: str, tag_value, overwrite_existing=False):
+    def _add_custom_tag(self, tag_name: str, tag_value, overwrite_existing=False):
         """Add a custom tag to the series metadata"""
         # Raise error if tag exists and we're not overwriting existing tags
         if hasattr(self.custom_tags, tag_name) and not overwrite_existing:

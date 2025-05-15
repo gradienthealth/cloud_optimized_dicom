@@ -1,14 +1,23 @@
+import os
 import unittest
 
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
+from pydicom3 import dcmread
 
 from cloud_optimized_dicom.cod_object import CODObject
+from cloud_optimized_dicom.instance import Instance
+from cloud_optimized_dicom.utils import is_remote
 
 
 class TestCODObject(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
+        cls.test_instance_uid = "1.2.276.0.50.192168001092.11156604.14547392.313"
+        cls.test_series_uid = "1.2.276.0.50.192168001092.11156604.14547392.303"
+        cls.test_study_uid = "1.2.276.0.50.192168001092.11156604.14547392.4"
+        cls.local_instance_path = os.path.join(cls.test_data_dir, "monochrome2.dcm")
         cls.client = storage.Client(
             project="gradient-pacs-siskin-172863",
             client_options=ClientOptions(
@@ -54,6 +63,42 @@ class TestCODObject(unittest.TestCase):
                 series_uid="1.2.3.4.5",
                 lock=False,
             )
+
+    def test_pull_tar(self):
+        """Test that pull_tar fetches the tar and index and updates the instance dicom_uri"""
+        # append and sync an instance
+        instance = Instance(dicom_uri=self.local_instance_path)
+        with CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=True,
+        ) as cod_obj:
+            cod_obj.append([instance])
+            cod_obj.sync()
+        cod_obj = CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=False,
+        )
+        instance = cod_obj.get_metadata(dirty=True).instances[self.test_instance_uid]
+        # Before we pull the tar, the instance should have a remote URI (it exists in the COD datastore)
+        self.assertTrue(is_remote(instance.dicom_uri))
+        cod_obj.pull_tar(dirty=True)
+        # After we pull the tar, the instance should have a local URI (it exists in the local tar file)
+        self.assertEqual(
+            instance.dicom_uri,
+            f"{cod_obj.tar_file_path}://instances/{self.test_instance_uid}.dcm",
+        )
+        # We should be able to open/read the instance in this state from this local tar file
+        with instance.open() as f:
+            ds = dcmread(f)
+            self.assertEqual(ds.StudyInstanceUID, self.test_study_uid)
+            self.assertEqual(ds.SeriesInstanceUID, self.test_series_uid)
+            self.assertEqual(ds.SOPInstanceUID, self.test_instance_uid)
 
     def test_serialize_deserialize(self):
         """Test serialization and deserialization"""
