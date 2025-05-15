@@ -193,3 +193,33 @@ class TestDeid(unittest.TestCase):
             )
             append_result = cod_object.append([diff_hash_dupe], dirty=True)
             self.assertEqual(append_result.conflict[0], diff_hash_dupe)
+
+    def test_serialize_deserialize_with_hashed_uids(self):
+        """Test that serialize and deserialize work with hashed uids"""
+        cod_object = CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=example_hash_function(self.test_study_uid),
+            series_uid=example_hash_function(self.test_series_uid),
+            lock=False,
+            hashed_uids=True,
+        )
+        instance = Instance(
+            dicom_uri=self.local_instance_path, uid_hash_func=example_hash_function
+        )
+        cod_object.append([instance], dirty=True)
+        # serialize the cod_object
+        serialized_cod_object = cod_object.serialize()
+        # deserialize the cod_object
+        deserialized_cod_object = CODObject.deserialize(
+            serialized_cod_object,
+            client=self.client,
+            uid_hash_func=example_hash_function,
+        )
+        # verify the deserialized cod_object is equal to the original cod_object
+        self.assertEqual(deserialized_cod_object.study_uid, cod_object.study_uid)
+        self.assertEqual(deserialized_cod_object.series_uid, cod_object.series_uid)
+        self.assertEqual(len(deserialized_cod_object._metadata.instances), 1)
+        self.assertEqual(
+            deserialized_cod_object._metadata.instances, cod_object._metadata.instances
+        )
