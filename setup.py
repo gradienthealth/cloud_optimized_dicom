@@ -19,6 +19,7 @@ setup(
         "filetype==1.2.0",
         "pylibjpeg-openjpeg==2.4.0",
         "pydicom3 @ git+https://github.com/gradienthealth/pydicom-3.git",
+        "opencv-python-headless==4.11.0.86",
     ],
     extras_require={
         "test": [

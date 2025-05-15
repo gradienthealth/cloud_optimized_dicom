@@ -60,18 +60,9 @@ def _convert_frames_to_mp4(
     # if any frames are color, we must write a color video
     thumbnail_is_color = any(len(frame.shape) > 2 for frame in frames)
 
-    # Initialize the video writer, using XVID codec
-    out = cv2.VideoWriter(
-        filename=output_path,
-        fourcc=cv2.VideoWriter_fourcc(*"avc1"),
-        fps=fps,
-        frameSize=(width, height),
-        isColor=thumbnail_is_color,
-    )
-
-    def _process_frame(frame: np.ndarray) -> np.ndarray:
+    def _process_frame(frame: np.ndarray) -> bytes:
         """For color thumbnails, convert frame to BGR format. No conversion is necessary for grayscale thumbnails.
-        After formatting, normalize the frame (0-255), set data type to uint8, and return.
+        After formatting, normalize the frame (0-255), set data type to uint8, convert to bytes, and return.
         """
         if thumbnail_is_color:
             if len(frame.shape) == 2:
@@ -88,12 +79,31 @@ def _convert_frames_to_mp4(
             raise ValueError(
                 f"Unsupported frame shape for grayscale thumbnail: {frame.shape}"
             )
-        return cv2.normalize(frame, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)
+        return cv2.normalize(frame, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U).tobytes()
 
-    for frame in frames:
-        out.write(_process_frame(frame))
+    # Create ffmpeg process
+    process = (
+        ffmpeg.input(
+            "pipe:",
+            format="rawvideo",
+            pix_fmt="bgr24" if thumbnail_is_color else "gray",
+            s=f"{width}x{height}",
+            r=fps,
+        )
+        .output(output_path, vcodec="libx264", pix_fmt="yuv420p", r=fps)
+        .overwrite_output()
+        .run_async(pipe_stdin=True)
+    )
 
-    out.release()
+    try:
+        # Write frames to ffmpeg process
+        for frame in frames:
+            process.stdin.write(_process_frame(frame))
+        process.stdin.close()
+        process.wait()
+    except Exception as e:
+        process.kill()
+        raise RuntimeError(f"Failed to write video: {str(e)}")
 
 
 def _generate_thumbnail_frame_and_anchors(
