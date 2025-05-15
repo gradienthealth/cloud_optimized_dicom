@@ -21,7 +21,7 @@ from cloud_optimized_dicom.errors import (
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
-from cloud_optimized_dicom.thumbnail.thumbnail import generate_thumbnail
+from cloud_optimized_dicom.thumbnail import generate_thumbnail
 from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
     is_remote,
