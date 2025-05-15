@@ -273,7 +273,6 @@ class CODObject:
             assert (
                 self._metadata
             ), "Metadata sync attempted but CODObject has no metadata"
-            self._set_dicom_uris_to_datastore()
             self._gzip_and_upload_metadata()
             self._metadata_synced = True
         # handle thumbnail sync if necessary
@@ -460,20 +459,29 @@ class CODObject:
         # we just fetched the tar, so it is guaranteed to be in the same state as the datastore
         self._tar_synced = True
 
-    def _set_dicom_uris_to_datastore(self):
-        """Set the dicom_uri of each instance to the datastore URI"""
+    def _set_dicom_uris_to_datastore(self) -> dict[Instance, str]:
+        """Set the dicom_uri of each instance to the datastore URI.
+
+        Returns:
+            A dict mapping the instance to the local path of the instance, so we can set it back after the sync
+        """
+        instance_to_local_path = {}
         for instance in self._metadata.instances.values():
             # skip remote .tar instances as they are already in the datastore
             if is_remote(instance.dicom_uri) and instance.is_nested_in_tar:
                 continue
             uid = instance.get_instance_uid(hashed=self.hashed_uids)
-            instance.dicom_uri = f"{self.tar_uri}://instances/{uid}.dcm"
+            uri = f"{self.tar_uri}://instances/{uid}.dcm"
+            instance_to_local_path[instance] = instance.dicom_uri
+            instance.dicom_uri = uri
+        return instance_to_local_path
 
     def _gzip_and_upload_metadata(self):
         """
         Given a SeriesMetadata object and a blob to upload it to, convert the object to JSON, gzip it,
         and upload it to the blob
         """
+        instance_to_local_path = self._set_dicom_uris_to_datastore()
         metadata_blob = storage.Blob.from_string(self.metadata_uri, client=self.client)
         metadata_blob.content_encoding = "gzip"
         compressed_metadata = self._metadata.to_gzipped_json()
@@ -481,6 +489,9 @@ class CODObject:
             compressed_metadata, content_type="application/json", retry=DEFAULT_RETRY
         )
         metrics.STORAGE_CLASS_COUNTERS["CREATE"][metadata_blob.storage_class].inc()
+        # set the dicom_uri of each instance back to the local path
+        for instance, local_path in instance_to_local_path.items():
+            instance.dicom_uri = local_path
 
     def assert_instance_belongs_to_cod_object(self, instance: Instance):
         """Compare relevant instance study/series UIDS (hashed if uid_hash_func provided, standard if not) to COD object study/series UIDs.
