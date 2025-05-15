@@ -10,8 +10,7 @@ from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
-from cloud_optimized_dicom.thumbnail.thumbnail import generate_thumbnail
-from cloud_optimized_dicom.thumbnail.utils import DEFAULT_SIZE
+from cloud_optimized_dicom.thumbnail import DEFAULT_SIZE, ThumbnailCoordConverter
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 
@@ -68,6 +67,32 @@ def validate_thumbnail(
     if save_loc:
         with open(save_loc, "wb") as f, open(thumbnail_path, "rb") as f2:
             f.write(f2.read())
+
+    # test the thumbnail coord converter
+    instance_uid = list(cod_obj._metadata.custom_tags["thumbnail"]["instances"].keys())[
+        0
+    ]
+    thumbnail_frame_metadata = cod_obj._metadata.custom_tags["thumbnail"]["instances"][
+        instance_uid
+    ]["frames"][0]
+    converter = ThumbnailCoordConverter.from_anchors(
+        thumbnail_frame_metadata["anchors"]
+    )
+    # bigger dimension should be expected_frame_size
+    testcls.assertEqual(max(converter.thmb_w, converter.thmb_h), DEFAULT_SIZE)
+    # aspect ratio should be the same as the original image
+    testcls.assertAlmostEqual(
+        converter.thmb_w / converter.thmb_h,
+        converter.orig_w / converter.orig_h,
+        places=2,
+    )
+    # convert point on original image to thumbnail and back
+    test_point = (10, 10)
+    recovered_point = converter.thumbnail_to_original(
+        converter.original_to_thumbnail(test_point)
+    )
+    testcls.assertAlmostEqual(recovered_point[0], test_point[0])
+    testcls.assertAlmostEqual(recovered_point[1], test_point[1])
 
 
 class TestThumbnail(unittest.TestCase):

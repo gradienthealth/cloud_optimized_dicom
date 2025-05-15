@@ -129,12 +129,9 @@ class TestLocking(unittest.TestCase):
         ) as cod:
             with self.assertLogs(level="WARNING") as cm:
                 cod.get_metadata(dirty=True)
-            print(cm.output)
-            self.assertTrue(
-                any(
-                    "Performing dirty operation on locked CODObject" in log
-                    for log in cm.output
-                )
+            self.assertRegex(
+                cm.output[0],
+                r"Performing dirty operation 'get_metadata' on locked CODObject: .*",
             )
 
     def test_lock_gone_on_cleanup(self):
