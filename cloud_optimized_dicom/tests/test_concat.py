@@ -155,10 +155,11 @@ class TestConcat(unittest.TestCase):
         self.assertTrue(
             metadata_blob.exists(), f"{cod_obj.metadata_uri} does not exist"
         )
+        metadata = SeriesMetadata.from_blob(metadata_blob)
         if not dryrun:
             for instance in new + same:
                 instance.delete_dependencies()
-            self._assert_instances_dne(cod_obj._metadata.instances.values())
+            self._assert_instances_dne(metadata.instances.values())
         return cod_obj
 
     def test_single_instance(self):
