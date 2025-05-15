@@ -4,7 +4,7 @@ import tarfile
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable
+from typing import Callable, Optional
 
 import pydicom3
 from ratarmountcore import open as rmc_open
@@ -480,7 +480,9 @@ class Instance:
         }
 
     @classmethod
-    def from_cod_dict_v1(cls, instance_dict: dict) -> "Instance":
+    def from_cod_dict_v1(
+        cls, instance_dict: dict, uid_hash_func: Optional[Callable] = None
+    ) -> "Instance":
         """Convert a COD Metadata v1.0 dict to an Instance."""
         if (found_version := instance_dict.get("version")) != "1.0":
             logger.warning(f"Expected version 1.0, but got {found_version}")
@@ -490,6 +492,7 @@ class Instance:
         )
         return Instance(
             dicom_uri=instance_dict["uri"],
+            uid_hash_func=uid_hash_func,
             _metadata=instance_dict["metadata"],
             _byte_offsets=byte_offsets,
             _custom_offset_tables=instance_dict["offset_tables"],
@@ -541,4 +544,5 @@ class Instance:
             == other.series_uid(trust_hints_if_available=True)
             and self.study_uid(trust_hints_if_available=True)
             == other.study_uid(trust_hints_if_available=True)
+            and self.uid_hash_func == other.uid_hash_func
         )

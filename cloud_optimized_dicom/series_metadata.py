@@ -2,6 +2,7 @@ import gzip
 import json
 from dataclasses import dataclass, field
 from io import BytesIO
+from typing import Callable, Optional
 
 from google.cloud import storage
 
@@ -67,7 +68,9 @@ class SeriesMetadata:
         return gzip_buffer.getvalue()
 
     @classmethod
-    def from_dict(cls, series_metadata_dict: dict) -> "SeriesMetadata":
+    def from_dict(
+        cls, series_metadata_dict: dict, uid_hash_func: Optional[Callable] = None
+    ) -> "SeriesMetadata":
         """Class method to create an instance from a dictionary."""
         # retrieve the study and series UIDs (might be de-identified)
         if "deid_study_uid" in series_metadata_dict:
@@ -82,7 +85,9 @@ class SeriesMetadata:
         # Parse standard cod metadata
         cod_dict: dict = series_metadata_dict.pop("cod")
         instances = {
-            instance_uid: Instance.from_cod_dict_v1(instance_dict)
+            instance_uid: Instance.from_cod_dict_v1(
+                instance_dict, uid_hash_func=uid_hash_func
+            )
             for instance_uid, instance_dict in cod_dict.get("instances", {}).items()
         }
 
@@ -98,11 +103,15 @@ class SeriesMetadata:
         )
 
     @classmethod
-    def from_bytes(cls, bytes: bytes) -> "SeriesMetadata":
+    def from_bytes(
+        cls, bytes: bytes, uid_hash_func: Optional[Callable] = None
+    ) -> "SeriesMetadata":
         """Class method to create a SeriesMetadata object from a bytes object."""
-        return cls.from_dict(json.loads(bytes))
+        return cls.from_dict(json.loads(bytes), uid_hash_func=uid_hash_func)
 
     @classmethod
-    def from_blob(cls, blob: storage.Blob) -> "SeriesMetadata":
+    def from_blob(
+        cls, blob: storage.Blob, uid_hash_func: Optional[Callable] = None
+    ) -> "SeriesMetadata":
         """Class method to create a SeriesMetadata object from a GCS blob."""
-        return cls.from_bytes(blob.download_as_bytes())
+        return cls.from_bytes(blob.download_as_bytes(), uid_hash_func=uid_hash_func)

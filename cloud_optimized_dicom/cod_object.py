@@ -2,7 +2,7 @@ import logging
 import os
 import tarfile
 from tempfile import TemporaryDirectory
-from typing import Optional
+from typing import Callable, Optional
 
 from google.cloud import storage
 from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
@@ -535,12 +535,15 @@ class CODObject:
         cls,
         serialized_obj: dict,
         client: storage.Client,
+        uid_hash_func: Optional[Callable] = None,
     ) -> "CODObject":
         metadata_dict = serialized_obj.pop("_metadata")
         # if lock_generation is not None, the serialized object had a lock
         lock = True if serialized_obj["lock_generation"] is not None else False
         cod_object = CODObject(**serialized_obj, client=client, lock=lock)
-        cod_object._metadata = SeriesMetadata.from_dict(metadata_dict)
+        cod_object._metadata = SeriesMetadata.from_dict(
+            metadata_dict, uid_hash_func=uid_hash_func
+        )
         return cod_object
 
     def cleanup_temp_dir(self):
