@@ -235,7 +235,7 @@ def _generate_thumbnail_frames(
                 )
                 # update the list mapping index in overall thumbnail to index within instance (i.e 5th thumbnail frame = 3rd frame of instance 2)
                 thumbnail_index_to_instance_frame.append(
-                    (instance_uid, instance_frame_index)
+                    [instance_uid, instance_frame_index]
                 )
             thumbnail_instance_metadata[instance_uid] = {
                 "frames": instance_frame_metadata
