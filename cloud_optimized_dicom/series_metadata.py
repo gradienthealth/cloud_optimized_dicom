@@ -54,6 +54,10 @@ class SeriesMetadata:
         }
         return {**base_dict, **self.custom_tags}
 
+    def to_bytes(self) -> bytes:
+        """Convert from SeriesMetadata -> dict -> JSON -> bytes"""
+        return json.dumps(self.to_dict()).encode("utf-8")
+
     def to_gzipped_json(self) -> bytes:
         """Convert from SeriesMetadata -> dict -> JSON -> bytes -> gzip"""
         # TODO if memory issues continue, can try streaming dict instead of creating it outright
