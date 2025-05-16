@@ -106,7 +106,9 @@ class CODObject:
         self._tar_synced = _tar_synced
         self._metadata_synced = _metadata_synced
         # if the thumbnail exists, it is not synced (we did not fetch it)
-        self._thumbnail_synced = self.get_custom_tag("thumbnail", dirty=True) is None
+        self._thumbnail_synced = (
+            self.get_custom_tag("thumbnail", dirty=not lock) is None
+        )
 
     def _validate_uids(self):
         """Validate the UIDs are valid DICOM UIDs (TODO make this more robust, for now just check length)"""
