@@ -10,6 +10,7 @@ from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
+from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.thumbnail import DEFAULT_SIZE, ThumbnailCoordConverter
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
@@ -116,6 +117,12 @@ class TestThumbnail(unittest.TestCase):
             [dicom_path], self.datastore_path, self.client
         )
         validate_thumbnail(self, cod_obj, expected_frame_count=1)
+        reloaded_metadata = SeriesMetadata.from_bytes(cod_obj._metadata.to_bytes())
+        self.assertIsNotNone(reloaded_metadata.custom_tags["thumbnail"])
+        self.assertDictEqual(
+            reloaded_metadata.custom_tags["thumbnail"],
+            cod_obj._metadata.custom_tags["thumbnail"],
+        )
 
     def test_gen_monochrome2(self):
         """Test thumbnail generation for a single frame DICOM file (MONOCHROME2)"""
@@ -145,6 +152,12 @@ class TestThumbnail(unittest.TestCase):
             [multiframe_path], self.datastore_path, self.client
         )
         validate_thumbnail(self, cod_obj, expected_frame_count=78)
+        reloaded_metadata = SeriesMetadata.from_bytes(cod_obj._metadata.to_bytes())
+        self.assertIsNotNone(reloaded_metadata.custom_tags["thumbnail"])
+        self.assertDictEqual(
+            reloaded_metadata.custom_tags["thumbnail"],
+            cod_obj._metadata.custom_tags["thumbnail"],
+        )
 
     def test_sync_and_fetch(self):
         """Test thumbnail generation and sync"""
