@@ -17,9 +17,12 @@ setup(
         "google-cloud-storage==2.19.0",
         "apache-beam[gcp]==2.63.0",
         "filetype==1.2.0",
+        "pylibjpeg==2.0.1",
+        "pylibjpeg-libjpeg==2.3.0",
         "pylibjpeg-openjpeg==2.4.0",
         "pydicom3 @ git+https://github.com/gradienthealth/pydicom-3.git",
         "opencv-python-headless==4.11.0.86",
+        "ffmpeg-python==0.2.0",
     ],
     extras_require={
         "test": [
