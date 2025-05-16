@@ -349,21 +349,11 @@ class Instance:
                     }
 
                 # extract json dict using custom bulk data handler
-                try:
-                    ds_dict = ds.to_json_dict(
-                        bulk_data_element_handler=bulk_data_handler
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Instance {self} metadata extraction error: {e}\nRetrying with suppress_invalid_tags=True"
-                    )
-                    # TODO: check if supress will still provide bad tags in utf-8 encoded binary (this way we still can preview something)
-                    # Will likely be related to pydicom 3.0; sometimes we get birthday in MMDDYYYY rather than YYYYMMDD as per spec
-                    # So suppression should ideally still provide back the binary data just in utf8 encoded data.
-                    ds_dict = ds.to_json_dict(
-                        bulk_data_element_handler=bulk_data_handler,
-                        suppress_invalid_tags=True,
-                    )
+                # suppress_invalid_tags=True so that when bad tags are encountered, they are simply omitted
+                ds_dict = ds.to_json_dict(
+                    bulk_data_element_handler=bulk_data_handler,
+                    suppress_invalid_tags=True,
+                )
                 # make sure to include file_meta
                 ds_dict.update(
                     ds.file_meta.to_json_dict(
