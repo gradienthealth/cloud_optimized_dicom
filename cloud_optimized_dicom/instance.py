@@ -86,9 +86,8 @@ class Instance:
             return
 
         # we store the path, not the file object, so that instances can be pickled (allows them to be passed between beam.DoFns)
-        self._temp_file_path = tempfile.NamedTemporaryFile(
-            suffix=".dcm", delete=False
-        ).name
+        with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as temp_file:
+            self._temp_file_path = temp_file.name
 
         # read remote file into local temp file
         with open(self._temp_file_path, "wb") as local_file:
