@@ -32,12 +32,13 @@ class CODLocker:
         # if the lock already exists, assert generation matches (re-acquisition case)
         if (lock_blob := self.get_lock_blob()).exists():
             lock_blob.reload()
+            lock_uri = f"gs://{lock_blob.bucket.name}/{lock_blob.name}"
             if lock_blob.generation != self.cod_object.lock_generation:
                 raise LockAcquisitionError(
-                    "COD:LOCK:ACQUISITION_FAILED:DIFF_GEN_LOCK_ALREADY_EXISTS"
+                    f"COD:LOCK:ACQUISITION_FAILED:DIFF_GEN_LOCK_ALREADY_EXISTS:{lock_uri} (generation: {lock_blob.generation})"
                 )
             logger.info(
-                f"COD:LOCK:REACQUIRED:gs://{lock_blob.bucket.name}/{lock_blob.name} (generation: {self.cod_object.lock_generation})"
+                f"COD:LOCK:REACQUIRED:{lock_uri} (generation: {self.cod_object.lock_generation})"
             )
             return
 
