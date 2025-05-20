@@ -264,6 +264,7 @@ def get_multiframe_offset_tables(dataset: pydicom3.Dataset) -> dict:
     # catch edge cases: single frame, pixeldata is None
     if (
         "NumberOfFrames" not in dataset
+        or "PixelData" not in dataset
         or not dataset.NumberOfFrames
         or dataset.NumberOfFrames <= 1
         or dataset.PixelData is None
