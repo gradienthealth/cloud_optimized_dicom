@@ -50,7 +50,7 @@ class Instance:
     uid_hash_func: Callable[[str], str] = None
 
     # private internal fields
-    _temp_file: tempfile._TemporaryFileWrapper = None
+    _temp_file_path: str = None
     _metadata: dict = None
     _custom_offset_tables: dict = None
     _diff_hash_dupe_paths: list[str] = field(default_factory=list)
@@ -85,17 +85,19 @@ class Instance:
         if not is_remote(self.dicom_uri):
             return
 
-        # initialize temp file
-        self._temp_file = tempfile.NamedTemporaryFile(suffix=".dcm", delete=False)
+        # we store the path, not the file object, so that instances can be pickled (allows them to be passed between beam.DoFns)
+        self._temp_file_path = tempfile.NamedTemporaryFile(
+            suffix=".dcm", delete=False
+        ).name
 
         # read remote file into local temp file
-        with open(self._temp_file.name, "wb") as local_file:
+        with open(self._temp_file_path, "wb") as local_file:
             with smart_open(
                 uri=self.dicom_uri, mode="rb", transport_params=self.transport_params
             ) as source:
                 local_file.write(source.read())
         # after writing, dicom_uri is now local
-        self.dicom_uri = self._temp_file.name
+        self.dicom_uri = self._temp_file_path
         self.validate()
 
     def validate(self):
@@ -498,10 +500,8 @@ class Instance:
         """
         Delete the temporary file, if it exists.
         """
-        if self._temp_file:
-            self._temp_file.close()
-            if os.path.exists(self._temp_file.name):
-                os.remove(self._temp_file.name)
+        if self._temp_file_path and os.path.exists(self._temp_file_path):
+            os.remove(self._temp_file_path)
 
     def __del__(self):
         """

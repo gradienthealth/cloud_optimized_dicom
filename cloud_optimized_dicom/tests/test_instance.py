@@ -115,8 +115,8 @@ class TestInstance(unittest.TestCase):
             ) as in_file:
                 out.write(in_file.read())
         # make an instance with the temp file
-        instance = Instance(dicom_uri=temp_file.name, _temp_file=temp_file)
-        self.assertIsNotNone(instance._temp_file)
+        instance = Instance(dicom_uri=temp_file.name, _temp_file_path=temp_file.name)
+        self.assertIsNotNone(instance._temp_file_path)
         # make sure we can read the instance
         with instance.open() as f:
             ds = pydicom3.dcmread(f)
