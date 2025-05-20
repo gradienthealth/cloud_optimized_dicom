@@ -31,8 +31,6 @@ from cloud_optimized_dicom.utils import (
 
 logger = logging.getLogger(__name__)
 
-EMPTY_TAR_SIZE = 10240
-
 
 class CODObject:
     """
@@ -144,7 +142,8 @@ class CODObject:
     @property
     def tar_is_empty(self) -> bool:
         """Check if the tar file is empty."""
-        return os.path.getsize(self.tar_file_path) == EMPTY_TAR_SIZE
+        with tarfile.open(self.tar_file_path, "r") as tar:
+            return len(tar.getmembers()) == 0
 
     @property
     def index_file_path(self) -> str:
