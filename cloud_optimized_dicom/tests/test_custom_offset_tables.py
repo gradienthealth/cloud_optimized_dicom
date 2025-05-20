@@ -225,6 +225,17 @@ class TestMultiframeOffsetTable(unittest.TestCase):
         assert result.get("CustomOffsetTable") is None
         assert result.get("CustomOffsetTableLengths") is None
 
+    def test_no_pixeldata_attribute(self):
+        dataset = create_sample_dataset(
+            number_of_frames=2, is_pixeldata_encapsulated=False
+        )
+        del dataset.PixelData
+
+        result = get_multiframe_offset_tables(dataset)
+
+        assert result.get("CustomOffsetTable") is None
+        assert result.get("CustomOffsetTableLengths") is None
+
 
 if __name__ == "__main__":
     # python3 -m unittest components.cloud_optimized_dicom.tests.test_multiframe_offset_table
