@@ -150,15 +150,6 @@ class CODObject:
         """The path to the index file for this series in the temporary directory."""
         return os.path.join(self.get_temp_dir().name, f"index.sqlite")
 
-    @property
-    def thumbnail_file_path(self) -> str:
-        """The path to the thumbnail file for this series in the temporary directory."""
-        num_instances_with_pixel_data = sum(
-            1 for i in self._metadata.instances.values() if i.has_pixeldata
-        )
-        thumbnail_type = "mp4" if num_instances_with_pixel_data > 1 else "jpg"
-        return os.path.join(self.get_temp_dir().name, f"thumbnail.{thumbnail_type}")
-
     # URI properties
     @property
     def datastore_series_uri(self) -> str:
@@ -291,11 +282,19 @@ class CODObject:
         if thumbnail_metadata is None:
             logger.info(f"Skipping thumbnail sync - thumbnail does not exist: {self}")
             return
+        # get thumbnail path
+        thumbnail_file_name = os.path.basename(thumbnail_metadata["uri"])
+        thumbnail_local_path = os.path.join(
+            self.get_temp_dir().name, thumbnail_file_name
+        )
+        if not os.path.exists(thumbnail_local_path):
+            logger.info(f"Skipping thumbnail sync - thumbnail does not exist: {self}")
+            return
         # upload thumbnail to datastore
         thumbnail_blob = storage.Blob.from_string(
             thumbnail_metadata["uri"], client=self.client
         )
-        thumbnail_blob.upload_from_filename(self.thumbnail_file_path)
+        thumbnail_blob.upload_from_filename(thumbnail_local_path)
         # we just synced the thumbnail, so it is guaranteed to be in the same state as the datastore
         self._thumbnail_synced = True
 
