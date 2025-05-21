@@ -2,13 +2,14 @@ import logging
 from itertools import groupby
 from typing import Callable, Iterator
 
-from google.cloud import storage
 from google.api_core.exceptions import NotFound
+from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.errors import LockAcquisitionError
 from cloud_optimized_dicom.instance import Hints, Instance
 from cloud_optimized_dicom.metrics import INSTANCES_NOT_FOUND
+
 logger = logging.getLogger(__name__)
 
 SERIES_RATIO_WARNING_THRESHOLD = 0.5
@@ -88,9 +89,11 @@ def get_uids_for_cod_obj(
     # if we get here, hash func is None. Just return standard UIDs
     return study_uid, series_uid, False
 
+
 def fetch_instances_without_hints(raw_instances: list[Instance]) -> list[Instance]:
     """We need study/series uids to group instances. Hints can be used if provided, but if they're not we need to fetch the instances.
-    Returns a list of instances that either have been fetched successfully or have study/series uid hints."""
+    Returns a list of instances that either have been fetched successfully or have study/series uid hints.
+    """
     instances = []
     for instance in raw_instances:
         # if study/series uid hints are provided, use them
