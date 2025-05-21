@@ -11,6 +11,7 @@ from google.cloud import storage
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
+from cloud_optimized_dicom.tests.test_hashed_uids import example_hash_function
 from cloud_optimized_dicom.thumbnail import DEFAULT_SIZE, ThumbnailCoordConverter
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
@@ -190,3 +191,47 @@ class TestThumbnail(unittest.TestCase):
             self.assertTrue(cod_obj._thumbnail_synced)
             self.assertTrue(os.path.exists(thumbnail_path))
             validate_thumbnail(self, cod_obj, expected_frame_count=1)
+
+    def test_update_existing_thumbnail(self):
+        """Test that updating an existing thumbnail works"""
+        instance_a = Instance(
+            dicom_uri=os.path.join(
+                self.test_data_dir,
+                "series",
+                "1.2.826.0.1.3680043.8.498.22997958494980951977704130269567444795.dcm",
+            ),
+            uid_hash_func=example_hash_function,
+        )
+        with CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=instance_a.hashed_study_uid(),
+            series_uid=instance_a.hashed_series_uid(),
+            hashed_uids=True,
+            lock=True,
+        ) as cod_obj:
+            cod_obj.append([instance_a])
+            thumbnail_path = cod_obj.generate_thumbnail()
+            self.assertTrue(os.path.exists(thumbnail_path))
+            self.assertTrue(thumbnail_path.endswith(".jpg"))
+            cod_obj.sync()
+        instance_b = Instance(
+            dicom_uri=os.path.join(
+                self.test_data_dir,
+                "series",
+                "1.2.826.0.1.3680043.8.498.28109707839310833322020505651875585013.dcm",
+            ),
+            uid_hash_func=example_hash_function,
+        )
+        with CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=instance_b.hashed_study_uid(),
+            series_uid=instance_b.hashed_series_uid(),
+            hashed_uids=True,
+            lock=True,
+        ) as cod_obj:
+            cod_obj.append([instance_b])
+            thumbnail_path = cod_obj.generate_thumbnail(overwrite_existing=True)
+            self.assertTrue(os.path.exists(thumbnail_path))
+            self.assertTrue(thumbnail_path.endswith(".mp4"))
