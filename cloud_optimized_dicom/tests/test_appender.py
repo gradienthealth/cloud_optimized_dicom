@@ -71,10 +71,44 @@ class TestAppender(unittest.TestCase):
         )
         instance = Instance(dicom_uri=self.local_instance_path)
         new, same, conflict, errors = cod_obj.append([instance], dirty=True)
-        self.assertEqual(len(errors), 0)
         self.assertEqual(len(new), 1)
-        self.assertEqual(len(same), 0)
-        self.assertEqual(len(conflict), 0)
+        self.assertEqual(len(same + conflict + errors), 0)
+
+    def test_two_part_append(self):
+        instance_a = Instance(
+            os.path.join(
+                self.test_data_dir,
+                "series",
+                "1.2.826.0.1.3680043.8.498.22997958494980951977704130269567444795.dcm",
+            )
+        )
+        instance_b = Instance(
+            os.path.join(
+                self.test_data_dir,
+                "series",
+                "1.2.826.0.1.3680043.8.498.28109707839310833322020505651875585013.dcm",
+            )
+        )
+        cod_obj = CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=instance_a.study_uid(),
+            series_uid=instance_a.series_uid(),
+            lock=False,
+        )
+        new, same, conflict, errors = cod_obj.append([instance_a], dirty=True)
+        self.assertEqual(len(new), 1)
+        self.assertEqual(len(same + conflict + errors), 0)
+        cod_obj = CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=instance_a.study_uid(),
+            series_uid=instance_a.series_uid(),
+            lock=False,
+        )
+        new, same, conflict, errors = cod_obj.append([instance_b], dirty=True)
+        self.assertEqual(len(new), 1)
+        self.assertEqual(len(same + conflict + errors), 0)
 
     def test_append_true_dupe(self):
         cod_obj = CODObject(
@@ -87,16 +121,12 @@ class TestAppender(unittest.TestCase):
         # start by appending instance normally
         instance = Instance(dicom_uri=self.local_instance_path)
         new, same, conflict, errors = cod_obj.append([instance], dirty=True)
-        self.assertEqual(len(errors), 0)
         self.assertEqual(len(new), 1)
-        self.assertEqual(len(same), 0)
-        self.assertEqual(len(conflict), 0)
+        self.assertEqual(len(same + conflict + errors), 0)
         # now append the same instance again, which should be a duplicate
         new, same, conflict, errors = cod_obj.append([instance], dirty=True)
-        self.assertEqual(len(errors), 0)
-        self.assertEqual(len(new), 0)
         self.assertEqual(len(same), 1)
-        self.assertEqual(len(conflict), 0)
+        self.assertEqual(len(conflict + new + errors), 0)
 
     def test_append_diff_hash_dupe(self):
         cod_obj = CODObject(
@@ -109,10 +139,8 @@ class TestAppender(unittest.TestCase):
         # start by appending instance normally
         instance = Instance(dicom_uri=self.local_instance_path)
         new, same, conflict, errors = cod_obj.append([instance], dirty=True)
-        self.assertEqual(len(errors), 0)
         self.assertEqual(len(new), 1)
-        self.assertEqual(len(same), 0)
-        self.assertEqual(len(conflict), 0)
+        self.assertEqual(len(same + conflict + errors), 0)
         self.assertEqual(len(cod_obj._metadata.instances), 1)
         self.assertEqual(
             cod_obj._metadata.instances[instance.instance_uid()].crc32c(),
@@ -127,10 +155,8 @@ class TestAppender(unittest.TestCase):
             diff_hash_dupe = Instance(dicom_uri=f.name)
             self.assertNotEqual(diff_hash_dupe.crc32c(), instance.crc32c())
             new, same, conflict, errors = cod_obj.append([diff_hash_dupe], dirty=True)
-            self.assertEqual(len(errors), 0)
-            self.assertEqual(len(new), 0)
-            self.assertEqual(len(same), 0)
             self.assertEqual(len(conflict), 1)
+            self.assertEqual(len(same + new + errors), 0)
 
     def test_append_and_sync(self):
         cod_obj = CODObject(
@@ -142,10 +168,8 @@ class TestAppender(unittest.TestCase):
         )
         instance = Instance(dicom_uri=self.local_instance_path)
         new, same, conflict, errors = cod_obj.append([instance])
-        self.assertEqual(len(errors), 0)
         self.assertEqual(len(new), 1)
-        self.assertEqual(len(same), 0)
-        self.assertEqual(len(conflict), 0)
+        self.assertEqual(len(same + conflict + errors), 0)
         self.assertFalse(cod_obj._tar_synced)
         self.assertFalse(cod_obj._metadata_synced)
         tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=self.client)
@@ -163,6 +187,43 @@ class TestAppender(unittest.TestCase):
         self.assertTrue(index_blob.exists())
         self.assertTrue(metadata_blob.exists())
 
+    def test_append_and_sync_two_part(self):
+        instance_a = Instance(
+            os.path.join(
+                self.test_data_dir,
+                "series",
+                "1.2.826.0.1.3680043.8.498.22997958494980951977704130269567444795.dcm",
+            )
+        )
+        instance_b = Instance(
+            os.path.join(
+                self.test_data_dir,
+                "series",
+                "1.2.826.0.1.3680043.8.498.28109707839310833322020505651875585013.dcm",
+            )
+        )
+        with CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=instance_a.study_uid(),
+            series_uid=instance_a.series_uid(),
+            lock=True,
+        ) as cod_obj:
+            new, same, conflict, errors = cod_obj.append([instance_a], dirty=False)
+            self.assertEqual(len(new), 1)
+            self.assertEqual(len(same + conflict + errors), 0)
+            cod_obj.sync()
+        with CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=instance_a.study_uid(),
+            series_uid=instance_a.series_uid(),
+            lock=False,
+        ) as cod_obj:
+            new, same, conflict, errors = cod_obj.append([instance_b], dirty=True)
+            self.assertEqual(len(new), 1)
+            self.assertEqual(len(same + conflict + errors), 0)
+
     def test_append_wrong_series(self):
         """Expect instance from different series than CODObject to error"""
         cod_obj = CODObject(
@@ -175,9 +236,7 @@ class TestAppender(unittest.TestCase):
         bad_instance = Instance(dicom_uri=self.local_instance_path)
         new, same, conflict, errors = cod_obj.append([bad_instance], dirty=True)
         self.assertEqual(len(errors), 1)
-        self.assertEqual(len(new), 0)
-        self.assertEqual(len(same), 0)
-        self.assertEqual(len(conflict), 0)
+        self.assertEqual(len(new + same + conflict), 0)
         self.assertIn("does not belong to COD object", str(errors[0][1]))
 
     def test_append_bad_hint(self):
@@ -195,9 +254,7 @@ class TestAppender(unittest.TestCase):
         )
         new, same, conflict, errors = cod_obj.append([bad_instance], dirty=True)
         self.assertEqual(len(errors), 1)
-        self.assertEqual(len(new), 0)
-        self.assertEqual(len(same), 0)
-        self.assertEqual(len(conflict), 0)
+        self.assertEqual(len(new + same + conflict), 0)
         self.assertIn("study uid mismatch", str(errors[0][1]))
 
     def test_append_bad_uri_remote(self):
@@ -212,9 +269,7 @@ class TestAppender(unittest.TestCase):
         instance = Instance(dicom_uri="gs://some-hospital/that/does/not/exist.dcm")
         new, same, conflict, errors = cod_obj.append([instance], dirty=True)
         self.assertEqual(len(errors), 1)
-        self.assertEqual(len(new), 0)
-        self.assertEqual(len(same), 0)
-        self.assertEqual(len(conflict), 0)
+        self.assertEqual(len(new + same + conflict), 0)
         self.assertIn("not found", str(errors[0][1]))
 
     def test_append_bad_uri_local(self):
@@ -229,9 +284,7 @@ class TestAppender(unittest.TestCase):
         instance = Instance(dicom_uri="/some/local/path/that/does/not/exist.dcm")
         new, same, conflict, errors = cod_obj.append([instance], dirty=True)
         self.assertEqual(len(errors), 1)
-        self.assertEqual(len(new), 0)
-        self.assertEqual(len(same), 0)
-        self.assertEqual(len(conflict), 0)
+        self.assertEqual(len(new + same + conflict), 0)
         self.assertIn("No such file or directory", str(errors[0][1]))
 
     def test_append_mix(self):
@@ -249,9 +302,7 @@ class TestAppender(unittest.TestCase):
             [good_instance, bad_instance], dirty=True
         )
         self.assertEqual(len(errors), 1)
-        self.assertEqual(len(new), 1)
-        self.assertEqual(len(same), 0)
-        self.assertEqual(len(conflict), 0)
+        self.assertEqual(len(new + same + conflict), 1)
 
     def test_append_corrupt_dicom(self):
         """test that corrupt dicom is not appended"""
@@ -292,7 +343,6 @@ class TestAppender(unittest.TestCase):
                     [bad_instance, good_instance]
                 )
                 self.assertEqual(len(new), 1)
-                self.assertEqual(len(same), 0)
-                self.assertEqual(len(conflict), 0)
+                self.assertEqual(len(same + conflict), 0)
                 self.assertEqual(len(errors), 1)
                 self.assertEqual(errors[0][0], bad_instance)

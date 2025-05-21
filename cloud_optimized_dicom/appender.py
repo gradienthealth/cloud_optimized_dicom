@@ -343,8 +343,8 @@ class CODAppender:
             instances_added_to_tar (list): list of instances that got added to the tar successfully
         """
         # If a tarball already exists (and this is a clean append), download it (no need to get index, will be recalculated anyways)
-        if len(self.cod_object._metadata.instances) > 0 and self.cod_object.lock:
-            self.cod_object._force_fetch_tar(fetch_index=False)
+        if len(self.cod_object._metadata.instances) > 0:
+            self.cod_object.pull_tar(dirty=not self.cod_object.lock)
 
         instances_added_to_tar = self._create_or_append_tar(
             [new for new, _, _ in new_state_changes]
