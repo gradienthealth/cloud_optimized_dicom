@@ -106,7 +106,9 @@ def fetch_instances_without_hints(raw_instances: list[Instance]) -> list[Instanc
             instances.append(instance)
         except NotFound:
             INSTANCES_NOT_FOUND.inc()
-            logger.warning(f"Failed to fetch instance (not found): {instance}")
+            logger.warning(f"Skipping instance (tried to fetch but not found): {instance}")
+        except Exception as e:
+            logger.exception(f"Skipping instance (error while fetching): {instance}: {e}")
     return instances
 
 
