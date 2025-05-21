@@ -2,11 +2,13 @@ import logging
 from itertools import groupby
 from typing import Callable, Iterator
 
+from google.api_core.exceptions import NotFound
 from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.errors import LockAcquisitionError
 from cloud_optimized_dicom.instance import Hints, Instance
+from cloud_optimized_dicom.metrics import INSTANCES_NOT_FOUND
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +90,26 @@ def get_uids_for_cod_obj(
     return study_uid, series_uid, False
 
 
+def fetch_instances_without_hints(raw_instances: list[Instance]) -> list[Instance]:
+    """We need study/series uids to group instances. Hints can be used if provided, but if they're not we need to fetch the instances.
+    Returns a list of instances that either have been fetched successfully or have study/series uid hints.
+    """
+    instances = []
+    for instance in raw_instances:
+        # if study/series uid hints are provided, use them
+        if instance.hints.study_uid and instance.hints.series_uid:
+            instances.append(instance)
+            continue
+        # if study/series uid hints are not provided, attempt to fetch the instance
+        try:
+            instance.fetch()
+            instances.append(instance)
+        except NotFound:
+            INSTANCES_NOT_FOUND.inc()
+            logger.warning(f"Failed to fetch instance (not found): {instance}")
+    return instances
+
+
 def instances_to_codobj_tuples(
     client: storage.Client,
     instances: list[Instance],
@@ -99,6 +121,9 @@ def instances_to_codobj_tuples(
     # need to set client on instances before sorting (may have to fetch them)
     for instance in instances:
         instance.transport_params = dict(client=client)
+
+    # Need study/series uids to sort/group instances. Can use hints if provided, otherwise must fetch
+    instances = fetch_instances_without_hints(instances)
 
     # sort instances prior to grouping (groupby requires a sorted list)
     instances.sort(
