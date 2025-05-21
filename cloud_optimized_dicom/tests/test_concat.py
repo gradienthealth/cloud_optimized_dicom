@@ -315,6 +315,68 @@ class TestConcat(unittest.TestCase):
             self.assertEqual(len(populated_dupe_list), 1)
             self.assertEqual(populated_dupe_list[0], v2_uri)
 
+    def test_diff_hash_pixeldata(self):
+        """
+        Upload an instance and test what happens when a different version
+        of that same instance (same id, different hash - PIXELDATA) is uploaded subsequently.
+        We would expect to see this second version NOT DELETED (flagged for manual_review).
+        """
+        dcm_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "test_data", "monochrome1.dcm"
+        )
+        # upload a version of the dicom
+        v1_uri = f"{PLAYGROUND_URI_PREFIX}/version1.dcm"
+        v2_uri = f"{PLAYGROUND_URI_PREFIX}/version2.dcm"
+        v1_blob = storage.Blob.from_string(v1_uri, client=self.client)
+        v2_blob = storage.Blob.from_string(v2_uri, client=self.client)
+        v1_blob.upload_from_filename(dcm_path)
+        # load ds & cause hash mismatch in pixel data
+        ds = pydicom3.dcmread(dcm_path)
+        study_uid = getattr(ds, "StudyInstanceUID")
+        series_uid = getattr(ds, "SeriesInstanceUID")
+        getattr(ds, "SOPInstanceUID")
+        # flip all bits in 1000th byte (to cause hash mismatch)
+        pixel_bytes = bytearray(ds.PixelData)
+        pixel_bytes[1000] ^= 0xFF
+        ds.PixelData = bytes(pixel_bytes)
+        with tempfile.NamedTemporaryFile() as temp_file:
+            ds.save_as(temp_file.name)
+            v2_blob.upload_from_filename(temp_file.name)
+
+        # blobs should have different hashes
+        self.assertNotEqual(v1_blob.crc32c, v2_blob.crc32c)
+
+        with CODObject(
+            datastore_path=OUTPUT_URI,
+            client=self.client,
+            study_uid=study_uid,
+            series_uid=series_uid,
+            lock=True,
+        ) as cod_obj:
+            instance_v1 = Instance(v1_uri)
+            instance_v2 = Instance(v2_uri)
+            # append v1 and sync
+            cod_obj.append([instance_v1])
+            cod_obj.sync()
+            # append v2 and sync
+            cod_obj.append([instance_v2], treat_metadata_diffs_as_same=True)
+            # metadata should be desynced (diff hash dupe found), but tar should be synced
+            self.assertFalse(cod_obj._metadata_synced)
+            self.assertTrue(cod_obj._tar_synced)
+            cod_obj.sync()
+            # file should still exist; deletion should be skipped due to same instance diff hash
+            self.assertTrue(v2_blob.exists())
+            # download the metadata and confirm diff hash duplicate was logged
+            metadata_blob = storage.Blob.from_string(
+                cod_obj.metadata_uri, client=self.client
+            )
+            duped_metadata = SeriesMetadata.from_blob(metadata_blob)
+            populated_dupe_list = duped_metadata.instances.get(
+                instance_v1.instance_uid(trust_hints_if_available=True)
+            )._diff_hash_dupe_paths
+            self.assertEqual(len(populated_dupe_list), 1)
+            self.assertEqual(populated_dupe_list[0], v2_uri)
+
     def test_repeat_in_input(self):
         """
         Test behavior when the same instance is supplied multiple times.
