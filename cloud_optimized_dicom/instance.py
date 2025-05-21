@@ -234,9 +234,13 @@ class Instance:
             self.study_uid(trust_hints_if_available=trust_hints_if_available)
         )
 
-    def get_instance_uid(self, hashed: bool):
+    def get_instance_uid(self, hashed: bool, trust_hints_if_available: bool = False):
         """instance_uid getter method that returns the instance_uid or hashed_instance_uid, dpepending on the `hashed` flag"""
-        return self.hashed_instance_uid() if hashed else self.instance_uid()
+        return (
+            self.hashed_instance_uid(trust_hints_if_available=trust_hints_if_available)
+            if hashed
+            else self.instance_uid(trust_hints_if_available=trust_hints_if_available)
+        )
 
     def open(self):
         """
@@ -363,6 +367,17 @@ class Instance:
                 )
                 # populate self._metadata
                 self._metadata = ds_dict
+
+    def get_pixeldata_hash(self) -> str:
+        """Compute the crc32c hash of just the pixeldata"""
+        with tempfile.NamedTemporaryFile(suffix="_pixeldata") as temp_file:
+            with self.open() as ptr:
+                ds = pydicom3.dcmread(ptr, defer_size=1024)
+                # write ds.pixelData to temp_file
+                temp_file.write(ds.PixelData)
+                temp_file.flush()
+                temp_file.seek(0)
+                return generate_ptr_crc32c(temp_file)
 
     def __str__(self):
         """
