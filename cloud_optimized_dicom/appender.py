@@ -43,6 +43,7 @@ class CODAppender:
         self,
         instances: list[Instance],
         delete_local_origin: bool = False,
+        treat_metadata_diffs_as_same: bool = False,
         max_instance_size: float = None,
         max_series_size: float = None,
     ) -> AppendResult:
@@ -50,6 +51,7 @@ class CODAppender:
         Args:
             instances (list): list of instances to append
             delete_local_origin (bool): whether to delete instance origin files after successful append (if local, remote origins are never deleted)
+            treat_metadata_diffs_as_same (bool): if True, when a diff hash dupe is found, compute & compare the hashes of JUST the pixel data. If they match, treat the dupe as same.
             max_instance_size (float): maximum size of an instance to append, in gb.
             max_series_size (float): maximum size of the series to append, in gb
         Returns: an AppendResult; a namedtuple with the following fields:
@@ -68,7 +70,9 @@ class CODAppender:
         # remove instances that do not belong to the COD object
         instances = self._assert_instances_belong_to_cod_obj(instances)
         # Calculate state change as a result of instances added by this group
-        state_change = self._calculate_state_change(instances)
+        state_change = self._calculate_state_change(
+            instances, treat_metadata_diffs_as_same
+        )
         # handle same
         self._handle_same(state_change.same)
         # Edge case: no NEW or DIFF state changes -> return early
@@ -218,9 +222,15 @@ class CODAppender:
             )
         )
 
-    def _calculate_state_change(self, instances: list[Instance]) -> StateChange:
+    def _calculate_state_change(
+        self, instances: list[Instance], treat_metadata_diffs_as_same: bool = False
+    ) -> StateChange:
         """For each file in the grouping, determine if it is NEW, SAME, or DIFF
         compared to the current series metadata json which contains instance_uid and crc32c values
+
+        Args:
+            instances (list): list of instances to calculate state change for
+            treat_metadata_diffs_as_same (bool): if True, when a diff hash dupe is found, compute & compare the hashes of JUST the pixel data. If they match, treat the dupe as same.
 
         Returns:
             state_change (StateChange): namedtuple with the following fields:
@@ -237,6 +247,17 @@ class CODAppender:
                 state_change.new.append((instance, None, None))
             return state_change
 
+        # we will need to fetch the remote tar in order to compute pixeldata hash
+        if treat_metadata_diffs_as_same and any(
+            new_inst.get_instance_uid(
+                hashed=self.cod_object.hashed_uids, trust_hints_if_available=True
+            )
+            in self.cod_object._metadata.instances
+            for new_inst in instances
+        ):
+            logger.info("PULLING_TAR:DUPE_UID_FOUND_SO_PIXELDATA_HASH_MUST_BE_COMPUTED")
+            self.cod_object.pull_tar(dirty=not self.cod_object.lock)
+
         # Calculate state change for each file in the new series
         for new_instance in instances:
             try:
@@ -251,9 +272,12 @@ class CODAppender:
                 # if we make it here, the instance id is in the existing metadata
                 existing_instance = self.cod_object._metadata.instances[instance_uid]
                 # if the crc32c is the same, we have a true duplicate
-                if (
-                    new_instance.crc32c(trust_hints_if_available=True)
-                    == existing_instance.crc32c()
+                if new_instance.crc32c(
+                    trust_hints_if_available=True
+                ) == existing_instance.crc32c() or (
+                    treat_metadata_diffs_as_same
+                    and new_instance.get_pixeldata_hash()
+                    == existing_instance.get_pixeldata_hash()
                 ):
                     metrics.TRUE_DUPE_COUNTER.inc()
                     state_change.same.append(
