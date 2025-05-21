@@ -210,6 +210,7 @@ class CODObject:
     def append(
         self,
         instances: list[Instance],
+        treat_metadata_diffs_as_same: bool = False,
         max_instance_size: float = 10,
         max_series_size: float = 100,
         delete_local_origin: bool = False,
@@ -219,6 +220,7 @@ class CODObject:
 
         Args:
             instances: list[Instance] - The instances to append.
+            treat_metadata_diffs_as_same: bool - If `True`, when a diff hash dupe is found, compute & compare the hashes of JUST the pixel data. If they match, treat the dupe as same.
             max_instance_size: float - The maximum size of an instance to append, in gb.
             max_series_size: float - The maximum size of the series to append, in gb.
             delete_local_origin: bool - If `True`, delete the local origin of the instances after appending.
@@ -227,6 +229,7 @@ class CODObject:
         return CODAppender(self).append(
             instances=instances,
             delete_local_origin=delete_local_origin,
+            treat_metadata_diffs_as_same=treat_metadata_diffs_as_same,
             max_instance_size=max_instance_size,
             max_series_size=max_series_size,
         )
