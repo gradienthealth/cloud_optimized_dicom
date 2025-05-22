@@ -248,12 +248,17 @@ class CODAppender:
             return state_change
 
         # we will need to fetch the remote tar in order to compute pixeldata hash
-        if treat_metadata_diffs_as_same and any(
-            new_inst.get_instance_uid(
-                hashed=self.cod_object.hashed_uids, trust_hints_if_available=True
+        if (
+            treat_metadata_diffs_as_same
+            and len(self.cod_object._metadata.instances) > 0
+            and any(
+                new_inst.get_instance_uid(
+                    hashed=self.cod_object.hashed_uids,
+                    trust_hints_if_available=True,
+                )
+                in self.cod_object._metadata.instances
+                for new_inst in instances
             )
-            in self.cod_object._metadata.instances
-            for new_inst in instances
         ):
             logger.info("PULLING_TAR:DUPE_UID_FOUND_SO_PIXELDATA_HASH_MUST_BE_COMPUTED")
             self.cod_object.pull_tar(dirty=not self.cod_object.lock)
