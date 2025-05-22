@@ -276,6 +276,8 @@ class CODAppender:
                     trust_hints_if_available=True
                 ) == existing_instance.crc32c() or (
                     treat_metadata_diffs_as_same
+                    and existing_instance.has_pixeldata
+                    and new_instance.has_pixeldata
                     and new_instance.get_pixeldata_hash()
                     == existing_instance.get_pixeldata_hash()
                 ):
