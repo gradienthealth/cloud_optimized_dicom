@@ -22,6 +22,7 @@ from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.thumbnail import generate_thumbnail
+from cloud_optimized_dicom.truncate import remove
 from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
     is_remote,
@@ -234,6 +235,11 @@ class CODObject:
             max_instance_size=max_instance_size,
             max_series_size=max_series_size,
         )
+
+    @public_method
+    def remove(self, instances: list[Instance], dirty: bool = False):
+        """Remove an instance from the COD object."""
+        remove(cod_object=self, instances=instances, dirty=dirty)
 
     @public_method
     def sync(self, tar_storage_class: str = STANDARD_STORAGE_CLASS):
