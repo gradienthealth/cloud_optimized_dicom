@@ -6,7 +6,7 @@ import pydicom3
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 
-from cloud_optimized_dicom.appender import CODAppender
+from cloud_optimized_dicom.append import AppendResult, _assert_not_too_large
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.instance import Instance
@@ -43,22 +43,34 @@ class TestAppender(unittest.TestCase):
             series_uid=self.test_series_uid,
             lock=False,
         )
-        cod_appender = CODAppender(cod_object)
         # test instance of acceptable size is not filtered
-        filtered_instances = cod_appender._assert_not_too_large(
-            instances=[instance], max_instance_size=1, max_series_size=100
+        filtered_instances, append_result = _assert_not_too_large(
+            cod_object=cod_object,
+            instances=[instance],
+            max_instance_size=1,
+            max_series_size=100,
+            append_result=AppendResult(),
         )
         self.assertEqual(len(filtered_instances), 1)
+        self.assertEqual(len(append_result.errors), 0)
         # test instance of unacceptable size is filtered
-        filtered_instances = cod_appender._assert_not_too_large(
-            instances=[instance], max_instance_size=0.0001, max_series_size=100
+        filtered_instances, append_result = _assert_not_too_large(
+            cod_object=cod_object,
+            instances=[instance],
+            max_instance_size=0.0001,
+            max_series_size=100,
+            append_result=AppendResult(),
         )
         self.assertEqual(len(filtered_instances), 0)
-        self.assertEqual(len(cod_appender.append_result.errors), 1)
+        self.assertEqual(len(append_result.errors), 1)
         # test series being too large raises an error
         with self.assertRaises(ValueError):
-            cod_appender._assert_not_too_large(
-                instances=[instance], max_instance_size=1, max_series_size=0.0001
+            _assert_not_too_large(
+                cod_object=cod_object,
+                instances=[instance],
+                max_instance_size=1,
+                max_series_size=0.0001,
+                append_result=AppendResult(),
             )
 
     def test_append(self):

@@ -223,7 +223,7 @@ class TestConcat(unittest.TestCase):
                 pass
         print("\n".join(log_capture_second.output))
         # Filter logs that contain the same hash skip message
-        same_hash_skip_msg = "WARNING:cloud_optimized_dicom.appender:Skipping duplicate instance (same hash):"
+        same_hash_skip_msg = "Skipping duplicate instance (same hash):"
         same_hash_logs = [
             log for log in log_capture_second.output if same_hash_skip_msg in log
         ]
@@ -234,9 +234,7 @@ class TestConcat(unittest.TestCase):
             f"There should be 3 '{same_hash_skip_msg}' logs on second run",
         )
         # we also expect a "NO NEW INSTANCES" log
-        no_new_instances_msg = (
-            "WARNING:cloud_optimized_dicom.appender:No new instances:"
-        )
+        no_new_instances_msg = "No new instances:"
         no_new_instances_logs = [
             log for log in log_capture_second.output if no_new_instances_msg in log
         ]
@@ -329,7 +327,7 @@ class TestConcat(unittest.TestCase):
         v2_uri = f"{PLAYGROUND_URI_PREFIX}/version2.dcm"
         v1_blob = storage.Blob.from_string(v1_uri, client=self.client)
         v2_blob = storage.Blob.from_string(v2_uri, client=self.client)
-        v1_blob.upload_from_filename(dcm_path)
+        v1_blob.upload_from_filename(dcm_path, retry=DEFAULT_RETRY)
         # load ds & cause hash mismatch in pixel data
         ds = pydicom3.dcmread(dcm_path)
         study_uid = getattr(ds, "StudyInstanceUID")
@@ -341,7 +339,7 @@ class TestConcat(unittest.TestCase):
         ds.PixelData = bytes(pixel_bytes)
         with tempfile.NamedTemporaryFile() as temp_file:
             ds.save_as(temp_file.name)
-            v2_blob.upload_from_filename(temp_file.name)
+            v2_blob.upload_from_filename(temp_file.name, retry=DEFAULT_RETRY)
 
         # blobs should have different hashes
         self.assertNotEqual(v1_blob.crc32c, v2_blob.crc32c)
