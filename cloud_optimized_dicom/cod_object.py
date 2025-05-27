@@ -10,7 +10,7 @@ from google.cloud.storage.retry import DEFAULT_RETRY
 from ratarmountcore import open as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
-from cloud_optimized_dicom.appender import CODAppender
+from cloud_optimized_dicom.append import append
 from cloud_optimized_dicom.errors import (
     CODObjectNotFoundError,
     ErrorLogExistsError,
@@ -226,7 +226,8 @@ class CODObject:
             delete_local_origin: bool - If `True`, delete the local origin of the instances after appending.
             dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
         """
-        return CODAppender(self).append(
+        return append(
+            cod_object=self,
             instances=instances,
             delete_local_origin=delete_local_origin,
             treat_metadata_diffs_as_same=treat_metadata_diffs_as_same,
