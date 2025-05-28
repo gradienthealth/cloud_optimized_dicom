@@ -1,11 +1,17 @@
 DICOM_PREAMBLE = b"\x00" * 128 + b"DICM"
 REMOTE_IDENTIFIERS = ["http", "s3://", "gs://"]
+UID_TAGS = {
+    "instance_uid": "00080018",
+    "series_uid": "0020000E",
+    "study_uid": "0020000D",
+}
 
 
 import collections
 import io
 import logging
 from base64 import b64encode
+from typing import Optional
 
 import filetype
 import google_crc32c
@@ -129,6 +135,16 @@ def generate_ptr_crc32c(ptr: io.BufferedReader, blocksize: int = 2**20) -> str:
     crc = google_crc32c.Checksum()
     collections.deque(crc.consume(ptr, blocksize), maxlen=0)
     return b64encode(crc.digest()).decode("utf-8")
+
+
+def parse_uids_from_metadata(
+    metadata: dict[str, dict],
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Given an instance metadata dict, return the instance, series, and study uids if they can be found, or none if not"""
+    instance_uid = metadata.get(UID_TAGS["instance_uid"], {}).get("Value", [None])[0]
+    series_uid = metadata.get(UID_TAGS["series_uid"], {}).get("Value", [None])[0]
+    study_uid = metadata.get(UID_TAGS["study_uid"], {}).get("Value", [None])[0]
+    return instance_uid, series_uid, study_uid
 
 
 def public_method(func):
