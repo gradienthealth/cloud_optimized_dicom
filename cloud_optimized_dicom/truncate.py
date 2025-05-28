@@ -71,12 +71,12 @@ def remove(
         ValueError if all instances are removed (i.e. cod_obj.delete() should be used instead)
     """
     # validate the presence of instance to remove in COD
-    instances_in_cod = cod_object.get_metadata(dirty=dirty).instances.values()
+    instances_in_cod = list(cod_object.get_metadata(dirty=dirty).instances.values())
     to_remove = _skip_missing_instances(cod_object, instances, instances_in_cod)
 
     # early exit if no instances to remove
     if len(to_remove) == 0:
-        return AppendResult()
+        return AppendResult(new=instances_in_cod)
 
     # determine what instances will be kept (if any)
     instances_to_keep = [
