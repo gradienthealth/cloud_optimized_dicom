@@ -20,6 +20,7 @@ from cloud_optimized_dicom.utils import (
     find_pattern,
     generate_ptr_crc32c,
     is_remote,
+    parse_uids_from_metadata,
 )
 from cloud_optimized_dicom.virtual_file import VirtualFile
 
@@ -496,6 +497,9 @@ class Instance:
             instance_dict["headers"]["start_byte"],
             instance_dict["headers"]["end_byte"],
         )
+        instance_uid, series_uid, study_uid = parse_uids_from_metadata(
+            instance_dict["metadata"]
+        )
         return Instance(
             dicom_uri=instance_dict["uri"],
             uid_hash_func=uid_hash_func,
@@ -508,6 +512,9 @@ class Instance:
             _original_path=instance_dict["original_path"],
             _modified_datetime=instance_dict["modified_datetime"],
             _diff_hash_dupe_paths=instance_dict["diff_hash_dupe_paths"],
+            _instance_uid=instance_uid,
+            _series_uid=series_uid,
+            _study_uid=study_uid,
         )
 
     def cleanup(self):
