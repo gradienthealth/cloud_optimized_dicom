@@ -1,7 +1,11 @@
 import os
 from typing import TYPE_CHECKING
 
-from cloud_optimized_dicom.append import _create_or_append_tar, _handle_create_metadata
+from cloud_optimized_dicom.append import (
+    AppendResult,
+    _create_or_append_tar,
+    _handle_create_metadata,
+)
 from cloud_optimized_dicom.instance import Instance
 
 if TYPE_CHECKING:
@@ -50,17 +54,25 @@ def _extract_instances_to_keep(
             _original_path=instance._original_path,
         )
         local_instances.append(local_instance)
+    logger.info(f"Extracted {len(local_instances)} instance(s) to keep")
     return local_instances
 
 
-def remove(cod_object: "CODObject", instances: list[Instance], dirty: bool = False):
+def remove(
+    cod_object: "CODObject", instances: list[Instance], dirty: bool = False
+) -> AppendResult:
+    """
+    Remove instances from a cod object. Because tar files do not natively support removal,
+    this method just determines a list of instances to keep (if any) and calls truncate.
+    Returns the AppendResult of the truncate operation (i.e. what's left in the cod object)
+    """
     # validate the presence of instance to remove in COD
     instances_in_cod = cod_object.get_metadata(dirty=dirty).instances.values()
     to_remove = _skip_missing_instances(cod_object, instances, instances_in_cod)
 
     # early exit if no instances to remove
     if len(to_remove) == 0:
-        return
+        return AppendResult()
 
     # determine what instances will be kept (if any)
     instances_to_keep = [
@@ -70,25 +82,16 @@ def remove(cod_object: "CODObject", instances: list[Instance], dirty: bool = Fal
         raise NotImplementedError("Deletion of ALL instances is not yet supported")
 
     # pull the tar if we don't have it already
-    if not cod_object._tar_synced:
+    if cod_object.tar_is_empty and not cod_object._tar_synced:
         cod_object.pull_tar(dirty=dirty)
 
+    # extract instances we want to keep to disk
     instances_to_keep = _extract_instances_to_keep(
         instances_to_keep, cod_object.get_temp_dir().name
     )
-    # because tar files do not support removal, we need to create a new tar with all the instances we want to keep
-    new_tar_path = os.path.join(
-        cod_object.get_temp_dir().name, f"{cod_object.series_uid}_with_removals.tar"
-    )
-    appended_instances = _create_or_append_tar(
-        cod_object, instances_to_keep, new_tar_path
-    )
-    assert len(appended_instances) == len(
-        instances_to_keep
-    ), "Failed to create new tar with instances not getting removed"
 
-    # wipe old metadata
-    cod_object._metadata = {}
+    # call truncate with the instances we want to keep
+    return cod_object.truncate(instances_to_keep, dirty=dirty)
 
 
 def truncate(
@@ -104,16 +107,11 @@ def truncate(
     Truncate a cod object by replacing any/all preexisting instances with the given instances.
     Essentially, a wrapper for deleting a COD Object and then appending the given instances.
     """
-    # delete all instances from the cod object, except for any that happen to be in the new list to append
-    instances_to_delete = [
-        instance
-        for instance in cod_object.get_metadata(dirty=dirty).instances.values()
-        if instance not in instances
-    ]
-    cod_object.remove(instances_to_delete, dirty=dirty)
+    # wipe the local tar, index, and metadata
+    cod_object._wipe_local()
 
-    # append the new instances
-    cod_object.append(
+    # append the instances to keep
+    return cod_object.append(
         instances=instances,
         treat_metadata_diffs_as_same=treat_metadata_diffs_as_same,
         max_instance_size=max_instance_size,
