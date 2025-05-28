@@ -36,14 +36,21 @@ def _skip_missing_instances(
 
 
 def _extract_instances_to_keep(
-    instances_to_keep: list[Instance], temp_dir: str
+    cod_object: "CODObject", instances_to_keep: list[Instance]
 ) -> list[Instance]:
     """
     Extract the instances to keep from the tar file.
     """
+
+    # pull the tar if we don't have it already
+    if cod_object.tar_is_empty and not cod_object._tar_synced:
+        cod_object.pull_tar(dirty=not cod_object.lock)
+
     local_instances = []
     for instance in instances_to_keep:
-        instance_temp_path = os.path.join(temp_dir, f"{instance.instance_uid()}.dcm")
+        instance_temp_path = os.path.join(
+            cod_object.get_temp_dir().name, f"{instance.instance_uid()}.dcm"
+        )
         with instance.open() as f, open(instance_temp_path, "wb") as f_out:
             f_out.write(f.read())
         local_instance = Instance(
@@ -87,14 +94,8 @@ def remove(
             "Cannot remove all instances... did you mean to cod_obj.delete()?"
         )
 
-    # pull the tar if we don't have it already
-    if cod_object.tar_is_empty and not cod_object._tar_synced:
-        cod_object.pull_tar(dirty=dirty)
-
     # extract instances we want to keep to disk
-    instances_to_keep = _extract_instances_to_keep(
-        instances_to_keep, cod_object.get_temp_dir().name
-    )
+    instances_to_keep = _extract_instances_to_keep(cod_object, instances_to_keep)
 
     # call truncate with the instances we want to keep
     return cod_object.truncate(instances_to_keep, dirty=dirty)
@@ -113,12 +114,27 @@ def truncate(
     Truncate a cod object by replacing any/all preexisting instances with the given instances.
     Essentially, a wrapper for deleting a COD Object and then appending the given instances.
     """
+    # determine what instances will be kept (if any)
+    instances_in_cod = list(cod_object.get_metadata(dirty=dirty).instances.values())
+    instances_to_keep = [
+        instance for instance in instances_in_cod if instance in instances
+    ]
+    new_instances = [
+        instance for instance in instances if instance not in instances_in_cod
+    ]
+
+    # extract instances to keep to disk
+    instances_to_keep = _extract_instances_to_keep(cod_object, instances_to_keep)
+
+    # for our append, we want to do all the instanes we want to keep, plus any new instances
+    instances_to_append = instances_to_keep + new_instances
+
     # wipe the local tar, index, and metadata
     cod_object._wipe_local()
 
     # append the instances to keep
     return cod_object.append(
-        instances=instances,
+        instances=instances_to_append,
         treat_metadata_diffs_as_same=treat_metadata_diffs_as_same,
         max_instance_size=max_instance_size,
         max_series_size=max_series_size,
