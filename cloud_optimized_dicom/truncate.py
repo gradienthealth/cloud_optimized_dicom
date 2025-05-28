@@ -64,7 +64,11 @@ def remove(
     """
     Remove instances from a cod object. Because tar files do not natively support removal,
     this method just determines a list of instances to keep (if any) and calls truncate.
-    Returns the AppendResult of the truncate operation (i.e. what's left in the cod object)
+
+    Returns:
+        AppendResult of the truncate operation (i.e. what's left in the cod object)
+    Raises:
+        ValueError if all instances are removed (i.e. cod_obj.delete() should be used instead)
     """
     # validate the presence of instance to remove in COD
     instances_in_cod = cod_object.get_metadata(dirty=dirty).instances.values()
@@ -79,7 +83,9 @@ def remove(
         instance for instance in instances_in_cod if instance not in to_remove
     ]
     if len(instances_to_keep) == 0:
-        raise NotImplementedError("Deletion of ALL instances is not yet supported")
+        raise ValueError(
+            "Cannot remove all instances... did you mean to cod_obj.delete()?"
+        )
 
     # pull the tar if we don't have it already
     if cod_object.tar_is_empty and not cod_object._tar_synced:

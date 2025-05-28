@@ -122,10 +122,28 @@ class TestRemove(unittest.TestCase):
             list(cod_obj.get_metadata(dirty=True).instances.values()), [instance2]
         )
 
-    def test_remove_all(self):
+    def test_remove_all_raises_error(self):
         """
         Test handling of all instances being removed from a cod object.
         """
+        instance1 = Instance(
+            dicom_uri=os.path.join(
+                self.test_data_dir,
+                "series",
+                "1.2.826.0.1.3680043.8.498.22997958494980951977704130269567444795.dcm",
+            )
+        )
+        cod_obj = CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=instance1.study_uid(),
+            series_uid=instance1.series_uid(),
+            lock=False,
+        )
+        append_result = cod_obj.append(instances=[instance1], dirty=True)
+        self.assertEqual(len(append_result.new), 1)
+        with self.assertRaises(ValueError):
+            cod_obj.remove(instances=[instance1], dirty=True)
 
     def test_remove_nonexistent(self):
         """
