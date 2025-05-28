@@ -1,3 +1,4 @@
+import logging
 import os
 import unittest
 
@@ -28,6 +29,7 @@ class TestRemove(unittest.TestCase):
             ),
         )
         cls.datastore_path = "gs://siskin-172863-temp/cod_tests/dicomweb"
+        logging.basicConfig(level=logging.INFO)
 
     def setUp(self):
         # ensure clean test directory prior to test start
@@ -58,13 +60,67 @@ class TestRemove(unittest.TestCase):
             series_uid=instance1.series_uid(),
             lock=False,
         )
-        cod_obj.append(instances=[instance1, instance2], dirty=True)
-        cod_obj.remove(instances=[instance1], dirty=True)
+        append_result = cod_obj.append(instances=[instance1, instance2], dirty=True)
+        self.assertEqual(len(append_result.new), 2)
+
+        remove_result = cod_obj.remove(instances=[instance1], dirty=True)
+        # assert that there's one instance left (and its the one we didn't remove)
+        self.assertEqual(len(remove_result.new), 1)
+        self.assertEqual(remove_result.new[0], instance2)
+        self.assertEqual(
+            list(cod_obj.get_metadata(dirty=True).instances.values()), [instance2]
+        )
 
     def test_remove_remote(self):
         """
         Test that an instance can be successfully removed from a remote cod object.
         """
+        instance1 = Instance(
+            dicom_uri=os.path.join(
+                self.test_data_dir,
+                "series",
+                "1.2.826.0.1.3680043.8.498.22997958494980951977704130269567444795.dcm",
+            )
+        )
+        instance2 = Instance(
+            dicom_uri=os.path.join(
+                self.test_data_dir,
+                "series",
+                "1.2.826.0.1.3680043.8.498.28109707839310833322020505651875585013.dcm",
+            )
+        )
+        with CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=instance1.study_uid(),
+            series_uid=instance1.series_uid(),
+            lock=True,
+        ) as cod_obj:
+            append_result = cod_obj.append(instances=[instance1, instance2])
+            self.assertEqual(len(append_result.new), 2)
+            cod_obj.sync()
+
+        with CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=instance1.study_uid(),
+            series_uid=instance1.series_uid(),
+            lock=True,
+        ) as cod_obj:
+            remove_result = cod_obj.remove(instances=[instance1], dirty=False)
+            cod_obj.sync()
+
+        cod_obj = CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=instance1.study_uid(),
+            series_uid=instance1.series_uid(),
+            lock=False,
+        )
+        self.assertEqual(len(cod_obj.get_metadata(dirty=True).instances), 1)
+        self.assertEqual(
+            list(cod_obj.get_metadata(dirty=True).instances.values()), [instance2]
+        )
 
     def test_remove_all(self):
         """
