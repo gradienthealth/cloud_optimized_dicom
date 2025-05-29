@@ -1,3 +1,5 @@
+import os
+
 from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
@@ -50,7 +52,11 @@ def handle_dicomweb_request(request: str, client: storage.Client):
             client=client,
         )
     if "studies" in request_dict:
-        return _handle_study_level_request(request_dict, client)
+        return _handle_study_level_request(
+            datastore_uri=request_dict["datastore_uri"],
+            study_uid=request_dict["studies"],
+            client=client,
+        )
     raise ValueError("Invalid request format")
 
 
@@ -85,5 +91,27 @@ def _handle_series_level_request(
     return cod_obj.get_metadata(dirty=True).to_dict()["cod"]
 
 
-def _handle_study_level_request(request_dict: dict, client: storage.Client):
-    raise NotImplementedError("study level requests not yet supported")
+def _handle_study_level_request(
+    datastore_uri: str, study_uid: str, client: storage.Client
+):
+    # Parse the GCS URI into bucket and prefix
+    study_uri = os.path.join(datastore_uri, "studies", study_uid)
+    # Remove gs:// prefix and split into bucket and prefix
+    path_without_prefix = study_uri.replace("gs://", "")
+    bucket_name = path_without_prefix.split("/")[0]
+    prefix = "/".join(path_without_prefix.split("/")[1:])
+
+    # List blobs in the study directory
+    bucket = client.bucket(bucket_name)
+    blobs = bucket.list_blobs(prefix=prefix)
+    series_uids = [
+        blob.name.split("/")[-1].rstrip(".tar")
+        for blob in blobs
+        if blob.name.endswith(".tar")
+    ]
+    study_dict = {}
+    for series_uid in series_uids:
+        study_dict[series_uid] = _handle_series_level_request(
+            datastore_uri, study_uid, series_uid, client
+        )
+    return study_dict

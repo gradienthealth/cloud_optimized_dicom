@@ -18,6 +18,26 @@ class TestDicomweb(unittest.TestCase):
             ),
         )
 
+    def test_get_study(self):
+        """
+        Test that study existence can be queried via dicomweb standard
+        """
+        study_uri = os.path.join(
+            self.datastore_path,
+            "studies",
+            "1.2.826.0.1.3680043.8.498.18783474219392509401504861043428417882",
+        )
+        request = f"GET {study_uri}"
+        result = handle_dicomweb_request(request, self.client)
+        # some basic checks to make sure the result is valid
+        self.assertIn(
+            "1.2.826.0.1.3680043.8.498.89840699185761593370876698622882853150", result
+        )
+        self.assertIn(
+            "instances",
+            result["1.2.826.0.1.3680043.8.498.89840699185761593370876698622882853150"],
+        )
+
     def test_get_series(self):
         """
         Test that series existence can be queried via dicomweb standard
