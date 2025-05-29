@@ -22,6 +22,7 @@ from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.thumbnail import generate_thumbnail
+from cloud_optimized_dicom.truncate import remove, truncate
 from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
     is_remote,
@@ -233,6 +234,36 @@ class CODObject:
             treat_metadata_diffs_as_same=treat_metadata_diffs_as_same,
             max_instance_size=max_instance_size,
             max_series_size=max_series_size,
+        )
+
+    @public_method
+    def remove(self, instances: list[Instance], dirty: bool = False):
+        """
+        Remove instances from a cod object. Because tar files do not natively support removal,
+        this method just determines a list of instances to keep (if any) and calls truncate.
+        Returns the AppendResult of the truncate operation (i.e. what's left in the cod object)
+        """
+        return remove(cod_object=self, instances=instances, dirty=dirty)
+
+    @public_method
+    def truncate(
+        self,
+        instances: list[Instance],
+        treat_metadata_diffs_as_same: bool = False,
+        max_instance_size: float = 10,
+        max_series_size: float = 100,
+        delete_local_origin: bool = False,
+        dirty: bool = False,
+    ):
+        """Truncate the COD object to the given instances."""
+        return truncate(
+            cod_object=self,
+            instances=instances,
+            treat_metadata_diffs_as_same=treat_metadata_diffs_as_same,
+            max_instance_size=max_instance_size,
+            max_series_size=max_series_size,
+            delete_local_origin=delete_local_origin,
+            dirty=dirty,
         )
 
     @public_method
@@ -462,6 +493,27 @@ class CODObject:
             metrics.STORAGE_CLASS_COUNTERS["GET"][index_blob.storage_class].inc()
         # we just fetched the tar, so it is guaranteed to be in the same state as the datastore
         self._tar_synced = True
+
+    def _wipe_local(self):
+        """
+        Delete the local tar and index files, and set metadata to an empty SeriesMetadata object.
+        Update tar and metadata sync flags accordingly.
+        """
+        if os.path.exists(self.tar_file_path):
+            os.remove(self.tar_file_path)
+            # if the tar existed, we changed it, so we know for sure it is not synced
+            self._tar_synced = False
+        if os.path.exists(self.index_file_path):
+            os.remove(self.index_file_path)
+        # if we had any instances in the metadata, the metadata is no longer synced
+        if len(self._metadata.instances) > 0:
+            self._metadata_synced = False
+        self._metadata = SeriesMetadata(
+            study_uid=self.study_uid,
+            series_uid=self.series_uid,
+            hashed_uids=self.hashed_uids,
+        )
+        logger.info(f"Wiped local tar, index, and metadata: {self}")
 
     def _set_dicom_uris_to_datastore(self) -> dict[str, str]:
         """Set the dicom_uri of each instance to the datastore URI.
