@@ -52,7 +52,7 @@ class Instance:
 
     # private internal fields
     _temp_file_path: str = None
-    _metadata: dict = None
+    _metadata: dict[str, dict] = None
     _custom_offset_tables: dict = None
     _diff_hash_dupe_paths: list[str] = field(default_factory=list)
     _modified_datetime: str = datetime.now().isoformat()
@@ -500,6 +500,7 @@ class Instance:
         instance_uid, series_uid, study_uid = parse_uids_from_metadata(
             instance_dict["metadata"]
         )
+        has_pixeldata = "7FE00010" in instance_dict["metadata"]
         return Instance(
             dicom_uri=instance_dict["uri"],
             uid_hash_func=uid_hash_func,
@@ -515,6 +516,7 @@ class Instance:
             _instance_uid=instance_uid,
             _series_uid=series_uid,
             _study_uid=study_uid,
+            _has_pixeldata=has_pixeldata,
         )
 
     def cleanup(self):
