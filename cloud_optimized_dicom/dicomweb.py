@@ -1,11 +1,14 @@
 import dataclasses
 import os
 import re
+from tempfile import NamedTemporaryFile
 from typing import Iterator, Optional
 
+import pydicom3.encaps
 from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
+from cloud_optimized_dicom.instance import TAR_IDENTIFIER, Instance
 
 
 def _get_series_uid_from_blob_iterator(blobs: Iterator[storage.Blob]) -> str:
@@ -19,6 +22,28 @@ def _get_series_uid_from_blob_iterator(blobs: Iterator[storage.Blob]) -> str:
         return _extract_from_uri(blob.name, "/series/").rstrip(".tar")
     # if we get to the end of the iterator, raise an error
     raise ValueError("No series UID found in blob names")
+
+
+def _validate_frame_request(instance: Instance, requested_frames: list[int]):
+    """
+    Validate that a frame request is valid for an instance. Raises an `AssertionError` in the following cases:
+    - The instance has no pixel data
+    - Multiple frames were requested and the instance has no frame count (tag `00280008`)
+    - The requested frames are out of bounds (i.e. not in `[0, num_frames)`)
+    """
+    assert (
+        instance.has_pixeldata
+    ), f"Cannot fetch frames for instance {instance.dicom_uri} because it has no pixel data"
+    if hasattr(instance.metadata, "00280008"):
+        num_frames = instance.metadata["00280008"]["Value"][0]
+    else:
+        assert (
+            len(requested_frames) == 1
+        ), f"Cannot fetch multiple frames for instance {instance.dicom_uri} because it has no frame count"
+        num_frames = 1
+    assert all(
+        0 <= frame_index < num_frames for frame_index in requested_frames
+    ), f"Requested frames {requested_frames} are out of bounds for instance {instance.dicom_uri} with {num_frames} frames"
 
 
 def _get_series_uid_for_study(
@@ -117,7 +142,32 @@ class DicomwebRequest:
         return self._handle_study_level_request(client)
 
     def _handle_frame_level_request(self, client: storage.Client):
-        raise NotImplementedError("frame level requests not yet supported")
+        cod_obj = CODObject(
+            datastore_path=self.datastore_uri,
+            client=client,
+            study_uid=self.study_uid,
+            series_uid=self.series_uid,
+            lock=False,
+            create_if_missing=False,
+        )
+        instance = cod_obj.get_metadata(dirty=True).instances[self.instance_uid]
+        # make frame indices 0-indexed (in dicomweb requests, frames are 1-indexed)
+        frame_indices = [i - 1 for i in self.frames]
+        _validate_frame_request(instance, frame_indices)
+        start_byte, end_byte = instance._byte_offsets
+        tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=client)
+        # download just the bytes of the instance in question
+        with NamedTemporaryFile(suffix=".dcm") as temp_file:
+            tar_blob.download_to_filename(
+                temp_file.name, start=start_byte, end=end_byte
+            )
+            with pydicom3.dcmread(temp_file.name) as ds:
+                # TODO: this returns raw frame bytes... do we want to support transcoding to jpg?
+                frames = [
+                    pydicom3.encaps.get_frame(buffer=ds.PixelData, index=frame_index)
+                    for frame_index in frame_indices
+                ]
+        return frames
 
     def _handle_instance_level_request(self, client: storage.Client):
         """For an instance-level request, return the metadata for the instance"""

@@ -25,7 +25,7 @@ class TestDicomweb(unittest.TestCase):
 
     def test_get_series_uid_from_blob_iterator(self):
         """
-        Test that the series uid can be extracted from the blob names.
+        Test that the series uid can be extracted from all standard COD blobs
         """
         # simulate iterators returning every possible blob first
         series_uid = "1.2.826.0.1.3680043.8.498.89840699185761593370876698622882853150"
@@ -68,7 +68,7 @@ class TestDicomweb(unittest.TestCase):
 
     def test_get_study(self):
         """
-        Test that study existence can be queried via dicomweb standard
+        Test retrieving the metadata for a study
         """
         study_uri = os.path.join(
             self.datastore_path,
@@ -86,7 +86,7 @@ class TestDicomweb(unittest.TestCase):
 
     def test_get_series(self):
         """
-        Test that series existence can be queried via dicomweb standard
+        Test retrieving the metadata for a series
         """
         series_uri = os.path.join(
             self.datastore_path,
@@ -109,6 +109,9 @@ class TestDicomweb(unittest.TestCase):
             self.assertEqual(instance["0020000D"]["Value"][0], series_uid)
 
     def test_get_instance(self):
+        """
+        Test retrieving the metadata for an instance
+        """
         instance_uri = os.path.join(
             self.datastore_path,
             "studies",
@@ -126,6 +129,48 @@ class TestDicomweb(unittest.TestCase):
         # check something in the metadata (e.g. series uid)
         series_uid = result["0020000D"]["Value"][0]
         self.assertTrue(is_valid_uid(series_uid))
+
+    def test_get_single_frame(self):
+        """
+        Test retrieving a single frame from an instance
+        """
+        frame_uri = os.path.join(
+            self.datastore_path,
+            "studies",
+            "1.2.826.0.1.3680043.8.498.18783474219392509401504861043428417882",
+            "series",
+            "1.2.826.0.1.3680043.8.498.89840699185761593370876698622882853150",
+            "instances",
+            "1.2.826.0.1.3680043.8.498.10368404844741579486264078308290534273",
+            "frames",
+            "1",
+        )
+        request = f"GET {frame_uri}"
+        result = handle_request(request, self.client)
+        # we expect a non-empty list of bytes
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+        self.assertIsInstance(result[0], bytes)
+        self.assertTrue(len(result[0]) > 0)
+
+    def test_get_too_many_frames_errors(self):
+        """
+        Test retrieving multiple frames from an instance with only one frame raises an error
+        """
+        frame_uri = os.path.join(
+            self.datastore_path,
+            "studies",
+            "1.2.826.0.1.3680043.8.498.18783474219392509401504861043428417882",
+            "series",
+            "1.2.826.0.1.3680043.8.498.89840699185761593370876698622882853150",
+            "instances",
+            "1.2.826.0.1.3680043.8.498.10368404844741579486264078308290534273",
+            "frames",
+            "1,2",
+        )
+        request = f"GET {frame_uri}"
+        with self.assertRaises(AssertionError):
+            handle_request(request, self.client)
 
     def test_non_metadata_requests_raise_error(self):
         """
