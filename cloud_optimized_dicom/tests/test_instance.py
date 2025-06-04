@@ -35,6 +35,13 @@ class TestInstance(unittest.TestCase):
             ds = pydicom3.dcmread(f)
             self.assertEqual(ds.SOPInstanceUID, self.test_instance_uid)
 
+    def test_remote_tar_open_raises_error(self):
+        instance = Instance(
+            dicom_uri="gs://some_series.tar://instances/some_instance.dcm"
+        )
+        with self.assertRaises(ValueError):
+            instance.open()
+
     def test_validate(self):
         instance = Instance(self.local_instance_path)
         self.assertIsNone(instance._instance_uid)
