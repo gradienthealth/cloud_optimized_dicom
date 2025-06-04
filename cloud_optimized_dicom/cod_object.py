@@ -2,7 +2,7 @@ import logging
 import os
 import tarfile
 from tempfile import TemporaryDirectory
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 from google.cloud import storage
 from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
@@ -206,6 +206,82 @@ class CODObject:
                 f"COD:OBJECT_NOT_FOUND:{self.metadata_uri} (create_if_missing=False)"
             )
         return self._metadata
+
+    @public_method
+    def get_instances(self, strict_sorting: bool = True, dirty: bool = False):
+        """Get a dictionary mapping instance UIDs to instances. These instance UIDs are hashed if `hashed_uids=True`, otherwise they are the original UIDs.
+        COD will attempt to sort this dictionary so that instances appear in the proper order.
+
+        Args:
+            strict_sorting: bool - If `True`, raise an error if sorting fails (log a warning if `False`).
+            dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+        """
+        metadata = self.get_metadata(dirty=dirty)
+        metadata._sort_instances()
+        if not metadata.is_sorted:
+            if strict_sorting:
+                raise ValueError(f"Sorting was unsuccessful, and strict_sorting=True")
+            else:
+                logger.warning(f"Instance dict is unsorted")
+        return metadata.instances
+
+    @public_method
+    def get_instance(self, instance_uid: str, dirty: bool = False) -> Instance:
+        """Get an instance by uid. `instance_uid` should be hashed if `hashed_uids=True`, otherwise it should be the original UID."""
+        return self.get_instances(strict_sorting=False, dirty=dirty)[instance_uid]
+
+    @public_method
+    def get_instance_by_index(self, index: int, dirty: bool = False) -> Instance:
+        """Get an instance by index.
+
+        Args:
+            index: int - The index of the instance to get.
+            dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+        """
+        # for access by index, we require strict sorting
+        return list(self.get_instances(strict_sorting=True, dirty=dirty).values())[
+            index
+        ]
+
+    @public_method
+    def open_instance(self, instance: Union[Instance, str, int], dirty: bool = False):
+        """Open an instance (first fetches the series tar if necessary). For convenience, the instance parameter can be one of:
+            - `Instance`: An actual instance object to open.
+            - `str`: An instance UID to open (hashed if `hashed_uids=True`).
+            - `int`: The index of an instance to open.
+
+        Args:
+            instance: Instance | str | int - The instance to open
+            dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+
+        Returns:
+            A file pointer to the instance.
+
+        Raises:
+            ValueError: If the instance parameter is invalid.
+            FileNotFoundError: If the instance is not found in the CODObject.
+        """
+        # validate instance parameter
+        if isinstance(instance, Instance):
+            if (
+                instance.get_instance_uid(
+                    hashed=self.hashed_uids, trust_hints_if_available=True
+                )
+                not in self.get_metadata(dirty=dirty).instances
+            ):
+                raise FileNotFoundError(f"Instance not found in CODObject: {instance}")
+        elif isinstance(instance, str):
+            instance = self.get_instance(instance, dirty=dirty)
+        elif isinstance(instance, int):
+            instance = self.get_instance_by_index(instance, dirty=dirty)
+        else:
+            raise ValueError(
+                f"Invalid instance parameter: {instance} (must be Instance, str, or int)"
+            )
+        # pull the tar file if necessary
+        if not self._tar_synced:
+            self.pull_tar(dirty=dirty)
+        return instance.open()
 
     @public_method
     def append(
