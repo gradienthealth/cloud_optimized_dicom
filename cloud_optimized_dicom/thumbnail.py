@@ -170,9 +170,10 @@ def _generate_thumbnail_frame_and_anchors(
     return thumbnail, anchors
 
 
-def _sort_instances(instances: list[Instance]) -> list[Instance]:
+def _sort_instances(instances: list[Instance], strict=False) -> list[Instance]:
     """Attempt to sort instances by instance_number tag. Try slice_location if that fails.
-    If both fail, return the instances in the order they were fetched, and log a warning.
+    If both fail, and `strict=False`, return the instances in the order they were fetched and log a warning.
+    If both fail, and `strict=True`, raise a ValueError.
     """
     # if there's only one instance, return it as is
     if len(instances) <= 1:
@@ -184,10 +185,11 @@ def _sort_instances(instances: list[Instance]) -> list[Instance]:
             continue
         # sortable attributes are expected to be stored in metadata as "tag": {"vr":"VR","Value":[some_value]}
         return sorted(instances, key=lambda x: x.metadata[tag]["Value"][0])
-    # if no sorting was successful, return the instances in the order they were fetched
-    logger.warning(
-        f"Unable to sort instances by any known sorting attributes ({', '.join(SORTING_ATTRIBUTES.keys())})"
-    )
+    # if we get here, sorting failed
+    msg = f"Unable to sort instances by any known sorting attributes ({', '.join(SORTING_ATTRIBUTES.keys())})"
+    if strict:
+        raise ValueError(msg)
+    logger.warning(msg)
     return instances
 
 
