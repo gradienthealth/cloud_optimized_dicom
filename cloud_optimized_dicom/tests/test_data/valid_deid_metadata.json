@@ -5,6 +5,18 @@
       "instances": {
         "instance_uid_1": {
           "metadata": {
+            "0020000E": {
+              "vr": "UI",
+              "Value": [
+                "some_series_uid"
+              ]
+            },
+            "0020000D": {
+              "vr": "UI",
+              "Value": [
+                "some_study_uid"
+              ]
+            },
             "00080000": {
               "vr": "UL",
               "Value": [612]
@@ -61,6 +73,18 @@
         },
         "instance_uid_2": {
           "metadata": {
+            "0020000E": {
+              "vr": "UI",
+              "Value": [
+                "some_series_uid"
+              ]
+            },
+            "0020000D": {
+              "vr": "UI",
+              "Value": [
+                "some_study_uid"
+              ]
+            },
             "00080000": {
               "vr": "UL",
               "Value": [612]
