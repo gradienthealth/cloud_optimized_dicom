@@ -7,6 +7,7 @@ from typing import Callable, Optional
 from google.cloud import storage
 
 from cloud_optimized_dicom.instance import Instance
+from cloud_optimized_dicom.thumbnail import _sort_instances
 
 
 @dataclass
@@ -19,8 +20,10 @@ class SeriesMetadata:
         hashed_uids (bool): Flag indicating whether the series uses de-identified UIDs.
         instances (dict[str, Instance]): Mapping of instance UID (hashed if `hashed_uids=True`) to Instance object
         custom_tags (dict): Any additional user defined data
-        If loading existing metadata, this is inferred by the presence of the key `deid_study_uid` as opposed to `study_uid`.
-        If creating new metadata, this is inferred by the presence/absence of `instance.uid_hash_func` for any instances that have been added.
+        is_sorted (bool): Flag indicating whether the instances dict is sorted
+
+    If loading existing metadata, `hashed_uids` is inferred by the presence of the key `deid_study_uid` as opposed to `study_uid`.
+    If creating new metadata, `hashed_uids` is inferred by the presence/absence of `instance.uid_hash_func` for any instances that have been added.
     """
 
     study_uid: str
@@ -28,6 +31,7 @@ class SeriesMetadata:
     hashed_uids: bool
     instances: dict[str, Instance] = field(default_factory=dict)
     custom_tags: dict = field(default_factory=dict)
+    is_sorted: bool = False
 
     def _add_custom_tag(self, tag_name: str, tag_value, overwrite_existing=False):
         """Add a custom tag to the series metadata"""
@@ -37,6 +41,29 @@ class SeriesMetadata:
                 f"Metadata tag {tag_name} already exists (and overwrite_existing=False)"
             )
         self.custom_tags[tag_name] = tag_value
+
+    def _sort_instances(self):
+        """Sort the instances dict, the same way instances are sorted for the thumbnail.
+
+        If sorting is successful, set `is_sorted=True`.
+        If sorting is unsuccessful, set `is_sorted=False`.
+        """
+        # early exit if already sorted
+        if self.is_sorted:
+            return
+        # map instances to their uids
+        instance_to_uid = {instance: uid for uid, instance in self.instances.items()}
+        # get a list of all instances (unsorted)
+        unsorted_instances = list(instance_to_uid.keys())
+        # attempt sorting
+        try:
+            sorted_instances = _sort_instances(unsorted_instances, strict=True)
+            self.instances = {
+                instance_to_uid[instance]: instance for instance in sorted_instances
+            }
+            self.is_sorted = True
+        except ValueError:
+            self.is_sorted = False
 
     def to_dict(self) -> dict:
         # TODO version handling once we have a new version
