@@ -330,6 +330,31 @@ def generate_thumbnail(
     return thumbnail_path
 
 
+def fetch_thumbnail(cod_obj: "CODObject", dirty: bool = False) -> str:
+    """Download thumbnail from GCS for given cod object.
+
+    Returns:
+        thumbnail_path: the path to the thumbnail on disk
+
+    Raises:
+        ValueError: if the cod object has no thumbnail metadata
+        NotFound: if the thumbnail blob does not exist in GCS
+    """
+    thumbnail_metadata = cod_obj.get_custom_tag("thumbnail", dirty=dirty)
+    if thumbnail_metadata is None:
+        raise ValueError(f"Thumbnail metadata not found for {cod_obj}")
+    thumbnail_uri = thumbnail_metadata["uri"]
+    logger.info(f"Fetching thumbnail from {thumbnail_uri}")
+    thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=cod_obj.client)
+    thumbnail_local_path = os.path.join(
+        cod_obj.get_temp_dir().name, thumbnail_uri.split("/")[-1]
+    )
+    thumbnail_blob.download_to_filename(thumbnail_local_path)
+    # we just fetched the thumbnail, so it is guaranteed to be in the same state as the datastore
+    cod_obj._thumbnail_synced = True
+    return thumbnail_local_path
+
+
 @dataclasses.dataclass
 class ThumbnailCoordConverter:
     orig_w: int
