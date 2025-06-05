@@ -4,6 +4,7 @@ import tarfile
 from tempfile import TemporaryDirectory
 from typing import Callable, Optional, Union
 
+import numpy as np
 from google.cloud import storage
 from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
 from google.cloud.storage.retry import DEFAULT_RETRY
@@ -21,12 +22,13 @@ from cloud_optimized_dicom.errors import (
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
-from cloud_optimized_dicom.thumbnail import generate_thumbnail
+from cloud_optimized_dicom.thumbnail import fetch_thumbnail, generate_thumbnail
 from cloud_optimized_dicom.truncate import remove, truncate
 from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
     is_remote,
     public_method,
+    read_thumbnail_into_array,
     upload_and_count_file,
 )
 
@@ -429,35 +431,43 @@ class CODObject:
         return self.get_metadata(dirty=dirty).custom_tags.get(tag_name, None)
 
     @public_method
-    def generate_thumbnail(self, overwrite_existing: bool = False, dirty: bool = False):
-        """Generate a thumbnail for a COD object.
+    def get_thumbnail(
+        self, generate_if_missing: bool = True, dirty: bool = False
+    ) -> np.ndarray:
+        """Get the thumbnail for a COD object.
 
         Args:
-            overwrite_existing: Whether to overwrite the existing thumbnail, if it exists.
+            generate_if_missing: Whether to generate a thumbnail if it does not exist, or is stale.
             dirty: Whether the operation is dirty.
 
         Returns:
-            The local path to the thumbnail after saving it to disk (or `None` if no thumbnail was generated)
-        """
-        return generate_thumbnail(
-            cod_obj=self, overwrite_existing=overwrite_existing, dirty=dirty
-        )
+            The thumbnail as a numpy array.
 
-    @public_method
-    def fetch_thumbnail(self, dirty: bool = False) -> str:
-        """Fetch the thumbnail for a COD object. Returns the local path to the thumbnail after downloading it. Raises an error if the thumbnail does not exist."""
+        Raises:
+            ValueError: If the thumbnail does not exist and `generate_if_missing=False`, or if opening the thumbnail fails for any reason.
+        """
         thumbnail_metadata = self.get_custom_tag("thumbnail", dirty=dirty)
-        if thumbnail_metadata is None:
-            raise ValueError(f"Thumbnail not found for {self}")
-        thumbnail_uri = thumbnail_metadata["uri"]
-        thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=self.client)
+        # Cases where we need to generate a new thumbnail:
+        # 1. The thumbnail metadata does not exist (i.e. the thumbnail has never been generated)
+        # 2. The thumbnail metadata exists but the number of instances it contains does not match the cod object (i.e. the thumbnail is stale)
+        if thumbnail_metadata is None or len(thumbnail_metadata["instances"]) != len(
+            self.get_instances(strict_sorting=False, dirty=dirty)
+        ):
+            if not generate_if_missing:
+                raise ValueError(
+                    f"Thumbnail either stale or not found for {self} (and generate_if_missing=False)"
+                )
+            generate_thumbnail(cod_obj=self, overwrite_existing=True, dirty=dirty)
+            thumbnail_metadata = self.get_custom_tag("thumbnail", dirty=dirty)
+        elif not os.path.exists(thumbnail_metadata["uri"]):
+            # Fetch case: we have thumbnail metadata but the thumbnail does not exist on disk, so we just have to fetch it
+            fetch_thumbnail(cod_obj=self, dirty=dirty)
+        # once we get here, we have the thumbnail on disk -> read and return it
+        thumbnail_file_name = os.path.basename(thumbnail_metadata["uri"])
         thumbnail_local_path = os.path.join(
-            self.get_temp_dir().name, thumbnail_uri.split("/")[-1]
+            self.get_temp_dir().name, thumbnail_file_name
         )
-        thumbnail_blob.download_to_filename(thumbnail_local_path)
-        # we just fetched the thumbnail, so it is guaranteed to be in the same state as the datastore
-        self._thumbnail_synced = True
-        return thumbnail_local_path
+        return read_thumbnail_into_array(thumbnail_local_path)
 
     @public_method
     def upload_error_log(self, message: str):
