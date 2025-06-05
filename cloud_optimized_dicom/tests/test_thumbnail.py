@@ -18,7 +18,7 @@ from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 def ingest_and_generate_thumbnail(
     instance_paths: list[str], datastore_path: str, client: storage.Client
-):
+) -> tuple[CODObject, np.ndarray]:
     instances = [Instance(dicom_uri=path) for path in instance_paths]
     with CODObject(
         datastore_path=datastore_path,
@@ -28,55 +28,44 @@ def ingest_and_generate_thumbnail(
         lock=False,
     ) as cod_obj:
         cod_obj.append(instances, dirty=True)
-        cod_obj.generate_thumbnail(dirty=True)
-        return cod_obj
+        return cod_obj, cod_obj.get_thumbnail(dirty=True)
 
 
 def validate_thumbnail(
     testcls: unittest.TestCase,
+    thumbnail: np.ndarray,
     cod_obj: CODObject,
     expected_frame_count: int,
     expected_frame_size: tuple[int, int] = (DEFAULT_SIZE, DEFAULT_SIZE),
-    save_loc: str = None,
+    dirty: bool = True,
 ):
-    thumbnail_name = "thumbnail.mp4" if expected_frame_count > 1 else "thumbnail.jpg"
-    thumbnail_path = os.path.join(cod_obj.temp_dir.name, thumbnail_name)
-    cap = cv2.VideoCapture(thumbnail_path)
-    if not cap.isOpened():
-        raise ValueError("Failed to open video stream.")
-
-    # Get the total number of frames
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    # get frame size (width, height)
+    testcls.assertTrue(
+        len(thumbnail.shape) == 3 or len(thumbnail.shape) == 4,
+        "Thumbnail must be a 3D or 4D array",
+    )
+    # 3D array -> jpg -> (H, W, 3); 4D array -> mp4 -> (N, H, W, 3)
+    num_frames = thumbnail.shape[0] if len(thumbnail.shape) > 3 else 1
     frame_size = (
-        int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-        int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+        thumbnail.shape[1:3] if len(thumbnail.shape) > 3 else thumbnail.shape[0:2]
+    )
+    testcls.assertEqual(
+        num_frames,
+        expected_frame_count,
+        f"Expected {expected_frame_count} frames, got {num_frames}",
+    )
+    testcls.assertEqual(
+        frame_size,
+        expected_frame_size,
+        f"Expected frame size {expected_frame_size}, got {frame_size}",
     )
 
-    # Check content variation for each frame
-    for _ in range(frame_count):
-        ret, frame = cap.read()
-        if not ret:
-            break
-        # Calculate standard deviation of pixel values
-        std_dev = frame.std()
-        # Assert that there is meaningful variation (not a blank/black image)
-        testcls.assertGreater(std_dev, 10.0, "Thumbnail appears to be blank or uniform")
-
-    cap.release()
-    testcls.assertEqual(frame_count, expected_frame_count)
-    testcls.assertEqual(frame_size, expected_frame_size)
-    if save_loc:
-        with open(save_loc, "wb") as f, open(thumbnail_path, "rb") as f2:
-            f.write(f2.read())
-
     # test the thumbnail coord converter
-    instance_uid = list(cod_obj._metadata.custom_tags["thumbnail"]["instances"].keys())[
-        0
-    ]
-    thumbnail_frame_metadata = cod_obj._metadata.custom_tags["thumbnail"]["instances"][
-        instance_uid
-    ]["frames"][0]
+    instance_uid = list(
+        cod_obj.get_custom_tag("thumbnail", dirty=dirty)["instances"].keys()
+    )[0]
+    thumbnail_frame_metadata = cod_obj.get_custom_tag("thumbnail", dirty=dirty)[
+        "instances"
+    ][instance_uid]["frames"][0]
     converter = ThumbnailCoordConverter.from_anchors(
         thumbnail_frame_metadata["anchors"]
     )
@@ -114,10 +103,10 @@ class TestThumbnail(unittest.TestCase):
     def test_gen_monochrome1(self):
         """Test thumbnail generation for a single frame DICOM file (MONOCHROME1)"""
         dicom_path = os.path.join(self.test_data_dir, "monochrome1.dcm")
-        cod_obj = ingest_and_generate_thumbnail(
+        cod_obj, thumbnail = ingest_and_generate_thumbnail(
             [dicom_path], self.datastore_path, self.client
         )
-        validate_thumbnail(self, cod_obj, expected_frame_count=1)
+        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=1)
         reloaded_metadata = SeriesMetadata.from_bytes(cod_obj._metadata.to_bytes())
         self.assertIsNotNone(reloaded_metadata.custom_tags["thumbnail"])
         self.assertDictEqual(
@@ -128,10 +117,10 @@ class TestThumbnail(unittest.TestCase):
     def test_gen_monochrome2(self):
         """Test thumbnail generation for a single frame DICOM file (MONOCHROME2)"""
         dicom_path = os.path.join(self.test_data_dir, "monochrome2.dcm")
-        cod_obj = ingest_and_generate_thumbnail(
+        cod_obj, thumbnail = ingest_and_generate_thumbnail(
             [dicom_path], self.datastore_path, self.client
         )
-        validate_thumbnail(self, cod_obj, expected_frame_count=1)
+        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=1)
 
     def test_gen_mp4_mixed_phot_interp(self):
         """Test thumbnail generation for a series of DICOM files with different photometric interpretations (YBR_RCT and MONOCHROME2)"""
@@ -141,18 +130,18 @@ class TestThumbnail(unittest.TestCase):
             for f in os.listdir(series_folder)
             if f.endswith(".dcm")
         ]
-        cod_obj = ingest_and_generate_thumbnail(
+        cod_obj, thumbnail = ingest_and_generate_thumbnail(
             dicom_paths, self.datastore_path, self.client
         )
-        validate_thumbnail(self, cod_obj, expected_frame_count=10)
+        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=10)
 
     def test_gen_mp4_ybr_rct_multiframe(self):
         """Test thumbnail generation for a multiframe DICOM file (YBR_RCT)"""
         multiframe_path = os.path.join(self.test_data_dir, "ybr_rct_multiframe.dcm")
-        cod_obj = ingest_and_generate_thumbnail(
+        cod_obj, thumbnail = ingest_and_generate_thumbnail(
             [multiframe_path], self.datastore_path, self.client
         )
-        validate_thumbnail(self, cod_obj, expected_frame_count=78)
+        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=78)
         reloaded_metadata = SeriesMetadata.from_bytes(cod_obj._metadata.to_bytes())
         self.assertIsNotNone(reloaded_metadata.custom_tags["thumbnail"])
         self.assertDictEqual(
@@ -174,7 +163,7 @@ class TestThumbnail(unittest.TestCase):
             lock=True,
         ) as cod_obj:
             cod_obj.append([instance])
-            cod_obj.generate_thumbnail()
+            cod_obj.get_thumbnail()
             cod_obj.sync()
         # with a new cod object, fetch and validate thumbnail
         with CODObject(
@@ -186,11 +175,10 @@ class TestThumbnail(unittest.TestCase):
         ) as cod_obj:
             # thumbnail is not synced - it exists in datastore, but we haven't pulled it
             self.assertFalse(cod_obj._thumbnail_synced)
-            thumbnail_path = cod_obj.fetch_thumbnail(dirty=True)
+            thumbnail = cod_obj.get_thumbnail(dirty=True)
             # thumbnail is now synced
             self.assertTrue(cod_obj._thumbnail_synced)
-            self.assertTrue(os.path.exists(thumbnail_path))
-            validate_thumbnail(self, cod_obj, expected_frame_count=1)
+            validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=1)
 
     def test_update_existing_thumbnail(self):
         """Test that updating an existing thumbnail works"""
@@ -211,9 +199,10 @@ class TestThumbnail(unittest.TestCase):
             lock=True,
         ) as cod_obj:
             cod_obj.append([instance_a])
-            thumbnail_path = cod_obj.generate_thumbnail()
-            self.assertTrue(os.path.exists(thumbnail_path))
-            self.assertTrue(thumbnail_path.endswith(".jpg"))
+            thumbnail = cod_obj.get_thumbnail()
+            validate_thumbnail(
+                self, thumbnail, cod_obj, expected_frame_count=1, dirty=False
+            )
             cod_obj.sync()
         instance_b = Instance(
             dicom_uri=os.path.join(
@@ -232,6 +221,7 @@ class TestThumbnail(unittest.TestCase):
             lock=True,
         ) as cod_obj:
             cod_obj.append([instance_b])
-            thumbnail_path = cod_obj.generate_thumbnail(overwrite_existing=True)
-            self.assertTrue(os.path.exists(thumbnail_path))
-            self.assertTrue(thumbnail_path.endswith(".mp4"))
+            thumbnail = cod_obj.get_thumbnail()
+            validate_thumbnail(
+                self, thumbnail, cod_obj, expected_frame_count=2, dirty=False
+            )
