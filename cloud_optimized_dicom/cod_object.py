@@ -113,7 +113,7 @@ class CODObject:
         self._metadata_synced = _metadata_synced
         # if the thumbnail exists, it is not synced (we did not fetch it)
         self._thumbnail_synced = (
-            self.get_custom_tag("thumbnail", dirty=not lock) is None
+            self.get_metadata_field("thumbnail", dirty=not lock) is None
         )
 
     def _validate_uids(self):
@@ -413,7 +413,7 @@ class CODObject:
         if self._thumbnail_synced:
             logger.info(f"Skipping thumbnail sync - thumbnail already synced: {self}")
             return
-        thumbnail_metadata = self.get_custom_tag("thumbnail")
+        thumbnail_metadata = self.get_metadata_field("thumbnail")
         if thumbnail_metadata is None:
             logger.info(f"Skipping thumbnail sync - thumbnail does not exist: {self}")
             return
@@ -434,24 +434,26 @@ class CODObject:
         self._thumbnail_synced = True
 
     @public_method
-    def add_custom_tag(
+    def add_metadata_field(
         self,
-        tag_name: str,
-        tag_value: dict,
+        field_name: str,
+        field_value: dict,
         overwrite_existing: bool = True,
         dirty: bool = False,
     ):
-        """Add a custom tag to the metadata"""
-        self.get_metadata(dirty=dirty)._add_custom_tag(
-            tag_name, tag_value, overwrite_existing
+        """Add a custom field to the metadata"""
+        self.get_metadata(dirty=dirty)._add_metadata_field(
+            field_name, field_value, overwrite_existing
         )
         # modifying metadata means it is not synced to the datastore
         self._metadata_synced = False
 
     @public_method
-    def get_custom_tag(self, tag_name: str, dirty: bool = False) -> Optional[dict]:
-        """Get a custom tag from the metadata. Returns `None` if the tag does not exist."""
-        return self.get_metadata(dirty=dirty).custom_tags.get(tag_name, None)
+    def get_metadata_field(
+        self, field_name: str, dirty: bool = False
+    ) -> Optional[dict]:
+        """Get a custom field from the metadata. Returns `None` if the field does not exist."""
+        return self.get_metadata(dirty=dirty).metadata_fields.get(field_name, None)
 
     @public_method
     def get_thumbnail(
@@ -473,7 +475,7 @@ class CODObject:
         Raises:
             ValueError: If the thumbnail does not exist and `generate_if_missing=False`, or if opening the thumbnail fails for any reason.
         """
-        thumbnail_metadata = self.get_custom_tag("thumbnail", dirty=dirty)
+        thumbnail_metadata = self.get_metadata_field("thumbnail", dirty=dirty)
         # Cases where we need to generate a new thumbnail:
         # 1. The thumbnail metadata does not exist (i.e. the thumbnail has never been generated)
         # 2. The thumbnail metadata exists but the number of instances it contains does not match the cod object (i.e. the thumbnail is stale)
@@ -485,7 +487,7 @@ class CODObject:
                     f"Thumbnail either stale or not found for {self} (and generate_if_missing=False)"
                 )
             generate_thumbnail(cod_obj=self, overwrite_existing=True)
-            thumbnail_metadata = self.get_custom_tag("thumbnail", dirty=dirty)
+            thumbnail_metadata = self.get_metadata_field("thumbnail", dirty=dirty)
         # thumbnail metadata guaranteed to be populated at this point
         thumbnail_file_name = os.path.basename(thumbnail_metadata["uri"])
         thumbnail_local_path = os.path.join(

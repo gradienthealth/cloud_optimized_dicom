@@ -19,7 +19,7 @@ class SeriesMetadata:
         series_uid (str): The series UID of this series (should match `CODObject.series_uid`)
         hashed_uids (bool): Flag indicating whether the series uses de-identified UIDs.
         instances (dict[str, Instance]): Mapping of instance UID (hashed if `hashed_uids=True`) to Instance object
-        custom_tags (dict): Any additional user defined data
+        metadata_fields (dict): Any additional user defined data
         is_sorted (bool): Flag indicating whether the instances dict is sorted
 
     If loading existing metadata, `hashed_uids` is inferred by the presence of the key `deid_study_uid` as opposed to `study_uid`.
@@ -30,17 +30,19 @@ class SeriesMetadata:
     series_uid: str
     hashed_uids: bool
     instances: dict[str, Instance] = field(default_factory=dict)
-    custom_tags: dict = field(default_factory=dict)
+    metadata_fields: dict = field(default_factory=dict)
     is_sorted: bool = False
 
-    def _add_custom_tag(self, tag_name: str, tag_value, overwrite_existing=False):
-        """Add a custom tag to the series metadata"""
-        # Raise error if tag exists and we're not overwriting existing tags
-        if hasattr(self.custom_tags, tag_name) and not overwrite_existing:
+    def _add_metadata_field(
+        self, field_name: str, field_value, overwrite_existing=False
+    ):
+        """Add a custom field to the series metadata"""
+        # Raise error if field exists and we're not overwriting existing fields
+        if field_name in self.metadata_fields and not overwrite_existing:
             raise ValueError(
-                f"Metadata tag {tag_name} already exists (and overwrite_existing=False)"
+                f"Metadata field {field_name} already exists (and overwrite_existing=False)"
             )
-        self.custom_tags[tag_name] = tag_value
+        self.metadata_fields[field_name] = field_value
 
     def _sort_instances(self):
         """Sort the instances dict, the same way instances are sorted for the thumbnail.
@@ -79,7 +81,7 @@ class SeriesMetadata:
                 },
             },
         }
-        return {**base_dict, **self.custom_tags}
+        return {**base_dict, **self.metadata_fields}
 
     def to_bytes(self) -> bytes:
         """Convert from SeriesMetadata -> dict -> JSON -> bytes"""
@@ -122,15 +124,15 @@ class SeriesMetadata:
             for instance_uid, instance_dict in cod_dict.get("instances", {}).items()
         }
 
-        # Treat any remaining keys as custom tags
-        custom_tags = series_metadata_dict
+        # Treat any remaining keys as metadata fields
+        metadata_fields = series_metadata_dict
 
         return cls(
             study_uid=study_uid,
             series_uid=series_uid,
             hashed_uids=is_hashed,
             instances=instances,
-            custom_tags=custom_tags,
+            metadata_fields=metadata_fields,
         )
 
     @classmethod

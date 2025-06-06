@@ -299,7 +299,7 @@ def generate_thumbnail(
     # can infer whether the operation is dirty by checking if the cod object is locked
     dirty = not cod_obj.lock
     if (
-        cod_obj.get_custom_tag("thumbnail", dirty=dirty) is not None
+        cod_obj.get_metadata_field("thumbnail", dirty=dirty) is not None
         and not overwrite_existing
     ):
         logger.info(f"Skipping thumbnail generation for {cod_obj} (already exists)")
@@ -317,9 +317,9 @@ def generate_thumbnail(
         cod_obj, instances, instance_to_instance_uid
     )
     thumbnail_path = _save_thumbnail_to_disk(cod_obj, all_frames)
-    cod_obj.add_custom_tag(
-        tag_name="thumbnail",
-        tag_value=thumbnail_metadata,
+    cod_obj.add_metadata_field(
+        field_name="thumbnail",
+        field_value=thumbnail_metadata,
         overwrite_existing=True,
         dirty=dirty,
     )
@@ -340,7 +340,7 @@ def fetch_thumbnail(cod_obj: "CODObject") -> str:
         ValueError: if the cod object has no thumbnail metadata
         NotFound: if the thumbnail blob does not exist in GCS
     """
-    thumbnail_metadata = cod_obj.get_custom_tag("thumbnail", dirty=not cod_obj.lock)
+    thumbnail_metadata = cod_obj.get_metadata_field("thumbnail", dirty=not cod_obj.lock)
     if thumbnail_metadata is None:
         raise ValueError(f"Thumbnail metadata not found for {cod_obj}")
     thumbnail_uri = thumbnail_metadata["uri"]
@@ -370,7 +370,7 @@ def get_instance_thumbnail_slice(
     Returns:
         thumbnail_slice: a numpy array of the thumbnail slice
     """
-    thumbnail_metadata = cod_obj.get_custom_tag("thumbnail", dirty=not cod_obj.lock)
+    thumbnail_metadata = cod_obj.get_metadata_field("thumbnail", dirty=not cod_obj.lock)
     # if thumbnail only contains one instance, assert that is the instance requested and return the full array
     if len(thumbnail_metadata["instances"]) == 1:
         assert (
@@ -402,7 +402,7 @@ def get_instance_by_thumbnail_index(
     Raises:
         ValueError: if the cod object has no thumbnail metadata, or `thumbnail_index` is out of bounds
     """
-    thumbnail_metadata = cod_obj.get_custom_tag("thumbnail", dirty=not cod_obj.lock)
+    thumbnail_metadata = cod_obj.get_metadata_field("thumbnail", dirty=not cod_obj.lock)
     if not thumbnail_metadata:
         raise ValueError(f"Thumbnail metadata not found for {cod_obj}")
     thumbnail_index_to_instance_frame = thumbnail_metadata[

@@ -67,9 +67,9 @@ def validate_thumbnail(
 
     # test the thumbnail coord converter
     instance_uid = list(
-        cod_obj.get_custom_tag("thumbnail", dirty=dirty)["instances"].keys()
+        cod_obj.get_metadata_field("thumbnail", dirty=dirty)["instances"].keys()
     )[0]
-    thumbnail_frame_metadata = cod_obj.get_custom_tag("thumbnail", dirty=dirty)[
+    thumbnail_frame_metadata = cod_obj.get_metadata_field("thumbnail", dirty=dirty)[
         "instances"
     ][instance_uid]["frames"][0]
     converter = ThumbnailCoordConverter.from_anchors(
@@ -114,10 +114,10 @@ class TestThumbnail(unittest.TestCase):
         )
         validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=1)
         reloaded_metadata = SeriesMetadata.from_bytes(cod_obj._metadata.to_bytes())
-        self.assertIsNotNone(reloaded_metadata.custom_tags["thumbnail"])
+        self.assertIsNotNone(reloaded_metadata.metadata_fields["thumbnail"])
         self.assertDictEqual(
-            reloaded_metadata.custom_tags["thumbnail"],
-            cod_obj._metadata.custom_tags["thumbnail"],
+            reloaded_metadata.metadata_fields["thumbnail"],
+            cod_obj._metadata.metadata_fields["thumbnail"],
         )
 
     def test_gen_monochrome2(self):
@@ -149,10 +149,10 @@ class TestThumbnail(unittest.TestCase):
         )
         validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=78)
         reloaded_metadata = SeriesMetadata.from_bytes(cod_obj._metadata.to_bytes())
-        self.assertIsNotNone(reloaded_metadata.custom_tags["thumbnail"])
+        self.assertIsNotNone(reloaded_metadata.metadata_fields["thumbnail"])
         self.assertDictEqual(
-            reloaded_metadata.custom_tags["thumbnail"],
-            cod_obj._metadata.custom_tags["thumbnail"],
+            reloaded_metadata.metadata_fields["thumbnail"],
+            cod_obj._metadata.metadata_fields["thumbnail"],
         )
 
     def test_sync_and_fetch(self):
