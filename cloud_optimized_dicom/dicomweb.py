@@ -255,12 +255,14 @@ class DicomwebRequest:
     @classmethod
     def from_request(cls, request: str) -> "DicomwebRequest":
         """
-        Parse the request string (e.g. `GET {s}/studies/{study}/series/{series}`)
+        Parse the request string (e.g. `{s}/studies/{study}/series/{series}`),
         and return a DicomwebRequest object.
+        Currently only GET requests are supported, so it is implied that the request starts with `GET`
         """
-        assert request.startswith("GET "), "Only GET requests are currently supported"
-        uri = request.replace("GET", "").strip()
-        return cls.from_uri(uri)
+        assert request.startswith("gs://"), (
+            "Expected request to begin with GS URI but got: " + request
+        )
+        return cls.from_uri(request.strip())
 
 
 # public method to expose (really the only thing that should be used/imported)
