@@ -44,6 +44,17 @@ class SeriesMetadata:
             )
         self.metadata_fields[field_name] = field_value
 
+    def _remove_metadata_field(self, field_name: str) -> bool:
+        """Remove a custom field from the series metadata.
+
+        Returns:
+            bool: True if the field was present and removed, False if the field was not present.
+        """
+        if field_name not in self.metadata_fields:
+            return False
+        del self.metadata_fields[field_name]
+        return True
+
     def _sort_instances(self):
         """Sort the instances dict, the same way instances are sorted for the thumbnail.
 

@@ -456,6 +456,15 @@ class CODObject:
         return self.get_metadata(dirty=dirty).metadata_fields.get(field_name, None)
 
     @public_method
+    def remove_metadata_field(self, field_name: str, dirty: bool = False):
+        """Remove a custom field from the metadata"""
+        field_was_present = self.get_metadata(dirty=dirty)._remove_metadata_field(
+            field_name
+        )
+        # if the field was present, and we removed it, the metadata is now desynced
+        self._metadata_synced = not field_was_present
+
+    @public_method
     def get_thumbnail(
         self,
         generate_if_missing: bool = True,
