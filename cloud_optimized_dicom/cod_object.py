@@ -465,7 +465,7 @@ class CODObject:
                 raise ValueError(
                     f"Thumbnail either stale or not found for {self} (and generate_if_missing=False)"
                 )
-            generate_thumbnail(cod_obj=self, overwrite_existing=True, dirty=dirty)
+            generate_thumbnail(cod_obj=self, overwrite_existing=True)
             thumbnail_metadata = self.get_custom_tag("thumbnail", dirty=dirty)
         # thumbnail metadata guaranteed to be populated at this point
         thumbnail_file_name = os.path.basename(thumbnail_metadata["uri"])
@@ -474,7 +474,7 @@ class CODObject:
         )
         # Fetch case: we have thumbnail metadata but the thumbnail does not exist on disk, so we just have to fetch it
         if not os.path.exists(thumbnail_local_path):
-            fetch_thumbnail(cod_obj=self, dirty=dirty)
+            fetch_thumbnail(cod_obj=self)
         # thumbnail guaranteed to be on disk at this point -> read and return it (or slice it if instance UID is provided)
         thumbnail_array = read_thumbnail_into_array(thumbnail_local_path)
         # return the raw array if no instance UIDs are provided
@@ -485,7 +485,6 @@ class CODObject:
             cod_obj=self,
             thumbnail_array=thumbnail_array,
             instance_uid=instance_uid,
-            dirty=dirty,
         )
 
     @public_method

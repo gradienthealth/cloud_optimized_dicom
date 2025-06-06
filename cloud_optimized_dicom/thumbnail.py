@@ -289,15 +289,15 @@ def _generate_instance_lookup_dict(
 def generate_thumbnail(
     cod_obj: "CODObject",
     overwrite_existing: bool = False,
-    dirty: bool = False,
 ):
     """Generate a thumbnail for a COD object.
 
     Args:
         cod_obj: The COD object to generate a thumbnail for.
         overwrite_existing: Whether to overwrite the existing thumbnail, if it exists.
-        dirty: Whether the operation is dirty.
     """
+    # can infer whether the operation is dirty by checking if the cod object is locked
+    dirty = not cod_obj.lock
     if (
         cod_obj.get_custom_tag("thumbnail", dirty=dirty) is not None
         and not overwrite_existing
@@ -330,7 +330,7 @@ def generate_thumbnail(
     return thumbnail_path
 
 
-def fetch_thumbnail(cod_obj: "CODObject", dirty: bool = False) -> str:
+def fetch_thumbnail(cod_obj: "CODObject") -> str:
     """Download thumbnail from GCS for given cod object.
 
     Returns:
@@ -340,7 +340,7 @@ def fetch_thumbnail(cod_obj: "CODObject", dirty: bool = False) -> str:
         ValueError: if the cod object has no thumbnail metadata
         NotFound: if the thumbnail blob does not exist in GCS
     """
-    thumbnail_metadata = cod_obj.get_custom_tag("thumbnail", dirty=dirty)
+    thumbnail_metadata = cod_obj.get_custom_tag("thumbnail", dirty=not cod_obj.lock)
     if thumbnail_metadata is None:
         raise ValueError(f"Thumbnail metadata not found for {cod_obj}")
     thumbnail_uri = thumbnail_metadata["uri"]
@@ -359,7 +359,6 @@ def get_instance_thumbnail_slice(
     cod_obj: "CODObject",
     thumbnail_array: np.ndarray,
     instance_uid: str,
-    dirty: bool = False,
 ) -> np.ndarray:
     """Get a slice of the thumbnail for a given instance.
 
@@ -367,12 +366,11 @@ def get_instance_thumbnail_slice(
         cod_obj: The COD object to get the thumbnail slice for.
         thumbnail_array: The numpy array of the full series thumbnail.
         instance_uid: The UID of the instance to get the thumbnail slice for.
-        dirty: Whether the operation is dirty.
 
     Returns:
         thumbnail_slice: a numpy array of the thumbnail slice
     """
-    thumbnail_metadata = cod_obj.get_custom_tag("thumbnail", dirty=dirty)
+    thumbnail_metadata = cod_obj.get_custom_tag("thumbnail", dirty=not cod_obj.lock)
     # if thumbnail only contains one instance, assert that is the instance requested and return the full array
     if len(thumbnail_metadata["instances"]) == 1:
         assert (
