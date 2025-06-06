@@ -27,6 +27,7 @@ setup(
     extras_require={
         "test": [
             "pydicom==2.3.0",
+            "matplotlib",
         ],
     },
 )

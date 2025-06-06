@@ -6,15 +6,16 @@ UID_TAGS = {
     "study_uid": "0020000D",
 }
 
-
 import collections
 import io
 import logging
 from base64 import b64encode
 from typing import Optional
 
+import cv2
 import filetype
 import google_crc32c
+import numpy as np
 from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
 
@@ -145,6 +146,43 @@ def parse_uids_from_metadata(
     series_uid = metadata.get(UID_TAGS["series_uid"], {}).get("Value", [None])[0]
     study_uid = metadata.get(UID_TAGS["study_uid"], {}).get("Value", [None])[0]
     return instance_uid, series_uid, study_uid
+
+
+def read_thumbnail_into_array(thumbnail_path: str) -> np.ndarray:
+    """Read a thumbnail from disk into a numpy array.
+
+    Args:
+        thumbnail_path: str - The path to the thumbnail on disk.
+
+    Returns:
+        np.ndarray - The thumbnail as a numpy array. The shape of the array is `(N, H, W, 3)` for a video, or `(H, W, 3)` for a single frame image.
+
+    Raises:
+        ValueError: If reading the thumbnail fails for any reason (e.g. file not found, invalid format, etc.)
+    """
+    if thumbnail_path.endswith(".mp4"):
+        cap = cv2.VideoCapture(thumbnail_path)
+        if not cap.isOpened():
+            raise ValueError(f"Failed to open video at {thumbnail_path}")
+
+        frames = []
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        cap.release()
+
+        if not frames:
+            raise ValueError(f"No frames extracted from video at {thumbnail_path}")
+        return np.stack(frames, axis=0)  # Shape: (N, H, W, 3)
+    elif thumbnail_path.endswith(".jpg"):
+        img = cv2.imread(thumbnail_path, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError(f"Failed to read image at {thumbnail_path}")
+        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    else:
+        raise ValueError(f"Unsupported thumbnail format: {thumbnail_path}")
 
 
 def public_method(func):
