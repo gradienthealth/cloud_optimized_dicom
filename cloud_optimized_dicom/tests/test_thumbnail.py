@@ -262,3 +262,25 @@ class TestThumbnail(unittest.TestCase):
             instance_uid=some_instance_uid, dirty=True
         )
         self.assertTrue(np.all(thumbnail_slice == thumbnail))
+
+    def test_get_instance_by_thumbnail_index(self):
+        """Test that we can get an instance by thumbnail index"""
+        # make sure we can get a single img slice from a series thumbnail
+        series_folder = os.path.join(self.test_data_dir, "series")
+        dicom_paths = [
+            os.path.join(series_folder, f)
+            for f in os.listdir(series_folder)
+            if f.endswith(".dcm")
+        ]
+        cod_obj, thumbnail = ingest_and_generate_thumbnail(
+            dicom_paths, self.datastore_path, self.client
+        )
+        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=10)
+        # because this series is 10 single frame instances, we expect the check below to pass
+        instance_retrieved_by_index = cod_obj.get_instance_by_index(5, dirty=True)
+        instance_retrieved_by_thumbnail_index = cod_obj.get_instance_by_thumbnail_index(
+            5, dirty=True
+        )
+        self.assertEqual(
+            instance_retrieved_by_index, instance_retrieved_by_thumbnail_index
+        )

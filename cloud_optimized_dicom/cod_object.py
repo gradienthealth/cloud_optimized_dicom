@@ -25,6 +25,7 @@ from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.thumbnail import (
     fetch_thumbnail,
     generate_thumbnail,
+    get_instance_by_thumbnail_index,
     get_instance_thumbnail_slice,
 )
 from cloud_optimized_dicom.truncate import remove, truncate
@@ -248,6 +249,24 @@ class CODObject:
         return list(self.get_instances(strict_sorting=True, dirty=dirty).values())[
             index
         ]
+
+    @public_method
+    def get_instance_by_thumbnail_index(
+        self, thumbnail_index: int, dirty: bool = False
+    ) -> Instance:
+        """Get an instance by thumbnail index.
+
+        Args:
+            thumbnail_index: int - The index of the thumbnail from you want the instance for.
+            dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+
+        Returns:
+            instance: The instance corresponding to the thumbnail index.
+
+        Raises:
+            ValueError: if the cod object has no thumbnail metadata, or `thumbnail_index` is out of bounds
+        """
+        return get_instance_by_thumbnail_index(self, thumbnail_index)
 
     @public_method
     def open_instance(self, instance: Union[Instance, str, int], dirty: bool = False):

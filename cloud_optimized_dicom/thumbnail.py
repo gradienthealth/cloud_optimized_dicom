@@ -388,6 +388,34 @@ def get_instance_thumbnail_slice(
     return instance_slice
 
 
+def get_instance_by_thumbnail_index(
+    cod_obj: "CODObject", thumbnail_index: int
+) -> Instance:
+    """Get an instance by thumbnail index.
+
+    Args:
+        thumbnail_index: int - The index of the thumbnail from you want the instance for.
+
+    Returns:
+        instance: The instance corresponding to the thumbnail index.
+
+    Raises:
+        ValueError: if the cod object has no thumbnail metadata, or `thumbnail_index` is out of bounds
+    """
+    thumbnail_metadata = cod_obj.get_custom_tag("thumbnail", dirty=not cod_obj.lock)
+    if not thumbnail_metadata:
+        raise ValueError(f"Thumbnail metadata not found for {cod_obj}")
+    thumbnail_index_to_instance_frame = thumbnail_metadata[
+        "thumbnail_index_to_instance_frame"
+    ]
+    if (num_frames := len(thumbnail_index_to_instance_frame)) <= thumbnail_index:
+        raise ValueError(
+            f"Thumbnail index {thumbnail_index} is out of bounds for {cod_obj} (has {num_frames} frames)"
+        )
+    instance_uid, _ = thumbnail_index_to_instance_frame[thumbnail_index]
+    return cod_obj.get_instance(instance_uid=instance_uid, dirty=not cod_obj.lock)
+
+
 @dataclasses.dataclass
 class ThumbnailCoordConverter:
     orig_w: int
