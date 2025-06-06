@@ -365,8 +365,8 @@ def get_instance_thumbnail_slice(
 
     Args:
         cod_obj: The COD object to get the thumbnail slice for.
+        thumbnail_array: The numpy array of the full series thumbnail.
         instance_uid: The UID of the instance to get the thumbnail slice for.
-        generate_if_missing: Whether to generate a thumbnail if it does not exist. If False, will raise an error if the thumbnail does not exist.
         dirty: Whether the operation is dirty.
 
     Returns:
