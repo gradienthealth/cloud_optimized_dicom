@@ -106,6 +106,24 @@ class Instance:
         self.dicom_uri = self._temp_file_path
         self.validate()
 
+    def _extract_from_local_tar(self):
+        """
+        Extract the instance from a local tar file.
+        """
+        assert self.is_nested_in_tar and not is_remote(
+            self.dicom_uri
+        ), f"extract_from_local_tar expected local tar uri but got: {self.dicom_uri}"
+        # create a temp file to store the instance
+        with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as temp_file:
+            self._temp_file_path = temp_file.name
+        # read the instance from the tar into the temp file
+        with self.open() as f_in:
+            with open(self._temp_file_path, "wb") as f_out:
+                f_out.write(f_in.read())
+        # after writing, dicom_uri is now local
+        self.dicom_uri = self._temp_file_path
+        self.validate()
+
     def validate(self):
         """Open the instance, read the internal fields, and validate they match hints if provided.
 

@@ -600,6 +600,15 @@ class CODObject:
         return deleted_dependencies
 
     @public_method
+    def extract_locally(self, dirty: bool = False):
+        """
+        Extract the tar and index to the local temp dir, and set the dicom_uri of each instance to the local path.
+        """
+        self.pull_tar(dirty=dirty)
+        for instance_uid, instance in self.get_instances(dirty=dirty).items():
+            instance._extract_from_local_tar()
+
+    @public_method
     def pull_tar(self, dirty: bool = False):
         """Pull tar and index from GCS to local temp dir,
         modify local origin path of instances to point to local tar.

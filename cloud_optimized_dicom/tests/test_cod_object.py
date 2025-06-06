@@ -101,6 +101,42 @@ class TestCODObject(unittest.TestCase):
             self.assertEqual(ds.SeriesInstanceUID, self.test_series_uid)
             self.assertEqual(ds.SOPInstanceUID, self.test_instance_uid)
 
+    def test_extract_locally(self):
+        """Test that extract_locally extracts the tar and index to the local temp dir, and sets the dicom_uri of each instance to the local path"""
+        delete_uploaded_blobs(self.client, [self.datastore_path])
+        # append and sync an instance
+        instance = Instance(dicom_uri=self.local_instance_path)
+        with CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=True,
+        ) as cod_obj:
+            cod_obj.append([instance])
+            cod_obj.sync()
+        cod_obj = CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=False,
+        )
+        instance = cod_obj.get_metadata(dirty=True).instances[self.test_instance_uid]
+        # Before we extract, the instance should have a remote URI (it exists in the COD datastore)
+        self.assertTrue(is_remote(instance.dicom_uri) and instance.is_nested_in_tar)
+        cod_obj.extract_locally(dirty=True)
+        # After we extract, the instance should be local and not nested in a tar
+        self.assertTrue(
+            not is_remote(instance.dicom_uri) and not instance.is_nested_in_tar
+        )
+        # We should be able to open/read the instance in this state from this local tar file
+        with instance.open() as f:
+            ds = dcmread(f)
+            self.assertEqual(ds.StudyInstanceUID, self.test_study_uid)
+            self.assertEqual(ds.SeriesInstanceUID, self.test_series_uid)
+            self.assertEqual(ds.SOPInstanceUID, self.test_instance_uid)
+
     def test_serialize_deserialize(self):
         """Test serialization and deserialization"""
         with CODObject(
