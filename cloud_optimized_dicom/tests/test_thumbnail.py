@@ -59,6 +59,12 @@ def validate_thumbnail(
         f"Expected frame size {expected_frame_size}, got {frame_size}",
     )
 
+    # make sure the thumbnail is not blank (all pixels are same value)
+    some_pixel_value = (
+        thumbnail[50, 50] if len(thumbnail.shape) == 3 else thumbnail[0, 50, 50]
+    )
+    testcls.assertFalse(np.all(thumbnail == some_pixel_value), "Thumbnail is blank")
+
     # test the thumbnail coord converter
     instance_uid = list(
         cod_obj.get_custom_tag("thumbnail", dirty=dirty)["instances"].keys()
@@ -225,3 +231,34 @@ class TestThumbnail(unittest.TestCase):
             validate_thumbnail(
                 self, thumbnail, cod_obj, expected_frame_count=2, dirty=False
             )
+
+    def test_get_instance_slice(self):
+        """Test that we can get a slice of the thumbnail for a given instance"""
+        # make sure we can get a single img slice from a series thumbnail
+        series_folder = os.path.join(self.test_data_dir, "series")
+        dicom_paths = [
+            os.path.join(series_folder, f)
+            for f in os.listdir(series_folder)
+            if f.endswith(".dcm")
+        ]
+        cod_obj, thumbnail = ingest_and_generate_thumbnail(
+            dicom_paths, self.datastore_path, self.client
+        )
+        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=10)
+        some_instance_uid = cod_obj.get_instance_by_index(5, dirty=True).instance_uid()
+        thumbnail_slice = cod_obj.get_thumbnail(
+            instance_uid=some_instance_uid, dirty=True
+        )
+        validate_thumbnail(self, thumbnail_slice, cod_obj, expected_frame_count=1)
+
+        # make sure that getting a slice of a series with a single multiframe returns the same as the overall thumbnail
+        multiframe_path = os.path.join(self.test_data_dir, "ybr_rct_multiframe.dcm")
+        cod_obj, thumbnail = ingest_and_generate_thumbnail(
+            [multiframe_path], self.datastore_path, self.client
+        )
+        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=78)
+        some_instance_uid = cod_obj.get_instance_by_index(0, dirty=True).instance_uid()
+        thumbnail_slice = cod_obj.get_thumbnail(
+            instance_uid=some_instance_uid, dirty=True
+        )
+        self.assertTrue(np.all(thumbnail_slice == thumbnail))

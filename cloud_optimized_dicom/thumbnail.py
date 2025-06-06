@@ -355,6 +355,41 @@ def fetch_thumbnail(cod_obj: "CODObject", dirty: bool = False) -> str:
     return thumbnail_local_path
 
 
+def get_instance_thumbnail_slice(
+    cod_obj: "CODObject",
+    thumbnail_array: np.ndarray,
+    instance_uid: str,
+    dirty: bool = False,
+) -> np.ndarray:
+    """Get a slice of the thumbnail for a given instance.
+
+    Args:
+        cod_obj: The COD object to get the thumbnail slice for.
+        instance_uid: The UID of the instance to get the thumbnail slice for.
+        generate_if_missing: Whether to generate a thumbnail if it does not exist. If False, will raise an error if the thumbnail does not exist.
+        dirty: Whether the operation is dirty.
+
+    Returns:
+        thumbnail_slice: a numpy array of the thumbnail slice
+    """
+    thumbnail_metadata = cod_obj.get_custom_tag("thumbnail", dirty=dirty)
+    # if thumbnail only contains one instance, assert that is the instance requested and return the full array
+    if len(thumbnail_metadata["instances"]) == 1:
+        assert (
+            instance_uid in thumbnail_metadata["instances"]
+        ), f"Instance UID {instance_uid} not found in thumbnail metadata"
+        return thumbnail_array
+    instance_frame_metadata = thumbnail_metadata["instances"][instance_uid]["frames"]
+    thumbnail_indices = [frame["thumbnail_index"] for frame in instance_frame_metadata]
+    # if we get here, we have a video thumbnail
+    instance_slice = thumbnail_array[thumbnail_indices]
+    # if the instance slice is a single frame, return the frame (i.e. squeeze the first dimension)
+    if instance_slice.shape[0] == 1:
+        return instance_slice[0]
+    # otherwise, return the instance slice video
+    return instance_slice
+
+
 @dataclasses.dataclass
 class ThumbnailCoordConverter:
     orig_w: int

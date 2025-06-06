@@ -22,7 +22,11 @@ from cloud_optimized_dicom.errors import (
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
-from cloud_optimized_dicom.thumbnail import fetch_thumbnail, generate_thumbnail
+from cloud_optimized_dicom.thumbnail import (
+    fetch_thumbnail,
+    generate_thumbnail,
+    get_instance_thumbnail_slice,
+)
 from cloud_optimized_dicom.truncate import remove, truncate
 from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
@@ -432,12 +436,16 @@ class CODObject:
 
     @public_method
     def get_thumbnail(
-        self, generate_if_missing: bool = True, dirty: bool = False
+        self,
+        generate_if_missing: bool = True,
+        instance_uid: Optional[str] = None,
+        dirty: bool = False,
     ) -> np.ndarray:
-        """Get the thumbnail for a COD object.
+        """Get the thumbnail for a COD object, in the form of a numpy array.
 
         Args:
             generate_if_missing: Whether to generate a thumbnail if it does not exist, or is stale.
+            instance_uid: If provided, only return the slice of the thumbnail corresponding to the given instance UID.
             dirty: Whether the operation is dirty.
 
         Returns:
@@ -459,15 +467,26 @@ class CODObject:
                 )
             generate_thumbnail(cod_obj=self, overwrite_existing=True, dirty=dirty)
             thumbnail_metadata = self.get_custom_tag("thumbnail", dirty=dirty)
-        elif not os.path.exists(thumbnail_metadata["uri"]):
-            # Fetch case: we have thumbnail metadata but the thumbnail does not exist on disk, so we just have to fetch it
-            fetch_thumbnail(cod_obj=self, dirty=dirty)
-        # once we get here, we have the thumbnail on disk -> read and return it
+        # thumbnail metadata guaranteed to be populated at this point
         thumbnail_file_name = os.path.basename(thumbnail_metadata["uri"])
         thumbnail_local_path = os.path.join(
             self.get_temp_dir().name, thumbnail_file_name
         )
-        return read_thumbnail_into_array(thumbnail_local_path)
+        # Fetch case: we have thumbnail metadata but the thumbnail does not exist on disk, so we just have to fetch it
+        if not os.path.exists(thumbnail_local_path):
+            fetch_thumbnail(cod_obj=self, dirty=dirty)
+        # thumbnail guaranteed to be on disk at this point -> read and return it (or slice it if instance UID is provided)
+        thumbnail_array = read_thumbnail_into_array(thumbnail_local_path)
+        # return the raw array if no instance UIDs are provided
+        if instance_uid is None:
+            return thumbnail_array
+        # otherwise, return the slice(s) of the thumbnail corresponding to the given instance UIDs
+        return get_instance_thumbnail_slice(
+            cod_obj=self,
+            thumbnail_array=thumbnail_array,
+            instance_uid=instance_uid,
+            dirty=dirty,
+        )
 
     @public_method
     def upload_error_log(self, message: str):
