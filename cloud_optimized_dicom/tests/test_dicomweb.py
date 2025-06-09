@@ -76,8 +76,7 @@ class TestDicomweb(unittest.TestCase):
             "1.2.826.0.1.3680043.8.498.18783474219392509401504861043428417882",
             "metadata",
         )
-        request = f"GET {study_uri}"
-        result = handle_request(request, self.client)
+        result = handle_request(study_uri, self.client)
         # we expect a dictionary of metadata
         self.assertIsInstance(result, dict)
         # expect all study level tags to be present, and not None
@@ -96,8 +95,7 @@ class TestDicomweb(unittest.TestCase):
             "1.2.826.0.1.3680043.8.498.89840699185761593370876698622882853150",
             "metadata",
         )
-        request = f"GET {series_uri}"
-        result = handle_request(request, self.client)
+        result = handle_request(series_uri, self.client)
         # we expect a list of instance metadata dictionaries
         self.assertIsInstance(result, list)
         # there happen to be 82 instances in this series
@@ -122,8 +120,7 @@ class TestDicomweb(unittest.TestCase):
             "1.2.826.0.1.3680043.8.498.10368404844741579486264078308290534273",
             "metadata",
         )
-        request = f"GET {instance_uri}"
-        result = handle_request(request, self.client)
+        result = handle_request(instance_uri, self.client)
         # we expect a dictionary of metadata
         self.assertIsInstance(result, dict)
         # check something in the metadata (e.g. series uid)
@@ -145,8 +142,7 @@ class TestDicomweb(unittest.TestCase):
             "frames",
             "1",
         )
-        request = f"GET {frame_uri}"
-        result = handle_request(request, self.client)
+        result = handle_request(frame_uri, self.client)
         # we expect a non-empty list of bytes
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1)
@@ -168,9 +164,8 @@ class TestDicomweb(unittest.TestCase):
             "frames",
             "1,2",
         )
-        request = f"GET {frame_uri}"
         with self.assertRaises(AssertionError):
-            handle_request(request, self.client)
+            handle_request(frame_uri, self.client)
 
     def test_non_metadata_requests_raise_error(self):
         """
@@ -185,9 +180,8 @@ class TestDicomweb(unittest.TestCase):
             "instances",
             "1.2.826.0.1.3680043.8.498.10368404844741579486264078308290534273",
         )
-        request = f"GET {request_uri}"
         with self.assertRaises(AssertionError):
-            handle_request(request, self.client)
+            handle_request(request_uri, self.client)
 
 
 if __name__ == "__main__":

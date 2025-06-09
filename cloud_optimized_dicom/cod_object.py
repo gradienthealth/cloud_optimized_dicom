@@ -2,8 +2,9 @@ import logging
 import os
 import tarfile
 from tempfile import TemporaryDirectory
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
+import numpy as np
 from google.cloud import storage
 from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
 from google.cloud.storage.retry import DEFAULT_RETRY
@@ -21,12 +22,18 @@ from cloud_optimized_dicom.errors import (
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
-from cloud_optimized_dicom.thumbnail import generate_thumbnail
+from cloud_optimized_dicom.thumbnail import (
+    fetch_thumbnail,
+    generate_thumbnail,
+    get_instance_by_thumbnail_index,
+    get_instance_thumbnail_slice,
+)
 from cloud_optimized_dicom.truncate import remove, truncate
 from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
     is_remote,
     public_method,
+    read_thumbnail_into_array,
     upload_and_count_file,
 )
 
@@ -106,7 +113,7 @@ class CODObject:
         self._metadata_synced = _metadata_synced
         # if the thumbnail exists, it is not synced (we did not fetch it)
         self._thumbnail_synced = (
-            self.get_custom_tag("thumbnail", dirty=not lock) is None
+            self.get_metadata_field("thumbnail", dirty=not lock) is None
         )
 
     def _validate_uids(self):
@@ -206,6 +213,100 @@ class CODObject:
                 f"COD:OBJECT_NOT_FOUND:{self.metadata_uri} (create_if_missing=False)"
             )
         return self._metadata
+
+    @public_method
+    def get_instances(self, strict_sorting: bool = True, dirty: bool = False):
+        """Get a dictionary mapping instance UIDs to instances. These instance UIDs are hashed if `hashed_uids=True`, otherwise they are the original UIDs.
+        COD will attempt to sort this dictionary so that instances appear in the proper order.
+
+        Args:
+            strict_sorting: bool - If `True`, raise an error if sorting fails (log a warning if `False`).
+            dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+        """
+        metadata = self.get_metadata(dirty=dirty)
+        metadata._sort_instances()
+        if not metadata.is_sorted:
+            if strict_sorting:
+                raise ValueError(f"Sorting was unsuccessful, and strict_sorting=True")
+            else:
+                logger.warning(f"Instance dict is unsorted")
+        return metadata.instances
+
+    @public_method
+    def get_instance(self, instance_uid: str, dirty: bool = False) -> Instance:
+        """Get an instance by uid. `instance_uid` should be hashed if `hashed_uids=True`, otherwise it should be the original UID."""
+        return self.get_instances(strict_sorting=False, dirty=dirty)[instance_uid]
+
+    @public_method
+    def get_instance_by_index(self, index: int, dirty: bool = False) -> Instance:
+        """Get an instance by index.
+
+        Args:
+            index: int - The index of the instance to get.
+            dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+        """
+        # for access by index, we require strict sorting
+        return list(self.get_instances(strict_sorting=True, dirty=dirty).values())[
+            index
+        ]
+
+    @public_method
+    def get_instance_by_thumbnail_index(
+        self, thumbnail_index: int, dirty: bool = False
+    ) -> Instance:
+        """Get an instance by thumbnail index.
+
+        Args:
+            thumbnail_index: int - The index of the thumbnail from you want the instance for.
+            dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+
+        Returns:
+            instance: The instance corresponding to the thumbnail index.
+
+        Raises:
+            ValueError: if the cod object has no thumbnail metadata, or `thumbnail_index` is out of bounds
+        """
+        return get_instance_by_thumbnail_index(self, thumbnail_index)
+
+    @public_method
+    def open_instance(self, instance: Union[Instance, str, int], dirty: bool = False):
+        """Open an instance (first fetches the series tar if necessary). For convenience, the instance parameter can be one of:
+            - `Instance`: An actual instance object to open.
+            - `str`: An instance UID to open (hashed if `hashed_uids=True`).
+            - `int`: The index of an instance to open.
+
+        Args:
+            instance: Instance | str | int - The instance to open
+            dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+
+        Returns:
+            A file pointer to the instance.
+
+        Raises:
+            ValueError: If the instance parameter is invalid.
+            FileNotFoundError: If the instance is not found in the CODObject.
+        """
+        # validate instance parameter
+        if isinstance(instance, Instance):
+            if (
+                instance.get_instance_uid(
+                    hashed=self.hashed_uids, trust_hints_if_available=True
+                )
+                not in self.get_metadata(dirty=dirty).instances
+            ):
+                raise FileNotFoundError(f"Instance not found in CODObject: {instance}")
+        elif isinstance(instance, str):
+            instance = self.get_instance(instance, dirty=dirty)
+        elif isinstance(instance, int):
+            instance = self.get_instance_by_index(instance, dirty=dirty)
+        else:
+            raise ValueError(
+                f"Invalid instance parameter: {instance} (must be Instance, str, or int)"
+            )
+        # pull the tar file if necessary
+        if not self._tar_synced:
+            self.pull_tar(dirty=dirty)
+        return instance.open()
 
     @public_method
     def append(
@@ -312,7 +413,7 @@ class CODObject:
         if self._thumbnail_synced:
             logger.info(f"Skipping thumbnail sync - thumbnail already synced: {self}")
             return
-        thumbnail_metadata = self.get_custom_tag("thumbnail")
+        thumbnail_metadata = self.get_metadata_field("thumbnail")
         if thumbnail_metadata is None:
             logger.info(f"Skipping thumbnail sync - thumbnail does not exist: {self}")
             return
@@ -333,55 +434,88 @@ class CODObject:
         self._thumbnail_synced = True
 
     @public_method
-    def add_custom_tag(
+    def add_metadata_field(
         self,
-        tag_name: str,
-        tag_value: dict,
+        field_name: str,
+        field_value: dict,
         overwrite_existing: bool = True,
         dirty: bool = False,
     ):
-        """Add a custom tag to the metadata"""
-        self.get_metadata(dirty=dirty)._add_custom_tag(
-            tag_name, tag_value, overwrite_existing
+        """Add a custom field to the metadata"""
+        self.get_metadata(dirty=dirty)._add_metadata_field(
+            field_name, field_value, overwrite_existing
         )
         # modifying metadata means it is not synced to the datastore
         self._metadata_synced = False
 
     @public_method
-    def get_custom_tag(self, tag_name: str, dirty: bool = False) -> Optional[dict]:
-        """Get a custom tag from the metadata. Returns `None` if the tag does not exist."""
-        return self.get_metadata(dirty=dirty).custom_tags.get(tag_name, None)
+    def get_metadata_field(
+        self, field_name: str, dirty: bool = False
+    ) -> Optional[dict]:
+        """Get a custom field from the metadata. Returns `None` if the field does not exist."""
+        return self.get_metadata(dirty=dirty).metadata_fields.get(field_name, None)
 
     @public_method
-    def generate_thumbnail(self, overwrite_existing: bool = False, dirty: bool = False):
-        """Generate a thumbnail for a COD object.
+    def remove_metadata_field(self, field_name: str, dirty: bool = False):
+        """Remove a custom field from the metadata"""
+        field_was_present = self.get_metadata(dirty=dirty)._remove_metadata_field(
+            field_name
+        )
+        # if the field was present, and we removed it, the metadata is now desynced
+        self._metadata_synced = not field_was_present
+
+    @public_method
+    def get_thumbnail(
+        self,
+        generate_if_missing: bool = True,
+        instance_uid: Optional[str] = None,
+        dirty: bool = False,
+    ) -> np.ndarray:
+        """Get the thumbnail for a COD object, in the form of a numpy array.
 
         Args:
-            overwrite_existing: Whether to overwrite the existing thumbnail, if it exists.
+            generate_if_missing: Whether to generate a thumbnail if it does not exist, or is stale.
+            instance_uid: If provided, only return the slice of the thumbnail corresponding to the given instance UID.
             dirty: Whether the operation is dirty.
 
         Returns:
-            The local path to the thumbnail after saving it to disk (or `None` if no thumbnail was generated)
-        """
-        return generate_thumbnail(
-            cod_obj=self, overwrite_existing=overwrite_existing, dirty=dirty
-        )
+            The thumbnail as a numpy array.
 
-    @public_method
-    def fetch_thumbnail(self, dirty: bool = False) -> str:
-        """Fetch the thumbnail for a COD object. Returns the local path to the thumbnail after downloading it. Raises an error if the thumbnail does not exist."""
-        thumbnail_metadata = self.get_custom_tag("thumbnail", dirty=dirty)
-        if thumbnail_metadata is None:
-            raise ValueError(f"Thumbnail not found for {self}")
-        thumbnail_uri = thumbnail_metadata["uri"]
-        thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=self.client)
+        Raises:
+            ValueError: If the thumbnail does not exist and `generate_if_missing=False`, or if opening the thumbnail fails for any reason.
+        """
+        thumbnail_metadata = self.get_metadata_field("thumbnail", dirty=dirty)
+        # Cases where we need to generate a new thumbnail:
+        # 1. The thumbnail metadata does not exist (i.e. the thumbnail has never been generated)
+        # 2. The thumbnail metadata exists but the number of instances it contains does not match the cod object (i.e. the thumbnail is stale)
+        if thumbnail_metadata is None or len(thumbnail_metadata["instances"]) != len(
+            self.get_instances(strict_sorting=False, dirty=dirty)
+        ):
+            if not generate_if_missing:
+                raise ValueError(
+                    f"Thumbnail either stale or not found for {self} (and generate_if_missing=False)"
+                )
+            generate_thumbnail(cod_obj=self, overwrite_existing=True)
+            thumbnail_metadata = self.get_metadata_field("thumbnail", dirty=dirty)
+        # thumbnail metadata guaranteed to be populated at this point
+        thumbnail_file_name = os.path.basename(thumbnail_metadata["uri"])
         thumbnail_local_path = os.path.join(
-            self.get_temp_dir().name, thumbnail_uri.split("/")[-1]
+            self.get_temp_dir().name, thumbnail_file_name
         )
-        thumbnail_blob.download_to_filename(thumbnail_local_path)
-        # we just fetched the thumbnail, so it is guaranteed to be in the same state as the datastore
-        self._thumbnail_synced = True
-        return thumbnail_local_path
+        # Fetch case: we have thumbnail metadata but the thumbnail does not exist on disk, so we just have to fetch it
+        if not os.path.exists(thumbnail_local_path):
+            fetch_thumbnail(cod_obj=self)
+        # thumbnail guaranteed to be on disk at this point -> read and return it (or slice it if instance UID is provided)
+        thumbnail_array = read_thumbnail_into_array(thumbnail_local_path)
+        # return the raw array if no instance UIDs are provided
+        if instance_uid is None:
+            return thumbnail_array
+        # otherwise, return the slice(s) of the thumbnail corresponding to the given instance UIDs
+        return get_instance_thumbnail_slice(
+            cod_obj=self,
+            thumbnail_array=thumbnail_array,
+            instance_uid=instance_uid,
+        )
 
     @public_method
     def upload_error_log(self, message: str):
@@ -464,6 +598,15 @@ class CODObject:
         else:
             logger.info(f"GRADIENT_STATE_LOGS:DELETED:{deleted_dependencies}")
         return deleted_dependencies
+
+    @public_method
+    def extract_locally(self, dirty: bool = False):
+        """
+        Extract the tar and index to the local temp dir, and set the dicom_uri of each instance to the local path.
+        """
+        self.pull_tar(dirty=dirty)
+        for instance_uid, instance in self.get_instances(dirty=dirty).items():
+            instance._extract_from_local_tar()
 
     @public_method
     def pull_tar(self, dirty: bool = False):

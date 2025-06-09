@@ -86,6 +86,12 @@ class Instance:
         if not is_remote(self.dicom_uri):
             return
 
+        # raise an error if the instance is nested in a tar
+        if self.is_nested_in_tar:
+            raise ValueError(
+                f"Direct fetching of instances in remote tars is not supported... use CODObject.open_instance() instead"
+            )
+
         # we store the path, not the file object, so that instances can be pickled (allows them to be passed between beam.DoFns)
         with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as temp_file:
             self._temp_file_path = temp_file.name
@@ -96,6 +102,24 @@ class Instance:
                 uri=self.dicom_uri, mode="rb", transport_params=self.transport_params
             ) as source:
                 local_file.write(source.read())
+        # after writing, dicom_uri is now local
+        self.dicom_uri = self._temp_file_path
+        self.validate()
+
+    def _extract_from_local_tar(self):
+        """
+        Extract the instance from a local tar file.
+        """
+        assert self.is_nested_in_tar and not is_remote(
+            self.dicom_uri
+        ), f"extract_from_local_tar expected local tar uri but got: {self.dicom_uri}"
+        # create a temp file to store the instance
+        with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as temp_file:
+            self._temp_file_path = temp_file.name
+        # read the instance from the tar into the temp file
+        with self.open() as f_in:
+            with open(self._temp_file_path, "wb") as f_out:
+                f_out.write(f_in.read())
         # after writing, dicom_uri is now local
         self.dicom_uri = self._temp_file_path
         self.validate()
