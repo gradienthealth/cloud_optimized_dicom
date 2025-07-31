@@ -23,6 +23,7 @@ from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.thumbnail import (
+    DEFAULT_SIZE,
     fetch_thumbnail,
     generate_thumbnail,
     get_instance_by_thumbnail_index,
@@ -470,6 +471,7 @@ class CODObject:
         generate_if_missing: bool = True,
         instance_uid: Optional[str] = None,
         dirty: bool = False,
+        thumbnail_size: int = DEFAULT_SIZE,
     ) -> np.ndarray:
         """Get the thumbnail for a COD object, in the form of a numpy array.
 
@@ -477,6 +479,7 @@ class CODObject:
             generate_if_missing: Whether to generate a thumbnail if it does not exist, or is stale.
             instance_uid: If provided, only return the slice of the thumbnail corresponding to the given instance UID.
             dirty: Whether the operation is dirty.
+            thumbnail_size: The size of the thumbnail to generate (default: 128px).
 
         Returns:
             The thumbnail as a numpy array.
@@ -495,7 +498,9 @@ class CODObject:
                 raise ValueError(
                     f"Thumbnail either stale or not found for {self} (and generate_if_missing=False)"
                 )
-            generate_thumbnail(cod_obj=self, overwrite_existing=True)
+            generate_thumbnail(
+                cod_obj=self, overwrite_existing=True, thumbnail_size=thumbnail_size
+            )
             thumbnail_metadata = self.get_metadata_field("thumbnail", dirty=dirty)
         # thumbnail metadata guaranteed to be populated at this point
         thumbnail_file_name = os.path.basename(thumbnail_metadata["uri"])

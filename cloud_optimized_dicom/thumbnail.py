@@ -109,7 +109,7 @@ def _convert_frames_to_mp4(
 
 
 def _generate_thumbnail_frame_and_anchors(
-    pixel_array: np.ndarray,
+    pixel_array: np.ndarray, thumbnail_size: int
 ) -> Tuple[np.ndarray, dict]:
     """
     Given a DICOM pixel array from pydicom.pixels.iter_pixels, create a thumbnail and record
@@ -118,17 +118,18 @@ def _generate_thumbnail_frame_and_anchors(
     Args:
         pixel_array: A numpy array from pydicom.pixels.iter_pixels, either (rows, columns) for
                     single sample data or (rows, columns, samples) for multi-sample data
+        thumbnail_size: The size of the thumbnail to generate.
 
     Returns:
         Tuple containing:
-        - The thumbnail as a numpy array (always DEFAULT_SIZE x DEFAULT_SIZE)
+        - The thumbnail as a numpy array (always thumbnail_size x thumbnail_size)
         - A dictionary of anchor points mapping between original and thumbnail coordinates
     """
     # Get original dimensions
     height, width = pixel_array.shape[:2]
 
-    # Calculate scaling factor to fit the longer dimension to DEFAULT_SIZE
-    scale = DEFAULT_SIZE / max(height, width)
+    # Calculate scaling factor to fit the longer dimension to thumbnail_size
+    scale = thumbnail_size / max(height, width)
 
     # Calculate new dimensions while maintaining aspect ratio
     new_height = int(height * scale)
@@ -139,17 +140,18 @@ def _generate_thumbnail_frame_and_anchors(
         pixel_array, (new_width, new_height), interpolation=cv2.INTER_AREA
     )
 
-    # Create a black square canvas of size DEFAULT_SIZE x DEFAULT_SIZE
+    # Create a black square canvas of size thumbnail_size x thumbnail_size
     if len(pixel_array.shape) == 2:  # Grayscale
-        thumbnail = np.zeros((DEFAULT_SIZE, DEFAULT_SIZE), dtype=pixel_array.dtype)
+        thumbnail = np.zeros((thumbnail_size, thumbnail_size), dtype=pixel_array.dtype)
     else:  # Multi-sample (e.g., RGB)
         thumbnail = np.zeros(
-            (DEFAULT_SIZE, DEFAULT_SIZE, pixel_array.shape[2]), dtype=pixel_array.dtype
+            (thumbnail_size, thumbnail_size, pixel_array.shape[2]),
+            dtype=pixel_array.dtype,
         )
 
     # Calculate position to paste the resized image (centered)
-    y_offset = (DEFAULT_SIZE - new_height) // 2
-    x_offset = (DEFAULT_SIZE - new_width) // 2
+    y_offset = (thumbnail_size - new_height) // 2
+    x_offset = (thumbnail_size - new_width) // 2
 
     # Place the resized image in the center of the square
     thumbnail[y_offset : y_offset + new_height, x_offset : x_offset + new_width] = (
@@ -211,6 +213,7 @@ def _generate_thumbnail_frames(
     cod_obj: "CODObject",
     instances: list[Instance],
     instance_to_instance_uid: dict[Instance, str],
+    thumbnail_size: int,
 ):
     """Iterate through instances and generate thumbnail frames.
 
@@ -219,6 +222,7 @@ def _generate_thumbnail_frames(
         thumbnail_instance_metadata: dict mapping instance uids to metadata for all frames in the instance
         thumbnail_index_to_instance_frame: convenience list mapping thumbnail index to instance uid and frame index
         (i.e. `thumbnail_index_to_instance_frame[4] = (some_uid, 0)` means the 5th thumbnail frame = 1st frame of instance `some_uid`)
+        thumbnail_size: The size of the thumbnail to generate.
     """
     all_frames = []
     thumbnail_instance_metadata = {}
@@ -228,7 +232,9 @@ def _generate_thumbnail_frames(
             instance_uid = instance_to_instance_uid[instance]
             instance_frame_metadata = []
             for instance_frame_index, frame in enumerate(pydicom3.iter_pixels(f)):
-                thumbnail_frame, anchors = _generate_thumbnail_frame_and_anchors(frame)
+                thumbnail_frame, anchors = _generate_thumbnail_frame_and_anchors(
+                    frame, thumbnail_size
+                )
                 # append thumbnail frame to list of all frames
                 all_frames.append(thumbnail_frame)
                 # append frame-level metadata to list of metadata for all of this instance's frames
@@ -289,12 +295,14 @@ def _generate_instance_lookup_dict(
 def generate_thumbnail(
     cod_obj: "CODObject",
     overwrite_existing: bool = False,
+    thumbnail_size: int = DEFAULT_SIZE,
 ):
     """Generate a thumbnail for a COD object.
 
     Args:
         cod_obj: The COD object to generate a thumbnail for.
         overwrite_existing: Whether to overwrite the existing thumbnail, if it exists.
+        thumbnail_size: The size of the thumbnail to generate (default: 128px).
     """
     # can infer whether the operation is dirty by checking if the cod object is locked
     dirty = not cod_obj.lock
@@ -314,7 +322,7 @@ def generate_thumbnail(
     instances = _remove_instances_without_pixeldata(cod_obj, instances)
     instances = _sort_instances(instances)
     all_frames, thumbnail_metadata = _generate_thumbnail_frames(
-        cod_obj, instances, instance_to_instance_uid
+        cod_obj, instances, instance_to_instance_uid, thumbnail_size
     )
     thumbnail_path = _save_thumbnail_to_disk(cod_obj, all_frames)
     cod_obj.add_metadata_field(
