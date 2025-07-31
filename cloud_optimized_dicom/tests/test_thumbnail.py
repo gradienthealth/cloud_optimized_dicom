@@ -17,7 +17,10 @@ from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 
 def ingest_and_generate_thumbnail(
-    instance_paths: list[str], datastore_path: str, client: storage.Client
+    instance_paths: list[str],
+    datastore_path: str,
+    client: storage.Client,
+    thumbnail_size: int = DEFAULT_SIZE,
 ) -> tuple[CODObject, np.ndarray]:
     instances = [Instance(dicom_uri=path) for path in instance_paths]
     with CODObject(
@@ -28,7 +31,7 @@ def ingest_and_generate_thumbnail(
         lock=False,
     ) as cod_obj:
         cod_obj.append(instances, dirty=True)
-        return cod_obj, cod_obj.get_thumbnail(dirty=True)
+        return cod_obj, cod_obj.get_thumbnail(dirty=True, thumbnail_size=thumbnail_size)
 
 
 def validate_thumbnail(
@@ -76,7 +79,7 @@ def validate_thumbnail(
         thumbnail_frame_metadata["anchors"]
     )
     # bigger dimension should be expected_frame_size
-    testcls.assertEqual(max(converter.thmb_w, converter.thmb_h), DEFAULT_SIZE)
+    testcls.assertEqual(max(converter.thmb_w, converter.thmb_h), expected_frame_size[0])
     # aspect ratio should be the same as the original image
     testcls.assertAlmostEqual(
         converter.thmb_w / converter.thmb_h,
@@ -153,6 +156,33 @@ class TestThumbnail(unittest.TestCase):
         self.assertDictEqual(
             reloaded_metadata.metadata_fields["thumbnail"],
             cod_obj._metadata.metadata_fields["thumbnail"],
+        )
+
+    def test_custom_thumbnail_size(self):
+        """Test thumbnail generation for a single frame DICOM file (MONOCHROME1) with a non-default thumbnail size"""
+        # single frame
+        dicom_path = os.path.join(self.test_data_dir, "monochrome1.dcm")
+        cod_obj, thumbnail = ingest_and_generate_thumbnail(
+            [dicom_path], self.datastore_path, self.client, thumbnail_size=256
+        )
+        validate_thumbnail(
+            self,
+            thumbnail,
+            cod_obj,
+            expected_frame_count=1,
+            expected_frame_size=(256, 256),
+        )
+        # multiframe
+        multiframe_path = os.path.join(self.test_data_dir, "ybr_rct_multiframe.dcm")
+        cod_obj, thumbnail = ingest_and_generate_thumbnail(
+            [multiframe_path], self.datastore_path, self.client, thumbnail_size=256
+        )
+        validate_thumbnail(
+            self,
+            thumbnail,
+            cod_obj,
+            expected_frame_count=78,
+            expected_frame_size=(256, 256),
         )
 
     def test_sync_and_fetch(self):
