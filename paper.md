@@ -1,5 +1,5 @@
 ---
-title: 'Cloud Optimized Dicom: A Python package for efficiently ingesting & manipulating medical imagery in GCP'
+title: 'Cloud Optimized Dicom: A Python package for efficiently ingesting & manipulating medical imagery in cloud storage'
 tags:
   - Python
   - dicom
