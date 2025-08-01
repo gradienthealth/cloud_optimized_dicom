@@ -37,15 +37,28 @@ and use a user-provided hash function to de-identify the UIDs in the URI and met
 # Statement of need
 
 At Gradient Health, we store over 5 petabytes dicom data and counting. 
-Specifically, we have over 18M studies, broken into 67M series and ???M (TODO: estimate) or more instances.
-Because GCP and other cloud providers bill by the GET request, if we stored this data as raw dicom at the instance level,
-it would cost us (TODO: some math to show a big number here) to retrieve our entire dataset.
-We, along with other data providers/hospitals/etc. who store large quanitites of DICOM data, 
-were in need of some way to reduce this cost.
+Specifically, we have over 18M studies, broken into 67M series and hundreds of millions of instances.
+We receive this data in a myriad of formats, but most commonly single frame instance-level .dcm files.
+
+This format is sub-optimal at scale for many reasons, the most obvious of which is cost.
+Training AI models - a common use case for data such as this - requries retriving every single data point.
+If the data is sharded into instance-level files, this is quite expensive.
+
+Consider a worst case scenario: your dataset has 10 million studies, each of which has 10 series on average, 
+which in turn have 10 instances on average (for a total of 1B instances). 
+At a rate of $0.005 / 1k GET requests (which is what Google charges), it would cost you $5,000 to retrieve the whole dataset.
+
+With COD, dicom data is grouped into series-level tar files. 
+Say that series A has instances 1, 2, and 3.
+Without COD, to retrieve series A it would cost you 3 GET requests - one for each instance.
+With COD, it only costs 1 GET, as A contains all three instances in a single tarfile.
+
+Therefore, COD reduces the cost to retrieve a dicom dataset by a factor of x, 
+where x is the average number of instances per series in the dataset.
+
+So, returning to our 1B instance example, with COD it would only cost $500 to retrieve the whole dataset.
 
 With COD, we were able to reduce our montly cloud storage costs by __% (TODO: estimate or compute).
-
-AI systems need high throughput table scans of data. The system is gonna go thru every singel data point when you're training. If your files are all sharded, it will cost you a TON.
 
 (clearly show why COD is a good thing)
 1. transition costs for storage - if you store a bunch of tiny files it is quite expensive. To transition them would cost more than the storage. BREAKDOWN (for example w CT images), concrete numbers
@@ -73,14 +86,6 @@ Below is a table outlining the performance and cost savings of COD on various te
 | Emory           | 2656.6    | 480,606   | 12.07           | 0.0045  | 0.025         |
 | NIH Chest Xrays | ???       | ???       | ???             | ???     | ???           |
 | NLST Cancer     | ???       | ???       | ???             | ???     | ???           |
-
-While COD does not save money on storage costs themselves (they are billed per GB, not per file),
-it reduces the cost to retrieve an entire dataset by a factor of x, 
-where x is the average number of instances per series in the dataset.
-
-This is because COD groups instances into series level tar files - say series A has instances 1, 2, and 3.
-Without COD, to retrieve series A it would cost you 3 GET requests - one for each instance.
-With COD, it only costs 1 GET, as A contains all three instances in a single tarfile.
 
 
 demonstrate cost of COD conversion on the following datasets:
