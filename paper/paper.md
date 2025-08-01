@@ -66,6 +66,23 @@ Show COD is vastly cheaper as an option when it comes to the alts like amazon/go
 Company that does something similar: juiceFS: https://juicefs.com/en/. What COD is but for general data. Refernece it and say the idea of using cloud buckets for AI training is the up and coming way. Why do that? its because they scale. You can have petabytes of cloud stored data but you're not gonna have SSDs at the petabyte level for a single GPU cluster. This is an idea that has been gaining traction. Why not just use JuiceFS? Its about having a simple to use and export dicom. Dicom already has the P10 format for moving things around, we basically keep the P10 format and it only requies the data to be un-tarred which is a very common interface (would never require driver install or custom code handling for example.)
 
 # Benchmarks
+Below is a table outlining the performance and cost savings of COD on various test datasets.
+
+| Dataset         | Size (GB) | Num Files | Total Cost ($)  | $ / GB  | $ / 1k files  |
+|-----------------|-----------|-----------|-----------------|---------|---------------|
+| Emory           | 2656.6    | 480,606   | 12.07           | 0.0045  | 0.025         |
+| NIH Chest Xrays | ???       | ???       | ???             | ???     | ???           |
+| NLST Cancer     | ???       | ???       | ???             | ???     | ???           |
+
+While COD does not save money on storage costs themselves (they are billed per GB, not per file),
+it reduces the cost to retrieve an entire dataset by a factor of x, 
+where x is the average number of instances per series in the dataset.
+
+This is because COD groups instances into series level tar files - say series A has instances 1, 2, and 3.
+Without COD, to retrieve series A it would cost you 3 GET requests - one for each instance.
+With COD, it only costs 1 GET, as A contains all three instances in a single tarfile.
+
+
 demonstrate cost of COD conversion on the following datasets:
 - laplace-open-embed (emory)
 - nih chest xrays: https://cloud.google.com/healthcare-api/docs/resources/public-datasets/nih-chest
