@@ -132,15 +132,9 @@ class CODObject:
     # Temporary directory management
     def get_temp_dir(self) -> str:
         """The path to the temporary directory for this series. Generates a new temp dir if it doesn't exist."""
-        # make sure temp file exists
-        if self.temp_dir is None:
+        # make sure temp dir exists
+        if self.temp_dir is None or not os.path.exists(self.temp_dir):
             self.temp_dir = mkdtemp(suffix=f"_{self.series_uid}")
-        assert os.path.exists(
-            self.temp_dir
-        ), f"Temp dir does not exist: {self.temp_dir}"
-        assert os.path.isdir(
-            self.temp_dir
-        ), f"Temp dir is not a directory: {self.temp_dir}"
         return self.temp_dir
 
     @property
