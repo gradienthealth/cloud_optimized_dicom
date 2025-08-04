@@ -49,7 +49,7 @@ def _extract_instances_to_keep(
     local_instances = []
     for instance in instances_to_keep:
         instance_temp_path = os.path.join(
-            cod_object.get_temp_dir().name, f"{instance.instance_uid()}.dcm"
+            cod_object.get_temp_dir(), f"{instance.instance_uid()}.dcm"
         )
         with instance.open() as f, open(instance_temp_path, "wb") as f_out:
             f_out.write(f.read())
