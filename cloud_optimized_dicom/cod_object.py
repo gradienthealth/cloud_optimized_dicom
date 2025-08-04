@@ -135,6 +135,12 @@ class CODObject:
         # make sure temp file exists
         if self.temp_dir is None:
             self.temp_dir = mkdtemp(suffix=f"_{self.series_uid}")
+        assert os.path.exists(
+            self.temp_dir
+        ), f"Temp dir does not exist: {self.temp_dir}"
+        assert os.path.isdir(
+            self.temp_dir
+        ), f"Temp dir is not a directory: {self.temp_dir}"
         return self.temp_dir
 
     @property
