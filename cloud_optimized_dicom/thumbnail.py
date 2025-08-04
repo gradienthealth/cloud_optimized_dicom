@@ -355,7 +355,7 @@ def fetch_thumbnail(cod_obj: "CODObject") -> str:
     logger.info(f"Fetching thumbnail from {thumbnail_uri}")
     thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=cod_obj.client)
     thumbnail_local_path = os.path.join(
-        cod_obj.get_temp_dir().name, thumbnail_uri.split("/")[-1]
+        cod_obj.get_temp_dir(), thumbnail_uri.split("/")[-1]
     )
     thumbnail_blob.download_to_filename(thumbnail_local_path)
     # we just fetched the thumbnail, so it is guaranteed to be in the same state as the datastore
