@@ -270,7 +270,7 @@ def _save_thumbnail_to_disk(cod_obj: "CODObject", all_frames: list[np.ndarray]) 
             f"Failed to extract pixel data from all {str(len(cod_obj._metadata.instances))} instances for {cod_obj}"
         )
     thumbnail_name = "thumbnail.mp4" if len(all_frames) > 1 else "thumbnail.jpg"
-    thumbnail_path = os.path.join(cod_obj.temp_dir.name, thumbnail_name)
+    thumbnail_path = os.path.join(cod_obj.get_temp_dir(), thumbnail_name)
     if len(all_frames) == 1:
         _convert_frame_to_jpg(all_frames[0], output_path=thumbnail_path)
     else:
