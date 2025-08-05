@@ -1,3 +1,4 @@
+import logging
 import os
 import unittest
 
@@ -98,6 +99,8 @@ def validate_thumbnail(
 class TestThumbnail(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        logging.basicConfig(level=logging.INFO)
+        logging.getLogger().setLevel(logging.INFO)
         cls.test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
         cls.project = "gradient-pacs-siskin-172863"
         cls.client = storage.Client(
@@ -261,6 +264,40 @@ class TestThumbnail(unittest.TestCase):
             validate_thumbnail(
                 self, thumbnail, cod_obj, expected_frame_count=2, dirty=False
             )
+
+    def test_regen_missing_thumbnail(self):
+        """Test that we can regenerate a missing thumbnail"""
+        instance = Instance(
+            dicom_uri=os.path.join(self.test_data_dir, "monochrome1.dcm")
+        )
+        with CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=instance.study_uid(),
+            series_uid=instance.series_uid(),
+            lock=True,
+        ) as cod_obj:
+            cod_obj.append([instance])
+            cod_obj.get_thumbnail()
+            cod_obj.sync()
+            thumbnail_uri = cod_obj.get_metadata_field("thumbnail")["uri"]
+        # delete the thumbnail
+        thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=self.client)
+        thumbnail_blob.delete()
+        self.assertFalse(thumbnail_blob.exists())
+        with CODObject(
+            datastore_path=self.datastore_path,
+            client=self.client,
+            study_uid=instance.study_uid(),
+            series_uid=instance.series_uid(),
+            lock=False,
+        ) as cod_obj:
+            # should get ValueError if we try to get the missing thumbnail without generating
+            with self.assertRaises(ValueError):
+                cod_obj.get_thumbnail(dirty=True, generate_if_missing=False)
+            # should get the thumbnail if we generate it
+            thumbnail = cod_obj.get_thumbnail(dirty=True, generate_if_missing=True)
+            validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=1)
 
     def test_get_instance_slice(self):
         """Test that we can get a slice of the thumbnail for a given instance"""
