@@ -6,6 +6,7 @@ from tempfile import mkdtemp
 from typing import Callable, Optional, Union
 
 import numpy as np
+from google.api_core.exceptions import NotFound
 from google.cloud import storage
 from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
 from google.cloud.storage.retry import DEFAULT_RETRY
@@ -488,8 +489,14 @@ class CODObject:
         # Cases where we need to generate a new thumbnail:
         # 1. The thumbnail metadata does not exist (i.e. the thumbnail has never been generated)
         # 2. The thumbnail metadata exists but the number of instances it contains does not match the cod object (i.e. the thumbnail is stale)
-        if thumbnail_metadata is None or len(thumbnail_metadata["instances"]) != len(
-            self.get_instances(strict_sorting=False, dirty=dirty)
+        # 3. The thumbnail metadata exists but the thumbnail does not exist in GCS (i.e. the thumbnail is missing)
+        if (
+            thumbnail_metadata is None
+            or len(thumbnail_metadata["instances"])
+            != len(self.get_instances(strict_sorting=False, dirty=dirty))
+            or not storage.Blob.from_string(
+                thumbnail_metadata["uri"], client=self.client
+            ).exists()
         ):
             if not generate_if_missing:
                 raise ValueError(
