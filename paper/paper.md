@@ -119,7 +119,7 @@ $c_f$ is the COD ingestion cost per file,
 $c_g$ is the cost per GET request, and 
 $n$ is the average number of instances per series in the dataset
 
-If we take the limit of this equation as $n \to \infy$, we see that this equation converges towards $\frac{c_f}{c_g}$
+If we take the limit of this equation as $n$ approaches infinity, we see that this equation converges towards $\frac{c_f}{c_g}$
 
 From GCloud's stated rate of $0.005 per 1,000 GET requests, 
 and the average ingestion cost per file of roughly $0.00002 based on our benchmarks (TODO update when NLST is done), 
