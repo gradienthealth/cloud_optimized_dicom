@@ -1,10 +1,12 @@
 import logging
 import os
+import shutil
 import tarfile
-from tempfile import TemporaryDirectory
+from tempfile import mkdtemp
 from typing import Callable, Optional, Union
 
 import numpy as np
+from google.api_core.exceptions import NotFound
 from google.cloud import storage
 from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
 from google.cloud.storage.retry import DEFAULT_RETRY
@@ -129,19 +131,17 @@ class CODObject:
         return self._locker is not None
 
     # Temporary directory management
-    def get_temp_dir(self) -> TemporaryDirectory:
+    def get_temp_dir(self) -> str:
         """The path to the temporary directory for this series. Generates a new temp dir if it doesn't exist."""
-        # make sure temp file exists
-        if self.temp_dir is None:
-            self.temp_dir = TemporaryDirectory(suffix=f"_{self.series_uid}")
+        # make sure temp dir exists
+        if self.temp_dir is None or not os.path.exists(self.temp_dir):
+            self.temp_dir = mkdtemp(suffix=f"_{self.series_uid}")
         return self.temp_dir
 
     @property
     def tar_file_path(self) -> str:
         """The path to the tar file for this series in the temporary directory."""
-        _tar_file_path = os.path.join(
-            self.get_temp_dir().name, f"{self.series_uid}.tar"
-        )
+        _tar_file_path = os.path.join(self.get_temp_dir(), f"{self.series_uid}.tar")
         # create tar if it doesn't exist (needs to exist so we can open later in append mode)
         if not os.path.exists(_tar_file_path):
             with tarfile.open(_tar_file_path, "w"):
@@ -157,7 +157,7 @@ class CODObject:
     @property
     def index_file_path(self) -> str:
         """The path to the index file for this series in the temporary directory."""
-        return os.path.join(self.get_temp_dir().name, f"index.sqlite")
+        return os.path.join(self.get_temp_dir(), f"index.sqlite")
 
     # URI properties
     @property
@@ -420,9 +420,7 @@ class CODObject:
             return
         # get thumbnail path
         thumbnail_file_name = os.path.basename(thumbnail_metadata["uri"])
-        thumbnail_local_path = os.path.join(
-            self.get_temp_dir().name, thumbnail_file_name
-        )
+        thumbnail_local_path = os.path.join(self.get_temp_dir(), thumbnail_file_name)
         if not os.path.exists(thumbnail_local_path):
             logger.info(f"Skipping thumbnail sync - thumbnail does not exist: {self}")
             return
@@ -491,8 +489,14 @@ class CODObject:
         # Cases where we need to generate a new thumbnail:
         # 1. The thumbnail metadata does not exist (i.e. the thumbnail has never been generated)
         # 2. The thumbnail metadata exists but the number of instances it contains does not match the cod object (i.e. the thumbnail is stale)
-        if thumbnail_metadata is None or len(thumbnail_metadata["instances"]) != len(
-            self.get_instances(strict_sorting=False, dirty=dirty)
+        # 3. The thumbnail metadata exists but the thumbnail does not exist in GCS (i.e. the thumbnail is missing)
+        if (
+            thumbnail_metadata is None
+            or len(thumbnail_metadata["instances"])
+            != len(self.get_instances(strict_sorting=False, dirty=dirty))
+            or not storage.Blob.from_string(
+                thumbnail_metadata["uri"], client=self.client
+            ).exists()
         ):
             if not generate_if_missing:
                 raise ValueError(
@@ -504,9 +508,7 @@ class CODObject:
             thumbnail_metadata = self.get_metadata_field("thumbnail", dirty=dirty)
         # thumbnail metadata guaranteed to be populated at this point
         thumbnail_file_name = os.path.basename(thumbnail_metadata["uri"])
-        thumbnail_local_path = os.path.join(
-            self.get_temp_dir().name, thumbnail_file_name
-        )
+        thumbnail_local_path = os.path.join(self.get_temp_dir(), thumbnail_file_name)
         # Fetch case: we have thumbnail metadata but the thumbnail does not exist on disk, so we just have to fetch it
         if not os.path.exists(thumbnail_local_path):
             fetch_thumbnail(cod_obj=self)
@@ -751,8 +753,8 @@ class CODObject:
     def cleanup_temp_dir(self):
         """Clean temp dir (if not done already)"""
         # clean up temp dir
-        if self.temp_dir and isinstance(self.temp_dir, TemporaryDirectory):
-            self.temp_dir.cleanup()
+        if self.temp_dir and os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
             self.temp_dir = None
 
     def __del__(self):

@@ -270,7 +270,7 @@ def _save_thumbnail_to_disk(cod_obj: "CODObject", all_frames: list[np.ndarray]) 
             f"Failed to extract pixel data from all {str(len(cod_obj._metadata.instances))} instances for {cod_obj}"
         )
     thumbnail_name = "thumbnail.mp4" if len(all_frames) > 1 else "thumbnail.jpg"
-    thumbnail_path = os.path.join(cod_obj.temp_dir.name, thumbnail_name)
+    thumbnail_path = os.path.join(cod_obj.get_temp_dir(), thumbnail_name)
     if len(all_frames) == 1:
         _convert_frame_to_jpg(all_frames[0], output_path=thumbnail_path)
     else:
@@ -355,7 +355,7 @@ def fetch_thumbnail(cod_obj: "CODObject") -> str:
     logger.info(f"Fetching thumbnail from {thumbnail_uri}")
     thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=cod_obj.client)
     thumbnail_local_path = os.path.join(
-        cod_obj.get_temp_dir().name, thumbnail_uri.split("/")[-1]
+        cod_obj.get_temp_dir(), thumbnail_uri.split("/")[-1]
     )
     thumbnail_blob.download_to_filename(thumbnail_local_path)
     # we just fetched the thumbnail, so it is guaranteed to be in the same state as the datastore
