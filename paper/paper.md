@@ -146,12 +146,18 @@ Based on our benchmarks, we can say $i \approx 0.00002$ (TODO update when NLST i
 Using this, we can compute the number of "full dataset retrievals" 
 required to break even on COD for each GCloud storage mode:
 
-+-------------------+------------+----------+----------+
-| Header 1          | Header 2   | Header 3 | Header 4 |
-|                   |            |          |          |
-+:=================:+:==========:+:========:+:========:+
-| row 1, column 1   | column 2   | column 3 | column 4 |
-+-------------------+------------+----------+----------+
++-------------------+------------------+----------+----------+----------+----------+----------+-----------+
+| Storage Class     | Cost per 1k GETs | Header 3 | Header 4 | Header 5 | Header 6 | Header 7 | Header 8  |
+|                   |                  |          |          |          |          |          |           |
++:=================:+:================:+:========:+:========:+:========:+:========:+:========:+:=========:+
+| Standard          | 0.005            | N/A      | 10.31    | 5.89     | 4.85     | 4.25     | 4.14      |
++-------------------+------------------+----------+----------+----------+----------+----------+-----------+
+| Nearline          | 0.01             | N/A      | 5.16     | 2.95     | 2.43     | 2.13     | 2.07      |
++-------------------+------------------+----------+----------+----------+----------+----------+-----------+
+| Coldline          | 0.02             | N/A      | 2.58     | 1.47     | 1.21     | 1.06     | 1.03      |
++-------------------+------------------+----------+----------+----------+----------+----------+-----------+
+| Archive           | 0.05             | N/A      | 1.03     | 0.59     | 0.49     | 0.43     | 0.41      |
++-------------------+------------------+----------+----------+----------+----------+----------+-----------+
 
 Note: For 3 or fewer average instances per series, COD will never break even - because COD costs 3 GETs per series,
 raw retrieval of series with 3 or fewer instances is actually cheaper than COD retrieval.
