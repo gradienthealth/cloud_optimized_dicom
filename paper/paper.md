@@ -68,6 +68,8 @@ bringing the price down to $500.
 Note: Cloud providers also charge by the GB for egress in addition to by request,
 but the cost difference between COD and raw in the size category is negligible.
 
+TODO: STORAGE TRANSITION COST EXAMPLE
+
 ## Why not just convert to multiframe?
 Another possible solution to this data sharding cost issue would be to group instances by series and merge them all into a single series-level multiframe dicom file.
 
@@ -75,10 +77,8 @@ While this solution is viable, the main reason we opted to develop COD instead i
 Manipulating raw data into a multiframe introduces another layer where something could go wrong. 
 In contrast, COD does not alter the original data in any way - the philosophy being "the less you touch it, the better.
 
-(clearly show why COD is a good thing)
-1. transition costs for storage - if you store a bunch of tiny files it is quite expensive. To transition them would cost more than the storage. BREAKDOWN (for example w CT images), concrete numbers
-2. minimal data corruption - why not just convert to multiframes? answer: bc multiframes can have errors, hospitals themselves can provide corrupt data... the less you touch it, the better the data providence.
-TRADEOFF: we do have heavier writes, BUT dicom data is not really being updated that much (or shouldnt be). Main use case is retrieval.
+The tradeoff is that write operations are heavier and more expensive,
+but the main use case for dicom is retrieval (not editing), which is why we believe this tradeoff is worth it.
 
 add a figure explaining the format?
 
@@ -146,19 +146,7 @@ Based on our benchmarks, we can say $i \approx 0.00002$ (TODO update when NLST i
 Using this, we can compute the number of "full dataset retrievals" 
 required to break even on COD for each GCloud storage mode:
 
-+-------------------+------------------+----------+----------+----------+----------+----------+-----------+
-| Storage Mode      | Cost per 1k GETs | Break-even Retrieval Count by Avg Number of Instances per Series |
-|                   |                  +----------|----------|----------|----------|----------|-----------|
-|                   |                  | 1        | 5        | 10       | 20       | 100      | 1000      |
-+:=================:+:================:+:========:+:========:+:========:+:========:+:========:+:=========:+
-| Standard          | 0.005            | N/A      | 10.31    | 5.89     | 4.85     | 4.25     | 4.14      |
-+-------------------+------------------+----------+----------+----------+----------+----------+-----------+
-| Nearline          | 0.01             | N/A      | 5.16     | 2.95     | 2.43     | 2.13     | 2.07      |
-+-------------------+------------------+----------+----------+----------+----------+----------+-----------+
-| Coldline          | 0.02             | N/A      | 2.58     | 1.47     | 1.21     | 1.06     | 1.03      |
-+-------------------+------------------+----------+----------+----------+----------+----------+-----------+
-| Archive           | 0.05             | N/A      | 1.03     | 0.59     | 0.49     | 0.43     | 0.41      |
-+===================+==================+==========+==========+==========+==========+==========+===========+
+TODO TABLE
 
 Note: For 3 or fewer average instances per series, COD will never break even - because COD costs 3 GETs per series,
 raw retrieval of series with 3 or fewer instances is actually cheaper than COD retrieval.
