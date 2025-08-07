@@ -146,7 +146,20 @@ Based on our benchmarks, we can say $i \approx 0.00002$ (TODO update when NLST i
 Using this, we can compute the number of "full dataset retrievals" 
 required to break even on COD for each GCloud storage mode:
 
-TODO TABLE
++-------------------+------------+----------+----------+
+| Header 1          | Header 2   | Header 3 | Header 4 |
+|                   |            |          |          |
++:=================:+:==========:+:========:+:========:+
+| row 1, column 1   | column 2   | column 3 | column 4 |
++-------------------+------------+----------+----------+
+| row 2             | cells span columns               |
++-------------------+------------+---------------------+
+| row 3             | cells      | - body              |
++-------------------+ span rows  | - elements          |
+| row 4             |            | - here              |
++===================+============+=====================+
+| Footer                                               |
++===================+============+=====================+
 
 Note: For 3 or fewer average instances per series, COD will never break even - because COD costs 3 GETs per series,
 raw retrieval of series with 3 or fewer instances is actually cheaper than COD retrieval.
