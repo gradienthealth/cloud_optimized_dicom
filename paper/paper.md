@@ -147,7 +147,7 @@ Using this, we can compute the number of "full dataset retrievals"
 required to break even on COD for each GCloud storage mode:
 
 +-------------------+------------------+----------+----------+----------+----------+----------+-----------+
-| Storage Class     | Cost per 1k GETs | Break-even Retrieval Count by Avg Number of Instances per Series |
+| Storage Class     | Cost per 1k GETs | Break-even Retrieval Count by Avg # Instances / Series           |
 |                   |                  | 1        | 5        | 10       | 20       | 100      | 1000      |
 +:=================:+:================:+:========:+:========:+:========:+:========:+:========:+:=========:+
 | Standard          | 0.005            | N/A      | 10.31    | 5.89     | 4.85     | 4.25     | 4.14      |
