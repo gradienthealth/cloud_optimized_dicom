@@ -152,14 +152,6 @@ required to break even on COD for each GCloud storage mode:
 +:=================:+:==========:+:========:+:========:+
 | row 1, column 1   | column 2   | column 3 | column 4 |
 +-------------------+------------+----------+----------+
-| row 2             | cells span columns               |
-+-------------------+------------+---------------------+
-| row 3             | cells      | - body              |
-+-------------------+ span rows  | - elements          |
-| row 4             |            | - here              |
-+===================+============+=====================+
-| Footer                                               |
-+===================+============+=====================+
 
 Note: For 3 or fewer average instances per series, COD will never break even - because COD costs 3 GETs per series,
 raw retrieval of series with 3 or fewer instances is actually cheaper than COD retrieval.
