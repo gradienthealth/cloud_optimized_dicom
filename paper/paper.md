@@ -24,12 +24,15 @@ bibliography: paper.bib
 The Cloud Optimized Dicom package (or COD) provides a framewowrk for storing, manipulating,
 and retriving dicom files in the cloud in a cost-optimal way.
 We propose a novel data structure for storing dicom data at scale, consisting of the following series-level files:
-- {series_uid}.tar: contains all instance.dcm files for this series
-- {series_uid}/metadata.json: contains all dicom tags for each instance, along with additional metadata
-- {series_uid}/index.sqlite: an index used by the `Ratarmount` package [@ratarmount] 
+- `{series_uid}.tar`: contains all instance.dcm files for this series
+- `{series_uid}/metadata.json`: contains all dicom tags for each instance, along with additional metadata
+- `{series_uid}/index.sqlite`: an index used by the `Ratarmount` package [@ratarmount] 
 to efficiently retrieve individual instances from the tar without indexing the whole thing
-- (OPTIONAL) {series_uid}/thumbnail.{mp4|jpg}: a 100x100px thumbnail containing each frame in the series
-These files are located at a URI conformant to the DICOMWEB spec, e.g. "{my-bucket}/studies/{study_uid}/series/{series_uid}.tar".
+- `{series_uid}/thumbnail.{mp4|jpg}`: (optional) a small thumbnail containing each frame in the series
+
+The overall file structure is modeled after the DICOMWEB spec, 
+i.e. an instance can be found at `studies/{study_uid}/series/{series_uid}.tar://instances/{instance_uid}.dcm`.
+
 Fetching and caching of the series tar is abstracted away from the end user in an optimal manner.
 Additional utility functionality is also included, such as the ability to add custom metadata fields, generate thumbnails, 
 and use a user-provided hash function to de-identify the UIDs in the URI and metadata.
@@ -48,7 +51,8 @@ If the data is sharded into instance-level files, this is quite expensive.
 
 Consider a worst case scenario: your dataset has 10 million studies, each of which has 10 series on average, 
 which in turn have 10 instances on average (for a total of 1B instances). 
-At a rate of $0.005 / 1k GET requests (which is what Google charges), it would cost you $5,000 to retrieve the whole dataset.
+At a rate of $0.005 / 1k GET requests (which is what Google charges),
+it would cost you $5,000 to retrieve the whole dataset.
 
 With COD, dicom data is grouped into series-level tar files. 
 Say that series A has instances 1, 2, and 3.
@@ -58,7 +62,11 @@ With COD, it only costs 1 GET, as A contains all three instances in a single tar
 Therefore, COD reduces the cost to retrieve a dicom dataset by a factor of x, 
 where x is the average number of instances per series in the dataset.
 
-Returning to our 1B instance example, COD gives a tenfold reduction in total retrieval cost, bringing the price down to $500 to retrieve the whole dataset.
+So, in our 1B instance example COD results in a tenfold reduction in "full dataset retrieval" cost, 
+bringing the price down to $500.
+
+Note: Cloud providers also charge by the GB for egress in addition to by request,
+but the cost difference between COD and raw in the size category is negligible.
 
 ## Why not just convert to multiframe?
 Another possible solution to this data sharding cost issue would be to group instances by series and merge them all into a single series-level multiframe dicom file.
@@ -110,22 +118,50 @@ Initially, COD is more expensive as it requires an upfront ingestion cost.
 
 This cost eventually pays for itself as the data is retrieved.
 
-The equation below describes a cost analysis:
+For the purpose of cost analysis we use the concept of a "full dataset retrieval".
+This simply refers to a GET on every file in the dataset,
+which is what would happen each epoch of an ML training run, for example.
 
-$$b = \frac{c_f}{c_g (1 - \frac{1}{n})}$$
+We can define the break even point $b = \frac{c_i}{c_r - c_c}$,
+where $c_i, c_r$ and $c_c$ are the costs of COD ingestion, raw retrieval, and COD retrieval respectively.
 
-Where $b$ is the number of full dataset retrievals required to break even on COD, 
-$c_f$ is the COD ingestion cost per file, 
-$c_g$ is the cost per GET request, and 
-$n$ is the average number of instances per series in the dataset
+This can be expanded to 
+$$b = \frac{i s n}{(c_g s n) - (3 c_g s)}$$
+where
+$i$ is the COD ingestion cost per file,
+$s$ is the number of series in the dataset,
+$n$ is the average number of instances per series in the dataset, and
+$c_g$ is the cost per GET request.
 
-If we take the limit of this equation as $n$ approaches infinity, we see that this equation converges towards $\frac{c_f}{c_g}$
+Note the constant 3 - this is because getting a series with COD actually constitutes three get requests at the series level:
+1. The tar itself
+2. The metadata.json
+3. The index.sqlite
 
-From GCloud's stated rate of $0.005 per 1,000 GET requests, 
-and the average ingestion cost per file of roughly $0.00002 based on our benchmarks (TODO update when NLST is done), 
-we can compute that the break even point converges to roughly 4 full dataset retrievals.
+We can simplify this equation to
+$$b = \frac{i n}{c_g(n - 3)} = \frac{i}{c_g(1 - \frac{3}{n})} \label{breakeven}$$
 
-So, in the general case, we can say that COD pays for itself after roughly 5 dataset retrievals.
+Based on our benchmarks, we can say $i \approx 0.00002$ (TODO update when NLST is done), 
+
+Using this, we can compute the number of "full dataset retrievals" 
+required to break even on COD for each GCloud storage mode:
+
++-------------------+------------------+----------+----------+----------+----------+----------+-----------+
+| Storage Mode      | Cost per 1k GETs | Break-even Retrieval Count by Avg Number of Instances per Series |
+|                   |                  +----------|----------|----------|----------|----------|-----------|
+|                   |                  | 1        | 5        | 10       | 20       | 100      | 1000      |
++:=================:+:================:+:========:+:========:+:========:+:========:+:========:+:=========:+:
+| Standard          | 0.005            | N/A      | 10.31    | 5.89     | 4.85     | 4.25     | 4.14      |
++-------------------+------------------+----------+----------+----------+----------+----------+-----------+
+| Nearline          | 0.01             | N/A      | 5.16     | 2.95     | 2.43     | 2.13     | 2.07      |
++-------------------+------------------+----------+----------+----------+----------+----------+-----------+
+| Coldline          | 0.02             | N/A      | 2.58     | 1.47     | 1.21     | 1.06     | 1.03      |
++-------------------+------------------+----------+----------+----------+----------+----------+-----------+
+| Archive           | 0.05             | N/A      | 1.03     | 0.59     | 0.49     | 0.43     | 0.41      |
++-------------------+------------------+----------+----------+----------+----------+----------+-----------+
+
+Note: For 3 or fewer average instances per series, COD will never break even - because COD costs 3 GETs per series,
+raw retrieval of series with 3 or fewer instances is actually cheaper than COD retrieval.
 
 # Future Directions
 - data loader (ARPA-H?). if you want to actually train AI on COD data, it would suck to take COD and reformat it to another format that training can actually use. Showcase a pytorch wrapper that is able to laod the data and use it very quickly (high throughput)
