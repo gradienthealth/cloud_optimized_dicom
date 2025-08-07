@@ -158,7 +158,7 @@ required to break even on COD for each GCloud storage mode:
 | Coldline          | 0.02             | N/A      | 2.58     | 1.47     | 1.21     | 1.06     | 1.03      |
 +-------------------+------------------+----------+----------+----------+----------+----------+-----------+
 | Archive           | 0.05             | N/A      | 1.03     | 0.59     | 0.49     | 0.43     | 0.41      |
-+-------------------+------------------+----------+----------+----------+----------+----------+-----------+
++===================+==================+==========+==========+==========+==========+==========+===========+
 
 Note: For 3 or fewer average instances per series, COD will never break even - because COD costs 3 GETs per series,
 raw retrieval of series with 3 or fewer instances is actually cheaper than COD retrieval.
