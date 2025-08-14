@@ -37,6 +37,8 @@ Fetching and caching of the series tar is abstracted away from the end user in a
 Additional utility functionality is also included, such as the ability to add custom metadata fields, generate thumbnails, 
 and use a user-provided hash function to de-identify the UIDs in the URI and metadata.
 
+TODO: add a figure explaining the format?
+
 # Statement of need
 
 At Gradient Health, we store over 5 petabytes dicom data and counting. 
@@ -68,49 +70,81 @@ bringing the price down to $500.
 Note: Cloud providers also charge by the GB for egress in addition to by request,
 but the cost difference between COD and raw in the size category is negligible.
 
-TODO: STORAGE TRANSITION COST EXAMPLE
+## Other solutions
+### Multiframe dicom files
+Another possible solution to this data sharding cost issue would be to group instances by series and merge them all into series-level multiframe dicom files.
 
-## Why not just convert to multiframe?
-Another possible solution to this data sharding cost issue would be to group instances by series and merge them all into a single series-level multiframe dicom file.
-
-While this solution is viable, the main reason we opted to develop COD instead is data providence. 
+While this solution is viable, the main reason we opted to develop COD instead is data provenance. 
 Manipulating raw data into a multiframe introduces another layer where something could go wrong. 
 In contrast, COD does not alter the original data in any way - the philosophy being "the less you touch it, the better.
 
 The tradeoff is that write operations are heavier and more expensive,
 but the main use case for dicom is retrieval (not editing), which is why we believe this tradeoff is worth it.
 
-add a figure explaining the format?
+Our format is also more easily extensible than a multiframe dicom, allowing for custom metadata fields
+and even additional series level files like thumbnails, for which COD provides explicit support.
 
-idea of extending cod w/ additional data (like thumbnails)
+### Sharding (Intelerad)
+It is a common usage pattern for metadata to be accessed far more frequently than full resolution image data.
+This presents the potential for a "sharding" solution.
+Intelerad [@intelerad] is a proprietary implementation of this - 
+metadata is stored in a `.dcm` file, but pixel data is stored separatly in an image file (`.jpg`, `.j2c`, etc.).
 
-cite: proprietary implementations like intelerad (shards the data) - identify limitation of data corruption risk due to manipulation.
-cite: google cloud for healthcare/amazon as prop. implementation - identify limitation of high cost. What's the compute cost to bytes processed metric?
+This solution has the same data corruption risk as creating series multiframes; unless being implemented by a device manufacturer,
+the act of sharding a dicom file constitutes data manipulation which comes with the risk of corruption.
 
-Cost of COD: compute cost to run it (get numbers for this - bytes processed metric), and after there's the cost of transitioning storage (standard -> archive), and finally the actual storage cost.
+Furthermore, in the case of a "full dataset retrieval", the number of files to retrieve is the same as in the raw dicom case 
+and therefore does not result in any cost savings. 
+In fact, if multiframe dicom files are sharded into individual image files, the retrieval cost goes up dramatically.
 
-Show COD is vastly cheaper as an option when it comes to the alts like amazon/google.
+### Proprietary Implementations: GCloud & AWS for Healthcare
+Cloud providers have recognized the demand for and created their own healthcare data storage solutions.
+While elegant and easy to use, these solutions have a much higher cost than COD.
+Consider Google Cloud Healthcare API's dicom pricing example [@healthcare_pricing].
 
-Company that does something similar: juiceFS: https://juicefs.com/en/. What COD is but for general data. Refernece it and say the idea of using cloud buckets for AI training is the up and coming way. Why do that? its because they scale. You can have petabytes of cloud stored data but you're not gonna have SSDs at the petabyte level for a single GPU cluster. This is an idea that has been gaining traction. Why not just use JuiceFS? Its about having a simple to use and export dicom. Dicom already has the P10 format for moving things around, we basically keep the P10 format and it only requies the data to be un-tarred which is a very common interface (would never require driver install or custom code handling for example.)
+Summarizing, they are quoting $6.96 per month to store 151,000 instances spread across 1,500 studies, 
+each retrieved twice, with a total size of 160GB.
+
+Specifically, $1.08 for retrieval, $4.60 for storage, and $1.28 for "ETL Operations" (transcoding the images on retrieval).
+
+Of the studies, 1,000 are single image X rays - this would translate to 1,000 series.
+
+The remaining 500 studies are 300-image MRIs/CTs - let us assume these constitute 500 series.
+
+In these conditions, this same scenario in COD using Standard storage would cost $3.25
+
+Retrieval cost: $2 * 3 * 1500 * 0.005 / 1000 \approx \$0.05$
+
+(2 full retrievals; 3 GETs per series; 1,500 series; $0.005 per 1k standard GETs [@gcs_pricing])
+
+Storage cost: $0.02 * 160 = \$3.20$
+
+Transcoding cost: $0 (COD does not alter the data in any way and returns the images in their original enconding).
+
+Furthermore, if archive storage were to be used instead of standard, COD would cost a grand total of $0.65 [@gcs_pricing]:
+
+Retrieval cost: $2 * 3 * 1500 * 0.05 / 1000 = \$0.45$
+
+Storage cost: $0.0012 * 160 \approx \$0.20$
+
+### Generalized Solution: Cloud-native DFS
+Another option to cut costs on dicom storage/retrieval could be to use a cloud-based distributed file system like JuiceFS [@juicefs]. 
+Indeed, the idea of using cloud buckets for AI training is an up and coming technology that has been gaining traction.
+The main selling point is scalability - there can be petabytes of cloud stored data, 
+but it simply is not feasible to have SSDs at the petabyte level for a single GPU cluster.
+So, while JuiceFS or a similar technology would indeed be an effective way to storge and retrieve large quantities if dicom files, 
+COD's main advantage is its simplicity and dicom specific design.
+Dicom already has the P10 format for moving things around, and COD essentially preserves the P10 format -
+it only requies the data to be un-tarred, which is a very common interface that would never require driver installation or custom code handling.
 
 ## Benchmarks
 Below is a table outlining the performance and cost savings of COD on various test datasets.
 
-| Dataset         | Size (GB) | Num Files | Total Cost ($)  | $ / GB  | $ / 1k files  |
-|-----------------|-----------|-----------|-----------------|---------|---------------|
-| Emory           | 2656.6    | 480,606   | 12.07           | 0.0045  | 0.0251        |
-| NIH Chest Xrays | 117.7     | 112,122   | 1.81            | 0.0154  | 0.0161        |
-| NLST Cancer     | ???       | ???       | ???             | ???     | ???           |
-
-
-demonstrate cost of COD conversion on the following datasets:
-- laplace-open-embed (emory)
-- nih chest xrays: https://cloud.google.com/healthcare-api/docs/resources/public-datasets/nih-chest
-- nlst cancer: https://cdas.cancer.gov/nlst/
-
-show cost of: cod ingetstion + thumbnail gen, storage cost post cod.
-TABLE SCAN COST: frames perspective = 4B frames, series = 55M series for example. 
-Include storage cost pre cod?
+| Dataset                          | Size (GB) | Num Files | Total Cost ($)  | $ / GB  | $ / 1k files  |
+|----------------------------------|-----------|-----------|-----------------|---------|---------------|
+| Emory (TODO: CITE...?)           | 2656.6    | 480,606   | 12.07           | 0.0045  | 0.0251        |
+| NIH Chest Xrays [@gcp_nih_chest] | 117.7     | 112,122   | 1.81            | 0.0154  | 0.0161        |
+| NLST Cancer [@nlst]              | ???       | ???       | ???             | ???     | ???           |
 
 ## When does COD become cheaper?
 
@@ -134,14 +168,12 @@ $n$ is the average number of instances per series in the dataset, and
 $c_g$ is the cost per GET request.
 
 Note the constant 3 - this is because getting a series with COD actually constitutes three get requests at the series level:
-1. The tar itself
-2. The metadata.json
-3. The index.sqlite
+One each for the `tar`, the `metadata.json`, and the `index.sqlite`.
 
 We can simplify this equation to
 $$b = \frac{i n}{c_g(n - 3)} = \frac{i}{c_g(1 - \frac{3}{n})} \label{breakeven}$$
 
-Based on our benchmarks, we can say $i \approx 0.00002$ (TODO update when NLST is done), 
+Based on our benchmarks, we estimate $i \approx 0.00002$ (TODO update when NLST is done), 
 
 Using this, we can compute the number of "full dataset retrievals" 
 required to break even on COD for each GCloud storage mode:
@@ -149,7 +181,7 @@ required to break even on COD for each GCloud storage mode:
 +-------------------+------------------+----------+----------+----------+----------+----------+-----------+
 | Storage Class     | Cost per 1k GETs | Break-even Retrieval Count by Avg # Instances / Series           |
 +-------------------+------------------+----------+----------+----------+----------+----------+-----------+
-|                   |                  | 1        | 5        | 10       | 20       | 100      | 1000      |
+|                   |                  | 0-3      | 5        | 10       | 20       | 100      | 1000      |
 +:=================:+:================:+:========:+:========:+:========:+:========:+:========:+:=========:+
 | Standard          | 0.005            | N/A      | 10.31    | 5.89     | 4.85     | 4.25     | 4.14      |
 +-------------------+------------------+----------+----------+----------+----------+----------+-----------+
@@ -167,6 +199,15 @@ raw retrieval of series with 3 or fewer instances is actually cheaper than COD r
 - data loader (ARPA-H?). if you want to actually train AI on COD data, it would suck to take COD and reformat it to another format that training can actually use. Showcase a pytorch wrapper that is able to laod the data and use it very quickly (high throughput)
 - support additional cloud providers
 - pixel sharding?
+
+# Outstanding TODOs/Notes
+show cost of: cod ingetstion + thumbnail gen, storage cost post cod.
+
+TABLE SCAN COST: frames perspective = 4B frames, series = 55M series for example. 
+
+Include storage cost pre cod?
+
+TODO: STORAGE TRANSITION COST EXAMPLE?
 
 # Acknowledgements
 
