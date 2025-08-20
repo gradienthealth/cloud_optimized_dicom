@@ -37,7 +37,7 @@ Fetching and caching of the series tar is abstracted away from the end user in a
 Additional utility functionality is also included, such as the ability to add custom metadata fields, generate thumbnails, 
 and use a user-provided hash function to de-identify the UIDs in the URI and metadata.
 
-![A visualization of the COD file structure](cod_filestructure.png)
+![A visualization of the COD file structure](cod_filestructure.png){height="10cm"}
 
 # Statement of need
 
