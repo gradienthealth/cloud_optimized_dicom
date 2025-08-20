@@ -37,7 +37,7 @@ Fetching and caching of the series tar is abstracted away from the end user in a
 Additional utility functionality is also included, such as the ability to add custom metadata fields, generate thumbnails, 
 and use a user-provided hash function to de-identify the UIDs in the URI and metadata.
 
-TODO: add a figure explaining the format?
+![A visualization of the COD file structure](cod_filestructure.png)
 
 # Statement of need
 
@@ -47,7 +47,7 @@ We receive this data in a myriad of formats, but most commonly single frame inst
 
 This format is sub-optimal at scale for many reasons, the most obvious of which is cost.
 Training AI models - a common use case for data such as this - requries retriving every single data point.
-If the data is sharded into instance-level files, this is quite expensive.
+If the data is sharded into instance-level files, this is quite expensive (see example below).
 
 ## Retrieval Cost Savings Example
 
@@ -135,6 +135,10 @@ COD's main advantage is its simplicity and dicom specific design.
 Dicom already has the P10 format for moving things around, and COD essentially preserves the P10 format -
 it only requies the data to be un-tarred, which is a very common interface that would never require driver installation or custom code handling.
 
+COD also holds the advantage in robustness and diagnosability.
+Should a file be corrupted, the format which was provided can be easily inspected within the `.tar` file. 
+Furthermore, should either the `index.sqlite` or `metadata.json` become corrupted, they can be reformed from the `.tar` itself.
+
 ## Benchmarks
 Below is a table outlining the performance and cost savings of COD on various test datasets.
 
@@ -194,23 +198,5 @@ Note: For 3 or fewer average instances per series, COD will never break even - b
 raw retrieval of series with 3 or fewer instances is actually cheaper than COD retrieval.
 
 # Future Directions
-- data loader (ARPA-H?). if you want to actually train AI on COD data, it would suck to take COD and reformat it to another format that training can actually use. Showcase a pytorch wrapper that is able to laod the data and use it very quickly (high throughput)
-- support additional cloud providers
-- pixel sharding?
-
-# Outstanding TODOs/Notes
-show cost of: cod ingetstion + thumbnail gen, storage cost post cod.
-
-TABLE SCAN COST: frames perspective = 4B frames, series = 55M series for example. 
-
-Include storage cost pre cod?
-
-TODO: STORAGE TRANSITION COST EXAMPLE?
-
-# Acknowledgements
-
-TODO
-
-# References
-
-TODO
+- A high-throughput pytorch wrapper that is able to load COD data and use it very directly
+- support for additional cloud providers besides Google
