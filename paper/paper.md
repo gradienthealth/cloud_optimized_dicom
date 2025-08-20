@@ -84,17 +84,16 @@ Our format is also more easily extensible than a multiframe dicom, allowing for 
 and even additional series level files like thumbnails, for which COD provides explicit support.
 
 ### Sharding (Intelerad)
-It is a common usage pattern for metadata to be accessed far more frequently than full resolution image data.
+It is a common usage pattern for metadata to be accessed more frequently than full resolution image data.
 This presents the potential for a "sharding" solution.
 Intelerad [@intelerad] is a proprietary implementation of this - 
 metadata is stored in a `.dcm` file, but pixel data is stored separatly in an image file (`.jpg`, `.j2c`, etc.).
 
-This solution has the same data corruption risk as creating series multiframes; unless being implemented by a device manufacturer,
-the act of sharding a dicom file constitutes data manipulation which comes with the risk of corruption.
+Unfortunately, when the use case is image data retrieval
+Intelerad's proprietary shard format does not offer any cost savings because there is no reduction in retrieved file count.
 
-Furthermore, in the case of a "full dataset retrieval", the number of files to retrieve is the same as in the raw dicom case 
-and therefore does not result in any cost savings. 
-In fact, if multiframe dicom files are sharded into individual image files, the retrieval cost goes up dramatically.
+Consider agian the Retrieval Cost Savings Example with Intelerad sharding;
+instead of retrieving 1 billion `.dcm` files we would retrieve 1 billion `.jpg` files, which would have identical cost.
 
 ### Proprietary Implementations: GCloud & AWS for Healthcare
 Cloud providers have recognized the demand for and created their own healthcare data storage solutions.
@@ -131,7 +130,7 @@ Another option to cut costs on dicom storage/retrieval could be to use a cloud-b
 Indeed, the idea of using cloud buckets for AI training is an up and coming technology that has been gaining traction.
 The main selling point is scalability - there can be petabytes of cloud stored data, 
 but it simply is not feasible to have SSDs at the petabyte level for a single GPU cluster.
-So, while JuiceFS or a similar technology would indeed be an effective way to storge and retrieve large quantities if dicom files, 
+So, while JuiceFS or a similar technology would indeed be an effective way to storge and retrieve large quantities of dicom files, 
 COD's main advantage is its simplicity and dicom specific design.
 Dicom already has the P10 format for moving things around, and COD essentially preserves the P10 format -
 it only requies the data to be un-tarred, which is a very common interface that would never require driver installation or custom code handling.
@@ -155,7 +154,7 @@ For the purpose of cost analysis we use the concept of a "full dataset retrieval
 This simply refers to a GET on every file in the dataset,
 which is what would happen each epoch of an ML training run, for example.
 
-We can define the break even point $b = \frac{c_i}{c_r - c_c}$,
+We can define the number of retrievals required to break even as $b = \frac{c_i}{c_r - c_c}$,
 where $c_i, c_r$ and $c_c$ are the costs of COD ingestion, raw retrieval, and COD retrieval respectively.
 
 This can be expanded to 
