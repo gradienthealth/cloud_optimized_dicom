@@ -51,24 +51,23 @@ If the data is sharded into instance-level files, this is quite expensive.
 
 ## Retrieval Cost Savings Example
 
-Consider a worst case scenario: your dataset has 10 million studies, each of which has 10 series on average, 
-which in turn have 10 instances on average (for a total of 1B instances). 
-At a rate of $0.005 / 1k GET requests (which is what Google charges),
+Consider a scenario where you are trying to train an AI model on a dataset of 10 million CT scans.
+For simplicity, let us say that each CT has 100 slices.
+In order to do this training, the entire dataset must be retrieved - every single slice.
+In standard (non-multiframe) dicom, each of these slices will be stored in its own `.dcm` file, for a total of 1 billion files.
+At Google's standard storage rate of $0.005 / 1k GET requests [@gcs_pricing],
 it would cost you $5,000 to retrieve the whole dataset.
 
 With COD, dicom data is grouped into series-level tar files. 
-Say that series A has instances 1, 2, and 3.
-Without COD, to retrieve series A it would cost you 3 GET requests - one for each instance.
-With COD, it only costs 1 GET, as A contains all three instances in a single tarfile.
+Regardless of how many instances/frames are in a series, it costs a fixed 3 GET reqeusts
+to retrieve a series (one each for the `tar`, the `metadata.json`, and the `index.sqlite`).
 
-Therefore, COD reduces the cost to retrieve a dicom dataset by a factor of x, 
-where x is the average number of instances per series in the dataset.
-
-So, in our 1B instance example COD results in a tenfold reduction in "full dataset retrieval" cost, 
-bringing the price down to $500.
+In this example, this means that instead of having to retrieve 1 billion instance files,
+we instead retrieve 10 million COD objects (for a total of 30 million GETs).
+With Google's pricing model this brings the total retrieval cost down to $150 - a remarkable 97% cost reduction.
 
 Note: Cloud providers also charge by the GB for egress in addition to by request,
-but the cost difference between COD and raw in the size category is negligible.
+but the total size difference between COD and raw data storage is minimal.
 
 ## Other solutions
 ### Multiframe dicom files
@@ -76,7 +75,7 @@ Another possible solution to this data sharding cost issue would be to group ins
 
 While this solution is viable, the main reason we opted to develop COD instead is data provenance. 
 Manipulating raw data into a multiframe introduces another layer where something could go wrong. 
-In contrast, COD does not alter the original data in any way - the philosophy being "the less you touch it, the better.
+In contrast, COD does not alter the original data in any way - the philosophy being "the less you touch it, the better".
 
 The tradeoff is that write operations are heavier and more expensive,
 but the main use case for dicom is retrieval (not editing), which is why we believe this tradeoff is worth it.
