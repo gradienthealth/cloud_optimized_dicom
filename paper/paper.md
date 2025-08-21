@@ -89,8 +89,9 @@ This presents the potential for a "sharding" solution.
 Intelerad [@intelerad] is a proprietary implementation of this - 
 metadata is stored in a `.dcm` file, but pixel data is stored separatly in an image file (`.jpg`, `.j2c`, etc.).
 
-Unfortunately, in the context of image data retrieval
-sharding does not offer any cost savings in a blob storage architecture.
+Intelerad designed their system for actual disk architectures, where sharding does in fact provide performance/cost benefits
+when metadata and image data have different access rates.
+Unfortunately, in the context of image data retrieval in a blob storage architecture like GCS, sharding does not offer any cost savings.
 This is because because there is no reduction in retrieved file count.
 Consider agian the Retrieval Cost Savings Example with Intelerad sharding;
 instead of retrieving 1 billion `.dcm` files we would instead retrieve 1 billion `.jpg` files, which would have identical cost.
