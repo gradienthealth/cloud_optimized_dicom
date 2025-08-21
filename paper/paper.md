@@ -144,7 +144,7 @@ Below is a table outlining the performance and cost savings of COD on various te
 
 | Dataset                          | Size (GB) | Num Files | Total Cost ($)  | $ / GB  | $ / 1k files  |
 |----------------------------------|-----------|-----------|-----------------|---------|---------------|
-| Emory (TODO: CITE...?)           | 2656.6    | 480,606   | 12.07           | 0.0045  | 0.0251        |
+| EMBED [@doi:10.1148/ryai.220047] | 2656.6    | 480,606   | 12.07           | 0.0045  | 0.0251        |
 | NIH Chest Xrays [@gcp_nih_chest] | 117.7     | 112,122   | 1.81            | 0.0154  | 0.0161        |
 | NLST Cancer [@nlst]              | ???       | ???       | ???             | ???     | ???           |
 
