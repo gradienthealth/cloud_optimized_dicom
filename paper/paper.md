@@ -76,7 +76,7 @@ While this is true, COD is designed to use raw tar files instead of gzipped tar 
 Say a user wants to view a specific instance in a DICOM web viewer.
 If COD used compressed tar files, the only way to accomplish this would be to fetch the entire tar, decompress it, extract it, and then load the requested dicom file.
 Instead, COD stores the `start_byte` and `end_byte` of each dicom file within the tar in it's metadata. 
-Therefore, using Google's download by byte range functionality (CITE https://cloud.google.com/storage/docs/samples/storage-download-byte-range),
+Therefore, using Google's download by byte range functionality [@gcs_byte_range_download],
 the user can download only the instance of interest directly into a dicom file without having to fetch the entire series.
 In this way, COD is optimized for bulk data storage and retrieval at the series level but also efficiently supports instance level use cases.
 
