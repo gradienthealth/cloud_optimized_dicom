@@ -69,6 +69,17 @@ With Google's pricing model this brings the total retrieval cost down to $150 - 
 Note: Cloud providers also charge by the GB for egress in addition to by request,
 but the total size difference between COD and raw data storage is minimal.
 
+## Compression vs. Random Access: why `.tar` and not `.tar.gz`
+The shrewd observer might point out that COD could easily compress its tar files to save additional storage space.
+While this is true, COD is designed to use raw tar files instead of gzipped tar files in order to enable random access.
+
+Say a user wants to view a specific instance in a DICOM web viewer.
+If COD used compressed tar files, the only way to accomplish this would be to fetch the entire tar, decompress it, extract it, and then load the requested dicom file.
+Instead, COD stores the `start_byte` and `end_byte` of each dicom file within the tar in it's metadata. 
+Therefore, using Google's download by byte range functionality (CITE https://cloud.google.com/storage/docs/samples/storage-download-byte-range),
+the user can download only the instance of interest directly into a dicom file without having to fetch the entire series.
+In this way, COD is optimized for bulk data storage and retrieval at the series level but also efficiently supports instance level use cases.
+
 ## Other solutions
 ### Multiframe dicom files
 Another possible solution to this data sharding cost issue would be to group instances by series and merge them all into series-level multiframe dicom files.
