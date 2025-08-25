@@ -143,11 +143,16 @@ Furthermore, should either the `index.sqlite` or `metadata.json` become corrupte
 ## Benchmarks
 Below is a table outlining the performance and cost savings of COD on various test datasets.
 
-| Dataset                          | Size (GB) | Num Files | Total Cost ($)  | $ / GB  | $ / 1k files  |
-|----------------------------------|-----------|-----------|-----------------|---------|---------------|
-| EMBED [@doi:10.1148/ryai.220047] | 2656.6    | 480,606   | 12.07           | 0.0045  | 0.0251        |
-| NIH Chest Xrays [@gcp_nih_chest] | 117.7     | 112,122   | 1.81            | 0.0154  | 0.0161        |
-| NLST Cancer [@nlst]              | ???       | ???       | ???             | ???     | ???           |
+| Dataset                          | Size (GB) | Num Files  | Total Cost ($)  | $ / GB  | $ / 1k files  |
+|----------------------------------|-----------|------------|-----------------|---------|---------------|
+| EMBED [@doi:10.1148/ryai.220047] | 2656.6    | 480,606    | 12.07           | 0.0045  | 0.0251        |
+| NIH Chest Xrays [@gcp_nih_chest] | 117.7     | 112,122    | 1.81            | 0.0154  | 0.0161        |
+| NLST Cancer [@nlst]              | 11116.6   | 21,041,813 | 49.62           | 0.0045  | 0.0024        |
+
+Averaging these three datasets we compute the average COD ingestion cost per GB as $0.0081,
+and the average cost per thousand files as $0.0145.
+
+Note: to compute these benchmarks cod ingestion was run in GCloud dataflow in `COST_OPTIMIZED` mode with machine type `t2a-standard-1`.
 
 ## When does COD become cheaper?
 
@@ -176,23 +181,25 @@ One each for the `tar`, the `metadata.json`, and the `index.sqlite`.
 We can simplify this equation to
 $$b = \frac{i n}{c_g(n - 3)} = \frac{i}{c_g(1 - \frac{3}{n})} \label{breakeven}$$
 
-Based on our benchmarks, we estimate $i \approx 0.00002$ (TODO update when NLST is done), 
+Based on our benchmarks above, we estimate $i \approx 0.0000145$.
 
-Using this, we can compute the number of "full dataset retrievals" 
-required to break even on COD for each GCloud storage mode:
+We can use this average cost in conjunction with any real world GET request cost ($c_g$) 
+and average number of instances per series ($n$) to determine the number of "full dataset retrievals" 
+required to break even on COD (or in other words, the point at which COD ingestion has paid for itself).
+The table below shows some example break-even retrieval counts for a range of average quantity of instances per series:
 
 +-------------------+------------------+----------+----------+----------+----------+----------+-----------+
 | Storage Class     | Cost per 1k GETs | Break-even Retrieval Count by Avg # Instances / Series           |
 +-------------------+------------------+----------+----------+----------+----------+----------+-----------+
 |                   |                  | 0-3      | 5        | 10       | 20       | 100      | 1000      |
 +:=================:+:================:+:========:+:========:+:========:+:========:+:========:+:=========:+
-| Standard          | 0.005            | N/A      | 10.31    | 5.89     | 4.85     | 4.25     | 4.14      |
+| Standard          | 0.005            | N/A      | 7.27     | 4.15     | 3.42     | 3.00     | 2.92      |
 +-------------------+------------------+----------+----------+----------+----------+----------+-----------+
-| Nearline          | 0.01             | N/A      | 5.16     | 2.95     | 2.43     | 2.13     | 2.07      |
+| Nearline          | 0.01             | N/A      | 3.63     | 2.08     | 1.71     | 1.50     | 1.46      |
 +-------------------+------------------+----------+----------+----------+----------+----------+-----------+
-| Coldline          | 0.02             | N/A      | 2.58     | 1.47     | 1.21     | 1.06     | 1.03      |
+| Coldline          | 0.02             | N/A      | 1.82     | 1.04     | 0.86     | 0.75     | 0.73      |
 +-------------------+------------------+----------+----------+----------+----------+----------+-----------+
-| Archive           | 0.05             | N/A      | 1.03     | 0.59     | 0.49     | 0.43     | 0.41      |
+| Archive           | 0.05             | N/A      | 0.73     | 0.42     | 0.34     | 0.30     | 0.29      |
 +-------------------+------------------+----------+----------+----------+----------+----------+-----------+
 
 Note: For 3 or fewer average instances per series, COD will never break even - because COD costs 3 GETs per series,
