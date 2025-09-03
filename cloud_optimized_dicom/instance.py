@@ -328,8 +328,8 @@ class Instance:
         with self.open() as f:
             # read the instance
             with pydicom3.dcmread(f, defer_size=1024) as ds:
-                if ds.file_meta.TransferSyntaxUID == syntax:
-                    logger.info(f"Skipping transcode ({self} is already in {syntax})")
+                if ds.file_meta.TransferSyntaxUID.is_compressed:
+                    logger.info(f"Skipping transcode ({self} is already compressed)")
                     return
                 ds.compress(syntax)
                 # make a new temp file to write the transcoded instance to

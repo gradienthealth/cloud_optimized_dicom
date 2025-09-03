@@ -317,6 +317,7 @@ class CODObject:
         max_instance_size: float = 10,
         max_series_size: float = 100,
         delete_local_origin: bool = False,
+        compress: bool = True,
         dirty: bool = False,
     ):
         """Append a list of instances to the COD object.
@@ -327,6 +328,7 @@ class CODObject:
             max_instance_size: float - The maximum size of an instance to append, in gb.
             max_series_size: float - The maximum size of the series to append, in gb.
             delete_local_origin: bool - If `True`, delete the local origin of the instances after appending.
+            compress: bool - If `True`, transcodes instances to JPEG2000Lossless during append to save space.
             dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
         """
         return append(
@@ -336,6 +338,7 @@ class CODObject:
             treat_metadata_diffs_as_same=treat_metadata_diffs_as_same,
             max_instance_size=max_instance_size,
             max_series_size=max_series_size,
+            compress=compress,
         )
 
     @public_method
