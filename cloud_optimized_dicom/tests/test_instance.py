@@ -112,6 +112,26 @@ class TestInstance(unittest.TestCase):
         assert instance._has_pixeldata is None  # Verify it's None before fetch
         self.assertTrue(instance.has_pixeldata)
 
+    def test_compress(self):
+        """Test that we can compress an instance to the given syntax"""
+        instance = Instance(dicom_uri=self.local_instance_path)
+        with instance.open() as f:
+            ds = pydicom3.dcmread(f)
+            self.assertEqual(
+                ds.file_meta.TransferSyntaxUID, pydicom3.uid.ImplicitVRLittleEndian
+            )
+        uncompressed_size = instance.size()
+        instance.compress()
+        self.assertLess(instance.size(), uncompressed_size)
+        with instance.open() as f:
+            ds = pydicom3.dcmread(f)
+            self.assertEqual(
+                ds.file_meta.TransferSyntaxUID, pydicom3.uid.JPEG2000Lossless
+            )
+        # Should be pointing to the new temp file
+        self.assertEqual(instance._temp_file_path, instance.dicom_uri)
+        self.assertNotEqual(instance.dicom_uri, self.local_instance_path)
+
     def test_temp_file_cleanup(self):
         """Test that the temp file is cleaned up when the instance is deleted"""
         # make a temp file with valid dicom data
