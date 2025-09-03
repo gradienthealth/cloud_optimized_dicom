@@ -38,15 +38,18 @@ def append(
     treat_metadata_diffs_as_same: bool = False,
     max_instance_size: float = None,
     max_series_size: float = None,
+    compress: bool = True,
 ) -> AppendResult:
     """Append a list of instances to the COD object.
+
     Args:
         cod_object (CODObject): The COD object to append to
         instances (list): list of instances to append
         delete_local_origin (bool): whether to delete instance origin files after successful append (if local, remote origins are never deleted)
         treat_metadata_diffs_as_same (bool): if True, when a diff hash dupe is found, compute & compare the hashes of JUST the pixel data. If they match, treat the dupe as same.
-        max_instance_size (float): maximum size of an instance to append, in gb.
+        max_instance_size (float): maximum size of an instance to append, in gb
         max_series_size (float): maximum size of the series to append, in gb
+        compress (bool): whether to transcode instances to JPEG2000Lossless syntax before appending to tar
     Returns: an AppendResult; a namedtuple with the following fields:
         new (list): list of new instances that were added successfully
         same (list): list of instances that were perfect duplicates of existing instances
@@ -81,7 +84,9 @@ def append(
     if not state_change.new:
         return append_result
     # handle new
-    append_result = _handle_new(cod_object, state_change.new, append_result)
+    append_result = _handle_new(
+        cod_object, state_change.new, append_result, compress=compress
+    )
     metrics.TAR_SUCCESS_COUNTER.inc()
     metrics.TAR_BYTES_PROCESSED.inc(os.path.getsize(cod_object.tar_file_path))
     return append_result
@@ -392,12 +397,17 @@ def _handle_new(
     cod_object: "CODObject",
     new_state_changes: list[tuple[Instance, Optional[SeriesMetadata], Optional[str]]],
     append_result: AppendResult,
+    compress: bool = True,
 ) -> AppendResult:
     """
-    Create/append to tar & upload; add to series metadata & upload.
+    Compress instances if specified; create/append to tar & upload; add to series metadata & upload.
     Returns:
         updated_append_result
     """
+    if compress:
+        for instance, _, _ in new_state_changes:
+            instance.compress()
+
     instances_added_to_tar = _handle_create_tar(cod_object, new_state_changes)
     _handle_create_metadata(cod_object, instances_added_to_tar)
     # update append result

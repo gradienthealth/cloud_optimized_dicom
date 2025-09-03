@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Callable, Optional
 
 import pydicom3
+import pydicom3.uid
 from ratarmountcore import open as rmc_open
 from smart_open import open as smart_open
 
@@ -308,6 +309,48 @@ class Instance:
         # Add 1 to end byte to get stop position
         start, stop = self._byte_offsets[0], self._byte_offsets[1] + 1
         return VirtualFile(master_file_pointer, start, stop)
+
+    def compress(self, syntax: pydicom3.uid.UID = pydicom3.uid.JPEG2000Lossless):
+        """Compress the instance to the given syntax. Fails if used prior to fetching, or if the local instance is nested in a tar.
+
+        Args:
+            syntax: pydicom3.uid.UID to transcode to. Defaults to JPEG2000Lossless.
+        """
+        if self.is_nested_in_tar or is_remote(self.dicom_uri):
+            raise ValueError(
+                f"Attemtped to transcode an instance that is nested in a tar or is remote (unsupported): {self}"
+            )
+        if not self.has_pixeldata:
+            logger.info(f"Skipping transcode ({self} has no pixeldata to transcode)")
+            return
+
+        # open the original instance
+        with self.open() as f:
+            # read the instance
+            with pydicom3.dcmread(f, defer_size=1024) as ds:
+                if ds.file_meta.TransferSyntaxUID.is_compressed:
+                    logger.info(f"Skipping transcode ({self} is already compressed)")
+                    return
+                ds.compress(syntax)
+                # make a new temp file to write the transcoded instance to
+                with tempfile.NamedTemporaryFile(
+                    suffix=".dcm", delete=False
+                ) as temp_file:
+                    ds.save_as(temp_file.name)
+                    # if we were tracking a temp file, delete it
+                    if self._temp_file_path:
+                        # delete the old temp file (obsolete)
+                        os.remove(self._temp_file_path)
+                    # both temp file and dicom_uri point to the new temp file
+                    self.dicom_uri = temp_file.name
+                    self._temp_file_path = temp_file.name
+                    # old size, crc32c (and hints) are now invalid
+                    self.hints.crc32c = None
+                    self.hints.size = None
+                    self._size = None
+                    self._crc32c = None
+                    # call validate to recalculate these fields
+                    self.validate()
 
     def append_to_series_tar(
         self,

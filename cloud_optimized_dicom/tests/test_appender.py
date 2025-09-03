@@ -380,3 +380,32 @@ class TestAppender(unittest.TestCase):
         new, same, conflict, errors = cod_obj.append(
             [instance_v2, instance], dirty=True
         )
+
+    def test_append_compress(self):
+        """test that compressing instances works"""
+        cod_obj = CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=False,
+        )
+        instance = Instance(dicom_uri=self.local_instance_path)
+        with instance.open() as f:
+            ds = pydicom3.dcmread(f)
+            self.assertEqual(
+                ds.file_meta.TransferSyntaxUID, pydicom3.uid.ImplicitVRLittleEndian
+            )
+        uncompressed_size = instance.size()
+        new, same, conflict, errors = cod_obj.append(
+            [instance], dirty=True, compress=True
+        )
+        self.assertEqual(len(new), 1)
+        self.assertEqual(len(same + conflict + errors), 0)
+        self.assertLess(instance.size(), uncompressed_size)
+        with instance.open() as f:
+            ds = pydicom3.dcmread(f)
+            self.assertEqual(
+                ds.file_meta.TransferSyntaxUID, pydicom3.uid.JPEG2000Lossless
+            )
+        self.assertLess(instance.size(), uncompressed_size)
