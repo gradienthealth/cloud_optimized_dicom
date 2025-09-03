@@ -38,7 +38,7 @@ def append(
     treat_metadata_diffs_as_same: bool = False,
     max_instance_size: float = None,
     max_series_size: float = None,
-    compress: bool = False,
+    compress: bool = True,
 ) -> AppendResult:
     """Append a list of instances to the COD object.
 
@@ -397,7 +397,7 @@ def _handle_new(
     cod_object: "CODObject",
     new_state_changes: list[tuple[Instance, Optional[SeriesMetadata], Optional[str]]],
     append_result: AppendResult,
-    compress: bool = False,
+    compress: bool = True,
 ) -> AppendResult:
     """
     Compress instances if specified; create/append to tar & upload; add to series metadata & upload.
