@@ -166,6 +166,16 @@ def _dedupe(
             # handle duplicate instance id case
             if instance_id in instance_id_to_instance:
                 preexisting_instance = instance_id_to_instance[instance_id]
+                # if two instances share a UID AND the same URI, we don't have a duplicate - we have two versions of the same file.
+                # In this case, hints cannot be trusted (which version of the file is more recent?).
+                # Solution: keep the instance in the dict, but throw out the hints.
+                if instance.dicom_uri == preexisting_instance.dicom_uri:
+                    logger.warning(
+                        f"Input contains multiple instances with the same URI: {instance.dicom_uri}. Keeping a single version and throwing out hints"
+                    )
+                    preexisting_instance.remove_hints()
+                    preexisting_instance.validate()
+                    continue
                 if (
                     instance.crc32c(trust_hints_if_available=True)
                     != preexisting_instance.crc32c()

@@ -358,3 +358,25 @@ class TestAppender(unittest.TestCase):
                 self.assertEqual(len(same + conflict), 0)
                 self.assertEqual(len(errors), 1)
                 self.assertEqual(errors[0][0], bad_instance)
+
+    def test_append_dupe_uri_input(self):
+        """test duplicate URI handling"""
+        cod_obj = CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.test_study_uid,
+            series_uid=self.test_series_uid,
+            lock=False,
+        )
+        instance = Instance(dicom_uri=self.local_instance_path)
+        instance_v2 = Instance(
+            dicom_uri=self.local_instance_path,
+            hints=Hints(
+                instance_uid=instance.instance_uid(),
+                crc32c="some_other_hash",
+                size=instance.size() + 1,
+            ),
+        )
+        new, same, conflict, errors = cod_obj.append(
+            [instance_v2, instance], dirty=True
+        )
