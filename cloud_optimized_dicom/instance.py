@@ -485,6 +485,10 @@ class Instance:
         self._modified_datetime = datetime.now().isoformat()
         return True
 
+    def remove_hints(self):
+        """Throw out the instance's hints, setting its Hints object to be empty."""
+        self.hints = Hints()
+
     def to_cod_dict_v1(self):
         """Convert this instance to a dict in accordance with the COD Metadata v1.0 spec"""
         # first unpack byte offsets
