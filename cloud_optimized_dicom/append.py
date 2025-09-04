@@ -1,4 +1,3 @@
-import logging
 import os
 import tarfile
 from typing import TYPE_CHECKING, NamedTuple, Optional
@@ -6,11 +5,11 @@ from typing import TYPE_CHECKING, NamedTuple, Optional
 from ratarmountcore import open as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
+from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.utils import is_remote
 
-logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from cloud_optimized_dicom.cod_object import CODObject
 

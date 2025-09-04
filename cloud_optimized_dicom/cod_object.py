@@ -1,4 +1,3 @@
-import logging
 import os
 import shutil
 import tarfile
@@ -14,6 +13,7 @@ from ratarmountcore import open as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.append import append
+from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import (
     CODObjectNotFoundError,
     ErrorLogExistsError,
@@ -39,8 +39,6 @@ from cloud_optimized_dicom.utils import (
     read_thumbnail_into_array,
     upload_and_count_file,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class CODObject:

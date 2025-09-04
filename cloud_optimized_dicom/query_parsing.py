@@ -1,4 +1,3 @@
-import logging
 from itertools import groupby
 from typing import Callable, Iterator
 
@@ -6,11 +5,10 @@ from google.api_core.exceptions import NotFound
 from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
+from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import LockAcquisitionError
 from cloud_optimized_dicom.instance import Hints, Instance
 from cloud_optimized_dicom.metrics import INSTANCES_NOT_FOUND
-
-logger = logging.getLogger(__name__)
 
 SERIES_RATIO_WARNING_THRESHOLD = 0.5
 

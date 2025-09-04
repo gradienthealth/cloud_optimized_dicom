@@ -8,7 +8,6 @@ UID_TAGS = {
 
 import collections
 import io
-import logging
 from base64 import b64encode
 from typing import Optional
 
@@ -20,9 +19,8 @@ from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
 
 import cloud_optimized_dicom.metrics as metrics
+from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import CleanOpOnUnlockedCODObjectError
-
-logger = logging.getLogger(__name__)
 
 
 def find_pattern(f: io.BufferedReader, pattern: bytes, buffer_size=8192):

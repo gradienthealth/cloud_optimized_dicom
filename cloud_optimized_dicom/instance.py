@@ -1,4 +1,3 @@
-import logging
 import os
 import tarfile
 import tempfile
@@ -12,6 +11,7 @@ from ratarmountcore import open as rmc_open
 from smart_open import open as smart_open
 
 import cloud_optimized_dicom.metrics as metrics
+from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.utils import (
@@ -24,8 +24,6 @@ from cloud_optimized_dicom.utils import (
     parse_uids_from_metadata,
 )
 from cloud_optimized_dicom.virtual_file import VirtualFile
-
-logger = logging.getLogger(__name__)
 
 TAR_IDENTIFIER = ".tar://"
 ZIP_IDENTIFIER = ".zip://"

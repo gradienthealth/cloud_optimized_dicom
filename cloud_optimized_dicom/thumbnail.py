@@ -1,5 +1,4 @@
 import dataclasses
-import logging
 import os
 from typing import TYPE_CHECKING, Tuple
 
@@ -10,15 +9,11 @@ import pydicom3
 from google.cloud import storage
 
 import cloud_optimized_dicom.metrics as metrics
+from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.instance import Instance
-from cloud_optimized_dicom.utils import upload_and_count_file
-
-logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from cloud_optimized_dicom.cod_object import CODObject
-
-logger = logging.getLogger(__name__)
 
 SORTING_ATTRIBUTES = {"InstanceNumber": "00200013", "SliceLocation": "00201041"}
 DEFAULT_FPS = 4
