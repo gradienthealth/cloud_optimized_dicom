@@ -1,14 +1,11 @@
-import logging
+# Handy way of keeping pylance happy without circular imports
+from typing import TYPE_CHECKING
 
 from google.api_core.exceptions import PreconditionFailed
 from google.cloud import storage
 
+from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import LockAcquisitionError, LockVerificationError
-
-logger = logging.getLogger(__name__)
-
-# Handy way of keeping pylance happy without circular imports
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from cloud_optimized_dicom.cod_object import CODObject
