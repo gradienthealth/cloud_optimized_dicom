@@ -10,5 +10,8 @@
     "python.testing.unittestEnabled": true,
     "python.analysis.extraPaths": [
         "cloud_optimized_dicom/pydicom/src"
+    ],
+    "cursorpyright.analysis.extraPaths": [
+        "cloud_optimized_dicom/pydicom/src"
     ]
 }

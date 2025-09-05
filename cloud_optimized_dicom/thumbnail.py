@@ -15,7 +15,6 @@ from cloud_optimized_dicom.instance import Instance
 if TYPE_CHECKING:
     from cloud_optimized_dicom.cod_object import CODObject
 
-SORTING_ATTRIBUTES = {"InstanceNumber": "00200013", "SliceLocation": "00201041"}
 DEFAULT_FPS = 4
 DEFAULT_QUALITY = 60
 DEFAULT_SIZE = 128
@@ -167,47 +166,26 @@ def _generate_thumbnail_frame_and_anchors(
     return thumbnail, anchors
 
 
-def _sort_instances(instances: list[Instance], strict=False) -> list[Instance]:
-    """Attempt to sort instances by instance_number tag. Try slice_location if that fails.
-    If both fail, and `strict=False`, return the instances in the order they were fetched and log a warning.
-    If both fail, and `strict=True`, raise a ValueError.
-    """
-    # if there's only one instance, return it as is
-    if len(instances) <= 1:
-        return instances
-    # attempt to sort by by each attribute in SORTING_ATTRIBUTES
-    for tag in SORTING_ATTRIBUTES.values():
-        # do not attempt sorting if any instances are missing the tag
-        if any(tag not in instance.metadata for instance in instances):
-            continue
-        # sortable attributes are expected to be stored in metadata as "tag": {"vr":"VR","Value":[some_value]}
-        return sorted(instances, key=lambda x: x.metadata[tag]["Value"][0])
-    # if we get here, sorting failed
-    msg = f"Unable to sort instances by any known sorting attributes ({', '.join(SORTING_ATTRIBUTES.keys())})"
-    if strict:
-        raise ValueError(msg)
-    logger.warning(msg)
-    return instances
-
-
 def _remove_instances_without_pixeldata(
-    cod_obj: "CODObject", instances: list[Instance]
-) -> list[Instance]:
+    cod_obj: "CODObject", uid_to_instance: dict[str, Instance]
+):
     """Remove instances that do not have pixel data. Raise an error if no instances have pixel data."""
-    num_instances = len(instances)
-    instances = [instance for instance in instances if instance.has_pixeldata]
-    if len(instances) == 0:
+    filtered_dict = {
+        uid: instance
+        for uid, instance in uid_to_instance.items()
+        if instance.has_pixeldata
+    }
+    if len(filtered_dict) == 0:
         metrics.SERIES_MISSING_PIXEL_DATA.inc()
         raise SeriesMissingPixelDataError(
-            f"None of the {num_instances} instances have pixel data for cod object {cod_obj}"
+            f"None of the {len(uid_to_instance)} instances have pixel data for cod object {cod_obj}"
         )
-    return instances
+    return filtered_dict
 
 
 def _generate_thumbnail_frames(
     cod_obj: "CODObject",
-    instances: list[Instance],
-    instance_to_instance_uid: dict[Instance, str],
+    uid_to_instance: dict[str, Instance],
     thumbnail_size: int,
 ):
     """Iterate through instances and generate thumbnail frames.
@@ -222,9 +200,8 @@ def _generate_thumbnail_frames(
     all_frames = []
     thumbnail_instance_metadata = {}
     thumbnail_index_to_instance_frame = []
-    for instance in instances:
+    for instance_uid, instance in uid_to_instance.items():
         with instance.open() as f:
-            instance_uid = instance_to_instance_uid[instance]
             instance_frame_metadata = []
             for instance_frame_index, frame in enumerate(pydicom3.iter_pixels(f)):
                 thumbnail_frame, anchors = _generate_thumbnail_frame_and_anchors(
@@ -273,20 +250,6 @@ def _save_thumbnail_to_disk(cod_obj: "CODObject", all_frames: list[np.ndarray]) 
     return thumbnail_path
 
 
-def _generate_instance_lookup_dict(
-    cod_obj: "CODObject", dirty: bool = False
-) -> dict[Instance, str]:
-    """Generate a dictionary mapping instances to their instance UIDs.
-    (thumbnail metadata requires instance UIDs)
-    """
-    return {
-        instance: instance_uid
-        for instance_uid, instance in cod_obj.get_metadata(
-            dirty=dirty
-        ).instances.items()
-    }
-
-
 def generate_thumbnail(
     cod_obj: "CODObject",
     overwrite_existing: bool = False,
@@ -298,6 +261,9 @@ def generate_thumbnail(
         cod_obj: The COD object to generate a thumbnail for.
         overwrite_existing: Whether to overwrite the existing thumbnail, if it exists.
         thumbnail_size: The size of the thumbnail to generate (default: 128px).
+
+    Returns:
+        thumbnail_path: the path to the thumbnail on disk, or None if the thumbnail was not generated
     """
     # can infer whether the operation is dirty by checking if the cod object is locked
     dirty = not cod_obj.lock
@@ -311,13 +277,12 @@ def generate_thumbnail(
     if cod_obj.tar_is_empty:
         cod_obj.pull_tar(dirty=dirty)
 
-    instance_to_instance_uid = _generate_instance_lookup_dict(cod_obj, dirty)
-    instances = list(instance_to_instance_uid.keys())
-    assert len(instances) > 0, "COD object has no instances"
-    instances = _remove_instances_without_pixeldata(cod_obj, instances)
-    instances = _sort_instances(instances)
+    # cod_obj.get_instances() sorts instances by instance number or slice location, if possible
+    uid_to_instance = cod_obj.get_instances(strict_sorting=False, dirty=dirty)
+    assert len(uid_to_instance) > 0, "COD object has no instances"
+    uid_to_instance = _remove_instances_without_pixeldata(cod_obj, uid_to_instance)
     all_frames, thumbnail_metadata = _generate_thumbnail_frames(
-        cod_obj, instances, instance_to_instance_uid, thumbnail_size
+        cod_obj, uid_to_instance, thumbnail_size
     )
     thumbnail_path = _save_thumbnail_to_disk(cod_obj, all_frames)
     cod_obj.add_metadata_field(
