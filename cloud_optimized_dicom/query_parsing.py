@@ -118,7 +118,7 @@ def instances_to_codobj_tuples(
     client: storage.Client,
     instances: list[Instance],
     datastore_path: str,
-    validate_datastore_path: bool = True,
+    empty_lock_override_age: float = None,
     lock: bool = True,
 ) -> Iterator[tuple[CODObject, list[Instance]]]:
     """Group instances by study/series, make codobjects, and yield (codobj, instances) pairs"""
@@ -158,6 +158,7 @@ def instances_to_codobj_tuples(
                 series_uid=series_uid,
                 lock=lock,
                 hashed_uids=hashed_uids,
+                empty_lock_override_age=empty_lock_override_age,
             )
             num_series += 1
             yield (cod_obj, instances_list)
