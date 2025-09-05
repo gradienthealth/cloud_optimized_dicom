@@ -6,8 +6,10 @@ from typing import Callable, Optional
 
 from google.cloud import storage
 
+from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.instance import Instance
-from cloud_optimized_dicom.thumbnail import _sort_instances
+
+SORTING_ATTRIBUTES = {"InstanceNumber": "00200013", "SliceLocation": "00201041"}
 
 
 @dataclass
@@ -55,24 +57,53 @@ class SeriesMetadata:
         del self.metadata_fields[field_name]
         return True
 
-    def _sort_instances(self):
-        """Sort the instances dict, the same way instances are sorted for the thumbnail.
+    def sort_instances(self, strict=False):
+        """Sort the instances dict, in the logical order they would be expected to be read (e.g. by instance number or slice location).
 
         If sorting is successful, set `is_sorted=True`.
-        If sorting is unsuccessful, set `is_sorted=False`.
+        If sorting is unsuccessful (and `strict=False`), set `is_sorted=False`.
+
+        Raises:
+            ValueError: if sorting is unsuccessful and `strict=True`
         """
+
+        def _get_sorted_metadata_uid_instance_tuples():
+            metadata_uid_instance_tuples = [
+                (metadata_uid, instance)
+                for metadata_uid, instance in self.instances.items()
+            ]
+            # if there's only one instance, return it as is
+            if len(metadata_uid_instance_tuples) <= 1:
+                return metadata_uid_instance_tuples
+            # attempt to sort by by each attribute in SORTING_ATTRIBUTES
+            for tag in SORTING_ATTRIBUTES.values():
+                # do not attempt sorting if any instances are missing the tag
+                if any(
+                    tag not in instance.metadata
+                    for uid, instance in metadata_uid_instance_tuples
+                ):
+                    continue
+                # sortable attributes are expected to be stored in metadata as "tag": {"vr":"VR","Value":[some_value]}
+                return sorted(
+                    metadata_uid_instance_tuples,
+                    key=lambda x: x[1].metadata[tag]["Value"][0],
+                )
+            # if we get here, sorting failed
+            msg = f"Unable to sort instances by any known sorting attributes ({', '.join(SORTING_ATTRIBUTES.keys())})"
+            if strict:
+                raise ValueError(msg)
+            logger.warning(msg)
+            return metadata_uid_instance_tuples
+
         # early exit if already sorted
         if self.is_sorted:
             return
-        # map instances to their uids
-        instance_to_uid = {instance: uid for uid, instance in self.instances.items()}
-        # get a list of all instances (unsorted)
-        unsorted_instances = list(instance_to_uid.keys())
         # attempt sorting
         try:
-            sorted_instances = _sort_instances(unsorted_instances, strict=True)
+            metadata_uid_instance_tuples = _get_sorted_metadata_uid_instance_tuples()
             self.instances = {
-                instance_to_uid[instance]: instance for instance in sorted_instances
+                metadata_uid: instance
+                for metadata_uid, instance in metadata_uid_instance_tuples
             }
             self.is_sorted = True
         except ValueError:
