@@ -1,4 +1,5 @@
 import logging
+import os
 import unittest
 
 from google.api_core.client_options import ClientOptions
@@ -10,6 +11,8 @@ from cloud_optimized_dicom.errors import (
     LockAcquisitionError,
     LockVerificationError,
 )
+from cloud_optimized_dicom.instance import Instance
+from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 
@@ -27,6 +30,8 @@ class TestLocking(unittest.TestCase):
         cls.datastore_path = "gs://siskin-172863-temp/cod_tests/dicomweb"
         cls.study_uid = "1.2.3.4.5.6.7.8.9.10"
         cls.series_uid = "1.2.3.4.5.6.7.8.9.10"
+        cls.test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
+        cls.local_instance_path = os.path.join(cls.test_data_dir, "monochrome2.dcm")
         delete_uploaded_blobs(cls.client, [cls.datastore_path])
 
     def test_lock_unspecified(self):
@@ -234,3 +239,83 @@ class TestLocking(unittest.TestCase):
         self.assertTrue(cod._locker.get_lock_blob().exists())
         # Clean up any locks that might have been created
         delete_uploaded_blobs(self.client, [self.datastore_path])
+
+    def test_override_stale_lock(self):
+        """Test that we can override a stale lock"""
+        # leave a hanging lock
+        with self.assertRaises(ValueError):
+            with CODObject(
+                client=self.client,
+                datastore_path=self.datastore_path,
+                study_uid=self.study_uid,
+                series_uid=self.series_uid,
+                lock=True,
+            ) as cod:
+                raise ValueError("test")
+        # because there's a hanging lock, we should get an error
+        with self.assertRaises(LockAcquisitionError):
+            with CODObject(
+                client=self.client,
+                datastore_path=self.datastore_path,
+                study_uid=self.study_uid,
+                series_uid=self.series_uid,
+                lock=True,
+            ) as cod:
+                pass
+
+        # we should be able to override the lock with a sufficiently small age threshold
+        with CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.study_uid,
+            series_uid=self.series_uid,
+            lock=True,
+            empty_lock_override_age=0.00000001,
+        ) as cod:
+            pass
+        # The lock should have been overridden
+        self.assertFalse(cod._locker.get_lock_blob().exists())
+        # clean up any locks that might have been created
+        delete_uploaded_blobs(self.client, [self.datastore_path])
+
+    def test_cannot_override_non_empty_lock(self):
+        """Test that we cannot override a non-empty lock"""
+        instance = Instance(dicom_uri=self.local_instance_path)
+        # append an instance to the cod object
+        with CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=instance.study_uid(),
+            series_uid=instance.series_uid(),
+            lock=True,
+        ) as cod:
+            cod.append([instance])
+            cod.sync()
+
+        # simulate non empty hanging lock
+        with self.assertRaises(ValueError):
+            with CODObject(
+                client=self.client,
+                datastore_path=self.datastore_path,
+                study_uid=instance.study_uid(),
+                series_uid=instance.series_uid(),
+                lock=True,
+            ) as cod:
+                raise ValueError("simulated error causing lock to hang")
+        # assert lock exists
+        self.assertTrue(cod._locker.get_lock_blob().exists())
+        # assert lock is non empty
+        self.assertGreater(
+            len(SeriesMetadata.from_blob(cod._locker.get_lock_blob()).instances), 0
+        )
+        # we should not be able to override the lock, even with a sufficiently small age threshold
+        with self.assertRaises(LockAcquisitionError):
+            with CODObject(
+                client=self.client,
+                datastore_path=self.datastore_path,
+                study_uid=instance.study_uid(),
+                series_uid=instance.series_uid(),
+                lock=True,
+                empty_lock_override_age=0.00000001,
+            ) as cod:
+                pass

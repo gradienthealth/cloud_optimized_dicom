@@ -1,4 +1,5 @@
 # Handy way of keeping pylance happy without circular imports
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from google.api_core.exceptions import PreconditionFailed
@@ -6,6 +7,7 @@ from google.cloud import storage
 
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import LockAcquisitionError, LockVerificationError
+from cloud_optimized_dicom.series_metadata import SeriesMetadata
 
 if TYPE_CHECKING:
     from cloud_optimized_dicom.cod_object import CODObject
@@ -24,20 +26,48 @@ class CODLocker:
     def __init__(self, cod_object: "CODObject"):
         self.cod_object = cod_object
 
-    def acquire(self, create_if_missing: bool = True):
-        """Upload a lock file (to prevent concurrent access to the COD object)."""
+    def acquire(
+        self, create_if_missing: bool = True, empty_lock_override_age: float = None
+    ):
+        """Upload a lock file (to prevent concurrent access to the COD object).
+
+        Args:
+            create_if_missing (bool): Passthrough for CODObject.get_metadata (see documentation there)
+            empty_lock_override_age (float): The age (in hours) of a lock file to consider "stale" and override (if it is empty)
+        """
         # if the lock already exists, assert generation matches (re-acquisition case)
         if (lock_blob := self.get_lock_blob()).exists():
             lock_blob.reload()
             lock_uri = f"gs://{lock_blob.bucket.name}/{lock_blob.name}"
-            if lock_blob.generation != self.cod_object.lock_generation:
+            # Reacquire case
+            if lock_blob.generation == self.cod_object.lock_generation:
+                logger.info(
+                    f"COD:LOCK:REACQUIRED:{lock_uri} (generation: {self.cod_object.lock_generation})"
+                )
+                return
+            # No override case
+            if not empty_lock_override_age:
                 raise LockAcquisitionError(
                     f"COD:LOCK:ACQUISITION_FAILED:DIFF_GEN_LOCK_ALREADY_EXISTS:{lock_uri} (generation: {lock_blob.generation})"
                 )
-            logger.info(
-                f"COD:LOCK:REACQUIRED:{lock_uri} (generation: {self.cod_object.lock_generation})"
+            # Attempt override -> check whether lock old enough to override
+            if datetime.now(timezone.utc) - lock_blob.updated < timedelta(
+                hours=empty_lock_override_age
+            ):
+                raise LockAcquisitionError(
+                    f"COD:LOCK:ACQUISITION_FAILED:LOCK_TOO_RECENT_TO_OVERRIDE:{lock_uri} (updated: {lock_blob.updated})"
+                )
+            # Attempt override -> check whether lock is empty
+            lock_data = SeriesMetadata.from_blob(lock_blob)
+            if len(lock_data.instances) > 0:
+                raise LockAcquisitionError(
+                    f"COD:LOCK:ACQUISITION_FAILED:CANNOT_OVERRIDE_NON_EMPTY_LOCK:{lock_uri} (instances: {len(lock_data.instances)})"
+                )
+            # If we make it here, we can safely override the lock
+            lock_blob.delete()
+            logger.warning(
+                f"COD:LOCK:OVERRIDING_STALE_LOCK:gs://{lock_blob.bucket.name}/{lock_blob.name}"
             )
-            return
 
         # Step 1: fetch metadata
         self.cod_object.get_metadata(create_if_missing=create_if_missing)
