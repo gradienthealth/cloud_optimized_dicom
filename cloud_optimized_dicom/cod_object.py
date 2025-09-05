@@ -58,7 +58,7 @@ class CODObject:
         create_if_missing: bool - If `False`, raise an error if series does not yet exist in the datastore.
         temp_dir: str - If a temp_dir with data pertaining to this series already exists, provide it here.
         override_errors: bool - If `True`, delete any existing error.log and upload a new one.
-        empty_lock_override_age: float - If `None`, do not override a stale lock if it exists. If `float`, override a stale lock if it exists and is older than the given age.
+        empty_lock_override_age: float - If `None`, do not override a stale lock if it exists. If `float`, override a stale lock if it exists and is older than the given age (in hours).
         lock_generation: int - The generation of the lock file. Should only be set if instantiation from serialized cod object.
     """
 
