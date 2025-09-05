@@ -223,12 +223,7 @@ class CODObject:
             dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
         """
         metadata = self.get_metadata(dirty=dirty)
-        metadata._sort_instances()
-        if not metadata.is_sorted:
-            if strict_sorting:
-                raise ValueError(f"Sorting was unsuccessful, and strict_sorting=True")
-            else:
-                logger.warning(f"Instance dict is unsorted")
+        metadata.sort_instances(strict=strict_sorting)
         return metadata.instances
 
     @public_method
