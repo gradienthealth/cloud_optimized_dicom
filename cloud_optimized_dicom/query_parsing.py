@@ -163,7 +163,7 @@ def instances_to_codobj_tuples(
             num_series += 1
             yield (cod_obj, instances_list)
         except LockAcquisitionError as e:
-            logger.warning(
+            logger.exception(
                 f"COD:LOCK:ACQUISITION_FAILED:STUDY:{study_uid}:SERIES:{series_uid}:{e}"
             )
         except Exception as e:
