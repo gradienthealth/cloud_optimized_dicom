@@ -37,13 +37,12 @@ class HashMismatchError(TarValidationError):
 class HintMismatchError(CODError):
     """Exception raised on Instance validation when the hints do not match the true values"""
 
-    def __init__(
-        self, field_name: str, hinted_value: str | int, found_value: str | int
+    @classmethod
+    def from_bad_hint(
+        cls, field_name: str, hinted_value: str | int, found_value: str | int
     ):
-        self.field_name = field_name
-        self.hinted_value = hinted_value
-        self.found_value = found_value
-        super().__init__(
+        """Constructor to create a well-formatted hint mismatch error message given the field that was bad and the hinted/found values"""
+        return cls(
             f"Hint mismatch for field {field_name}. Hint: {hinted_value}; Found: {found_value}"
         )
 
