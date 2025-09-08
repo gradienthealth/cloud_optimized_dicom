@@ -10,6 +10,7 @@ from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
 
+import cloud_optimized_dicom.config as config
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Hints, Instance
 from cloud_optimized_dicom.query_parsing import query_result_to_codobjects
@@ -164,6 +165,7 @@ class TestConcat(unittest.TestCase):
 
     def test_single_instance(self):
         """Upload single instance series, confirm it uploaded, confirm it deleted originals"""
+        config.debug()
         with self.run_group(GROUPING_SINGLE) as cod_obj:
             pass
 

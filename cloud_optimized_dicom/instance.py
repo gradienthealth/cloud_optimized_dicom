@@ -129,7 +129,7 @@ class Instance:
         Returns:
             bool - True if the instance is valid
         Raises:
-            AssertionError if the instance is invalid.
+            HintMismatchError if the instance is invalid.
         """
         # populate all true values
         with self.open() as f:
