@@ -41,6 +41,7 @@ class HintMismatchError(CODError):
     def from_bad_hint(
         cls, field_name: str, hinted_value: str | int, found_value: str | int
     ):
+        """Constructor to create a well-formatted hint mismatch error message given the field that was bad and the hinted/found values"""
         return cls(
             f"Hint mismatch for field {field_name}. Hint: {hinted_value}; Found: {found_value}"
         )
