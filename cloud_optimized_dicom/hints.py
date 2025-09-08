@@ -40,18 +40,24 @@ class Hints:
         """
         if self.size is not None:
             if self.size != true_size:
-                raise HintMismatchError("size", self.size, true_size)
+                raise HintMismatchError.from_bad_hint("size", self.size, true_size)
         if self.crc32c is not None:
             if self.crc32c != true_crc32c:
-                raise HintMismatchError("crc32c", self.crc32c, true_crc32c)
+                raise HintMismatchError.from_bad_hint(
+                    "crc32c", self.crc32c, true_crc32c
+                )
         if self.instance_uid is not None:
             if self.instance_uid != true_instance_uid:
-                raise HintMismatchError(
+                raise HintMismatchError.from_bad_hint(
                     "instance_uid", self.instance_uid, true_instance_uid
                 )
         if self.series_uid is not None:
             if self.series_uid != true_series_uid:
-                raise HintMismatchError("series_uid", self.series_uid, true_series_uid)
+                raise HintMismatchError.from_bad_hint(
+                    "series_uid", self.series_uid, true_series_uid
+                )
         if self.study_uid is not None:
             if self.study_uid != true_study_uid:
-                raise HintMismatchError("study_uid", self.study_uid, true_study_uid)
+                raise HintMismatchError.from_bad_hint(
+                    "study_uid", self.study_uid, true_study_uid
+                )
