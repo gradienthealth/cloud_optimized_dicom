@@ -1,6 +1,7 @@
 import os
 import unittest
 
+from cloud_optimized_dicom.errors import HintMismatchError
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.instance import Instance
 
@@ -35,7 +36,7 @@ class TestHints(unittest.TestCase):
         instance = Instance(
             dicom_uri=os.path.join(self.test_data_dir, "monochrome2.dcm"), hints=hints
         )
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(HintMismatchError):
             instance.validate()
 
     def test_bad_size(self):
@@ -43,7 +44,7 @@ class TestHints(unittest.TestCase):
         instance = Instance(
             dicom_uri=os.path.join(self.test_data_dir, "monochrome2.dcm"), hints=hints
         )
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(HintMismatchError):
             instance.validate()
 
     def test_bad_crc32c(self):
@@ -51,5 +52,5 @@ class TestHints(unittest.TestCase):
         instance = Instance(
             dicom_uri=os.path.join(self.test_data_dir, "monochrome2.dcm"), hints=hints
         )
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(HintMismatchError):
             instance.validate()

@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from cloud_optimized_dicom.errors import HintMismatchError
+
 
 @dataclass
 class Hints:
@@ -34,23 +36,22 @@ class Hints:
         """Verify all provided hints against the true values.
 
         Raises:
-            AssertionError if any hint was provided and does not match the true value.
+            HintMismatchError if any hint was provided and does not match the true value.
         """
         if self.size is not None:
-            assert self.size == true_size, f"size mismatch: {self.size} != {true_size}"
+            if self.size != true_size:
+                raise HintMismatchError("size", self.size, true_size)
         if self.crc32c is not None:
-            assert (
-                self.crc32c == true_crc32c
-            ), f"crc32c mismatch: {self.crc32c} != {true_crc32c}"
+            if self.crc32c != true_crc32c:
+                raise HintMismatchError("crc32c", self.crc32c, true_crc32c)
         if self.instance_uid is not None:
-            assert (
-                self.instance_uid == true_instance_uid
-            ), f"instance uid mismatch: {self.instance_uid} != {true_instance_uid}"
+            if self.instance_uid != true_instance_uid:
+                raise HintMismatchError(
+                    "instance_uid", self.instance_uid, true_instance_uid
+                )
         if self.series_uid is not None:
-            assert (
-                self.series_uid == true_series_uid
-            ), f"series uid mismatch: {self.series_uid} != {true_series_uid}"
+            if self.series_uid != true_series_uid:
+                raise HintMismatchError("series_uid", self.series_uid, true_series_uid)
         if self.study_uid is not None:
-            assert (
-                self.study_uid == true_study_uid
-            ), f"study uid mismatch: {self.study_uid} != {true_study_uid}"
+            if self.study_uid != true_study_uid:
+                raise HintMismatchError("study_uid", self.study_uid, true_study_uid)

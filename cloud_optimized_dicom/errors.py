@@ -32,3 +32,21 @@ class TarMissingInstanceError(TarValidationError):
 
 class HashMismatchError(TarValidationError):
     """Exception raised on CODObject integrity check when there is a mismatch between the crc32c hash in the metadata and the one computed from the tar"""
+
+
+class HintMismatchError(CODError):
+    """Exception raised on Instance validation when the hints do not match the true values"""
+
+    def __init__(
+        self, field_name: str, hinted_value: str | int, found_value: str | int
+    ):
+        self.field_name = field_name
+        self.hinted_value = hinted_value
+        self.found_value = found_value
+        super().__init__(
+            f"Hint mismatch for field {field_name}. Hint: {hinted_value}; Found: {found_value}"
+        )
+
+
+class InstanceValidationError(CODError):
+    """Exception raised on Instance validation when the instance is invalid"""

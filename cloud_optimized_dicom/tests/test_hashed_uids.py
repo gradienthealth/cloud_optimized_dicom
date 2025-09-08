@@ -7,6 +7,7 @@ from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
+from cloud_optimized_dicom.errors import InstanceValidationError
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.instance import Instance
 
@@ -97,16 +98,20 @@ class TestDeid(unittest.TestCase):
                 study_uid=self.test_study_uid,
             ),
         )
-        # expect no error: original uids will be used, so the instance belongs to the cod_object
-        cod_object.assert_instance_belongs_to_cod_object(instance)
-        # add a uid hash function to the instance
+        # with neither cod_object nor instance having a uid hash function, the instance belongs to the cod_object
+        self.assertTrue(cod_object.assert_instance_belongs_to_cod_object(instance))
+        # if instead the instance had a uid hash function, it would not belong to the cod_object
         instance.uid_hash_func = example_hash_function
-        # expect an error: hashed uids will be used, so the instance will not belong to the cod_object
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(InstanceValidationError):
             cod_object.assert_instance_belongs_to_cod_object(instance)
-        # if the cod_object instead had hashed_uids=True, but still had the original uids, the instance would NOT belong (true_uid != hashed_uid)
+        # if instead the cod_object had hashed_uids=True, and the instance did NOT have a uid hash function, it would not belong to the cod_object
         cod_object.hashed_uids = True
-        with self.assertRaises(AssertionError):
+        instance.uid_hash_func = None
+        with self.assertRaises(InstanceValidationError):
+            cod_object.assert_instance_belongs_to_cod_object(instance)
+        # if both had hashing, but the cod object was created with unhashed uids, it would not belong
+        instance.uid_hash_func = example_hash_function
+        with self.assertRaises(InstanceValidationError):
             cod_object.assert_instance_belongs_to_cod_object(instance)
         # finally, if the cod_object had the hashed uids, and the instance had the hashed uids, the instance would belong
         cod_object.study_uid = example_hash_function(self.test_study_uid)
@@ -128,7 +133,7 @@ class TestDeid(unittest.TestCase):
             hashed_uids=True,
         )
         instance = Instance(dicom_uri=self.local_instance_path)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(InstanceValidationError):
             cod_object.assert_instance_belongs_to_cod_object(instance)
 
     def test_cod_obj_metadata_hashed_uids(self):

@@ -6,6 +6,7 @@ from ratarmountcore import open as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.config import logger
+from cloud_optimized_dicom.errors import HintMismatchError
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.utils import is_remote
@@ -392,6 +393,23 @@ def _handle_diff(
     )
 
 
+def _validate_new_instances(instances: list[Instance]):
+    """Validate the instances; if hints are incorrect, we must know or else we risk corrupting the datastore"""
+    validated_instances: list[Instance] = []
+    errors: list[tuple[Instance, Exception]] = []
+    for instance in instances:
+        try:
+            instance.validate()
+            validated_instances.append(instance)
+        except HintMismatchError as e:
+            logger.exception(f"Hint mismatch for instance: {instance}: {e}")
+            errors.append((instance, e))
+        except Exception as e:
+            logger.exception(f"Unexpected error validating instance: {instance}: {e}")
+            errors.append((instance, e))
+    return validated_instances, errors
+
+
 def _handle_new(
     cod_object: "CODObject",
     new_state_changes: list[tuple[Instance, Optional[SeriesMetadata], Optional[str]]],
@@ -403,44 +421,50 @@ def _handle_new(
     Returns:
         updated_append_result
     """
+    # Step 1: validate new instances (if hints are wrong we throw them out)
+    validated_instances, validation_errors = _validate_new_instances(
+        [new for new, _, _ in new_state_changes]
+    )
+    # Step 2: compress instances (if specified)
     if compress:
-        for instance, _, _ in new_state_changes:
+        for instance in validated_instances:
             instance.compress()
 
-    instances_added_to_tar = _handle_create_tar(cod_object, new_state_changes)
+    # Step 3: create/append to tar
+    instances_added_to_tar, tar_errors = _handle_create_tar(
+        cod_object, validated_instances
+    )
+    # Step 4: add to series metadata
     _handle_create_metadata(cod_object, instances_added_to_tar)
-    # update append result
+    # Step 5: return updated append result
     return AppendResult(
         new=append_result.new + instances_added_to_tar,
         same=append_result.same,
         conflict=append_result.conflict,
-        errors=append_result.errors,
+        errors=append_result.errors + validation_errors + tar_errors,
     )
 
 
 def _handle_create_tar(
     cod_object: "CODObject",
-    new_state_changes: list[tuple[Instance, SeriesMetadata, str]],
-) -> list[Instance]:
+    instances_to_add: list[Instance],
+):
     """
     Create/append to tar + index.sqlite locally
     Returns:
         instances_added_to_tar (list): list of instances that got added to the tar successfully
+        errors (list): list of instance, error tuples that occurred during the tar creation process
     """
     # If a tarball already exists (and this is a clean append), download it (no need to get index, will be recalculated anyways)
     if len(cod_object._metadata.instances) > 0:
         cod_object.pull_tar(dirty=not cod_object.lock)
 
-    instances_added_to_tar = _create_or_append_tar(
-        cod_object, [new for new, _, _ in new_state_changes]
-    )
+    instances_added_to_tar, errors = _create_or_append_tar(cod_object, instances_to_add)
     _create_sqlite_index(cod_object)
-    return instances_added_to_tar
+    return instances_added_to_tar, errors
 
 
-def _create_or_append_tar(
-    cod_object: "CODObject", instances_to_add: list[Instance]
-) -> list[Instance]:
+def _create_or_append_tar(cod_object: "CODObject", instances_to_add: list[Instance]):
     """Create/append to `cod_object.tar_file_path` all instances in `instances_to_add`
 
     Returns:
@@ -451,7 +475,8 @@ def _create_or_append_tar(
     # validate that at least one instance is being added
     assert len(instances_to_add) > 0, "No instances to add to tar"
     # create/append to tar
-    instances_added_to_tar, errors = [], []
+    instances_added_to_tar: list[Instance] = []
+    errors: list[tuple[Instance, Exception]] = []
     with tarfile.open(cod_object.tar_file_path, "a") as tar:
         for instance in instances_to_add:
             try:
@@ -469,7 +494,7 @@ def _create_or_append_tar(
     )
     # tar has been altered, so it is no longer in sync with the datastore
     cod_object._tar_synced = False
-    return instances_added_to_tar
+    return instances_added_to_tar, errors
 
 
 def _create_sqlite_index(cod_object: "CODObject"):

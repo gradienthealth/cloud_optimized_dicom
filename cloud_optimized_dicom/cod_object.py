@@ -18,6 +18,7 @@ from cloud_optimized_dicom.errors import (
     CODObjectNotFoundError,
     ErrorLogExistsError,
     HashMismatchError,
+    InstanceValidationError,
     TarMissingInstanceError,
     TarValidationError,
 )
@@ -698,30 +699,52 @@ class CODObject:
         for uid, local_path in instance_uid_to_local_path.items():
             self._metadata.instances[uid].dicom_uri = local_path
 
-    def assert_instance_belongs_to_cod_object(self, instance: Instance):
+    def assert_instance_belongs_to_cod_object(
+        self, instance: Instance, trust_hints_if_available: bool = True
+    ):
         """Compare relevant instance study/series UIDS (hashed if uid_hash_func provided, standard if not) to COD object study/series UIDs.
+        By default, we trust hints here, but if trust_hints_if_available is False, we will not trust hints and will use the true UIDs.
 
-        Raises an AssertionError if any of the following are true:
+        Returns:
+            True if the instance belongs to the COD object
+
+        Raises an InstanceValidationError if any of the following are true:
             - CODObject DOES have hashed UIDs but instance does NOT have a uid_hash_func
             - CODObject does NOT have hashed UIDs but instance DOES have a uid_hash_func
             - instance study/series UIDs don't match COD object study/series UIDs
         """
+        # Retrieve relevant Study/Series UIDs based on whether the CODObject has hashed UIDs
         if self.hashed_uids:
-            assert (
-                instance.uid_hash_func
-            ), f"CODObject {self} has hashed UIDs but instance is missing uid_hash_func: {instance}"
-            relevant_study_uid = instance.hashed_study_uid()
-            relevant_series_uid = instance.hashed_series_uid()
+            if not instance.uid_hash_func:
+                raise InstanceValidationError(
+                    f"CODObject {self} has hashed UIDs but instance is missing uid_hash_func: {instance}"
+                )
+            relevant_study_uid = instance.hashed_study_uid(
+                trust_hints_if_available=trust_hints_if_available
+            )
+            relevant_series_uid = instance.hashed_series_uid(
+                trust_hints_if_available=trust_hints_if_available
+            )
         else:
-            assert (
-                not instance.uid_hash_func
-            ), f"CODObject {self} does not have hashed UIDs but instance has uid_hash_func: {instance}"
-            relevant_study_uid = instance.study_uid()
-            relevant_series_uid = instance.series_uid()
-        assert (
-            relevant_study_uid == self.study_uid
-            and relevant_series_uid == self.series_uid
-        ), f"Instance {instance} does not belong to COD object {self}"
+            if instance.uid_hash_func:
+                raise InstanceValidationError(
+                    f"CODObject {self} does not have hashed UIDs but instance has uid_hash_func: {instance}"
+                )
+            relevant_study_uid = instance.study_uid(
+                trust_hints_if_available=trust_hints_if_available
+            )
+            relevant_series_uid = instance.series_uid(
+                trust_hints_if_available=trust_hints_if_available
+            )
+        # Compare the retrieved UIDs with the CODObject's UIDs
+        if (
+            relevant_study_uid != self.study_uid
+            or relevant_series_uid != self.series_uid
+        ):
+            raise InstanceValidationError(
+                f"Instance {instance} does not belong to COD object {self}"
+            )
+        return True
 
     # Serialization methods
     def serialize(self) -> dict:
