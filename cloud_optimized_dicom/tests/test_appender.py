@@ -267,7 +267,7 @@ class TestAppender(unittest.TestCase):
         new, same, conflict, errors = cod_obj.append([bad_instance], dirty=True)
         self.assertEqual(len(errors), 1)
         self.assertEqual(len(new + same + conflict), 0)
-        self.assertIn("study uid mismatch", str(errors[0][1]))
+        self.assertIn("Hint mismatch for field study_uid", str(errors[0][1]))
 
     def test_append_bad_uri_remote(self):
         """test nonexistent remote URI handling"""
