@@ -87,6 +87,12 @@ def append(
     append_result = _handle_new(
         cod_object, state_change.new, append_result, compress=compress
     )
+    # increment metrics
+    metrics.APPEND_CONFLICTS.inc(len(append_result.conflict))
+    metrics.APPEND_DUPLICATES.inc(len(append_result.same))
+    metrics.APPEND_FAILS.inc(len(append_result.errors))
+    metrics.APPEND_SUCCESSES.inc(len(append_result.new))
+    metrics.TOTAL_FILES_PROCESSED.inc(len(instances))
     metrics.TAR_SUCCESS_COUNTER.inc()
     metrics.TAR_BYTES_PROCESSED.inc(os.path.getsize(cod_object.tar_file_path))
     return append_result
@@ -315,7 +321,6 @@ def _calculate_state_change(
                 and new_instance.get_pixeldata_hash()
                 == existing_instance.get_pixeldata_hash()
             ):
-                metrics.TRUE_DUPE_COUNTER.inc()
                 state_change.same.append(
                     (
                         new_instance,
@@ -325,7 +330,6 @@ def _calculate_state_change(
                 )
             # if the crc32c is different, we have a diff hash duplicate
             else:
-                metrics.DIFFHASH_DUPE_COUNTER.inc()
                 state_change.diff.append(
                     (
                         new_instance,
@@ -410,6 +414,22 @@ def _validate_new_instances(instances: list[Instance]):
     return validated_instances, errors
 
 
+def _compress_instances(instances: list[Instance]):
+    """Attempt to compress instances and record any errors"""
+    compressed_instances: list[Instance] = []
+    errors: list[tuple[Instance, Exception]] = []
+    for instance in instances:
+        try:
+            instance.compress()
+            compressed_instances.append(instance)
+        except Exception as e:
+            logger.exception(
+                f"Error compressing instance (dicom is likely corrupt): {instance}: {e}"
+            )
+            errors.append((instance, e))
+    return compressed_instances, errors
+
+
 def _handle_new(
     cod_object: "CODObject",
     new_state_changes: list[tuple[Instance, Optional[SeriesMetadata], Optional[str]]],
@@ -426,13 +446,11 @@ def _handle_new(
         [new for new, _, _ in new_state_changes]
     )
     # Step 2: compress instances (if specified)
-    if compress:
-        for instance in validated_instances:
-            instance.compress()
+    compressed_instances, compression_errors = _compress_instances(validated_instances)
 
     # Step 3: create/append to tar
     instances_added_to_tar, tar_errors = _handle_create_tar(
-        cod_object, validated_instances
+        cod_object, compressed_instances
     )
     # Step 4: add to series metadata
     _handle_create_metadata(cod_object, instances_added_to_tar)
@@ -441,7 +459,10 @@ def _handle_new(
         new=append_result.new + instances_added_to_tar,
         same=append_result.same,
         conflict=append_result.conflict,
-        errors=append_result.errors + validation_errors + tar_errors,
+        errors=append_result.errors
+        + validation_errors
+        + tar_errors
+        + compression_errors,
     )
 
 
