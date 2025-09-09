@@ -448,6 +448,17 @@ def _handle_new(
     # Step 2: compress instances (if specified)
     compressed_instances, compression_errors = _compress_instances(validated_instances)
 
+    if not compressed_instances:
+        logger.warning(
+            "Entire series failed compression/validation; no instances to add to tar"
+        )
+        return AppendResult(
+            new=append_result.new,
+            same=append_result.same,
+            conflict=append_result.conflict,
+            errors=append_result.errors + validation_errors + compression_errors,
+        )
+
     # Step 3: create/append to tar
     instances_added_to_tar, tar_errors = _handle_create_tar(
         cod_object, compressed_instances
