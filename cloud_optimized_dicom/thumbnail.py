@@ -265,37 +265,43 @@ def generate_thumbnail(
     Returns:
         thumbnail_path: the path to the thumbnail on disk, or None if the thumbnail was not generated
     """
-    # can infer whether the operation is dirty by checking if the cod object is locked
-    dirty = not cod_obj.lock
-    if (
-        cod_obj.get_metadata_field("thumbnail", dirty=dirty) is not None
-        and not overwrite_existing
-    ):
-        logger.info(f"Skipping thumbnail generation for {cod_obj} (already exists)")
-        return
-    # fetch the tar, if it's not already fetched
-    if cod_obj.tar_is_empty:
-        cod_obj.pull_tar(dirty=dirty)
+    try:
+        # can infer whether the operation is dirty by checking if the cod object is locked
+        dirty = not cod_obj.lock
+        if (
+            cod_obj.get_metadata_field("thumbnail", dirty=dirty) is not None
+            and not overwrite_existing
+        ):
+            logger.info(f"Skipping thumbnail generation for {cod_obj} (already exists)")
+            return
+        # fetch the tar, if it's not already fetched
+        if cod_obj.tar_is_empty:
+            cod_obj.pull_tar(dirty=dirty)
 
-    # cod_obj.get_instances() sorts instances by instance number or slice location, if possible
-    uid_to_instance = cod_obj.get_instances(strict_sorting=False, dirty=dirty)
-    assert len(uid_to_instance) > 0, "COD object has no instances"
-    uid_to_instance = _remove_instances_without_pixeldata(cod_obj, uid_to_instance)
-    all_frames, thumbnail_metadata = _generate_thumbnail_frames(
-        cod_obj, uid_to_instance, thumbnail_size
-    )
-    thumbnail_path = _save_thumbnail_to_disk(cod_obj, all_frames)
-    cod_obj.add_metadata_field(
-        field_name="thumbnail",
-        field_value=thumbnail_metadata,
-        overwrite_existing=True,
-        dirty=dirty,
-    )
-    # we just generated the thumbnail, so it is not synced to the datastore
-    cod_obj._thumbnail_synced = False
-    metrics.THUMBNAIL_SUCCESS_COUNTER.inc()
-    metrics.THUMBNAIL_BYTES_PROCESSED.inc(os.path.getsize(thumbnail_path))
-    return thumbnail_path
+        # cod_obj.get_instances() sorts instances by instance number or slice location, if possible
+        uid_to_instance = cod_obj.get_instances(strict_sorting=False, dirty=dirty)
+        assert len(uid_to_instance) > 0, "COD object has no instances"
+        uid_to_instance = _remove_instances_without_pixeldata(cod_obj, uid_to_instance)
+        all_frames, thumbnail_metadata = _generate_thumbnail_frames(
+            cod_obj, uid_to_instance, thumbnail_size
+        )
+        thumbnail_path = _save_thumbnail_to_disk(cod_obj, all_frames)
+        cod_obj.add_metadata_field(
+            field_name="thumbnail",
+            field_value=thumbnail_metadata,
+            overwrite_existing=True,
+            dirty=dirty,
+        )
+        # we just generated the thumbnail, so it is not synced to the datastore
+        cod_obj._thumbnail_synced = False
+        metrics.THUMBNAIL_SUCCESSES.inc()
+        metrics.THUMBNAIL_BYTES_PROCESSED.inc(os.path.getsize(thumbnail_path))
+        return thumbnail_path
+    except Exception as e:
+        # On exception, increment failure metric, log exception, and re-raise
+        metrics.THUMBNAIL_FAILS.inc()
+        logger.exception(f"Error generating thumbnail for {cod_obj}: {e}")
+        raise e
 
 
 def fetch_thumbnail(cod_obj: "CODObject") -> str:

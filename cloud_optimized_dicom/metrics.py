@@ -19,11 +19,14 @@ INSTANCE_BLOB_CRC32C_MISMATCH = Metrics.counter(
 
 # append metrics
 APPEND_NAMESPACE = f"{NAMESPACE}:append"
-SERIES_DUPE_COUNTER = Metrics.counter(APPEND_NAMESPACE, "num_duplicate_series")
-TRUE_DUPE_COUNTER = Metrics.counter(APPEND_NAMESPACE, "num_true_duplicates")
-DIFFHASH_DUPE_COUNTER = Metrics.counter(APPEND_NAMESPACE, "num_diffhash_duplicates")
+APPEND_CONFLICTS = Metrics.counter(APPEND_NAMESPACE, "append_conflicts")
+APPEND_DUPLICATES = Metrics.counter(APPEND_NAMESPACE, "append_duplicates")
+APPEND_FAILS = Metrics.counter(APPEND_NAMESPACE, "append_fails")
+APPEND_SUCCESSES = Metrics.counter(APPEND_NAMESPACE, "append_successes")
+SERIES_DUPE_COUNTER = Metrics.counter(APPEND_NAMESPACE, "num_full_duplicate_series")
 TAR_SUCCESS_COUNTER = Metrics.counter(APPEND_NAMESPACE, "tar_success")
 TAR_BYTES_PROCESSED = Metrics.counter(APPEND_NAMESPACE, "tar_bytes_processed")
+TOTAL_FILES_PROCESSED = Metrics.counter(APPEND_NAMESPACE, "total_files_processed")
 
 # Storage class counters
 STD_CREATE_COUNTER = Metrics.counter(__name__, "num_STANDARD_creates")
@@ -54,14 +57,9 @@ STORAGE_CLASS_COUNTERS: dict[str, dict[str, Metrics.DelegatingCounter]] = {
 DEPS_MISSING_FROM_TAR = Metrics.counter(__name__, "deps_missing_from_tar")
 TAR_METADATA_CRC32C_MISMATCH = Metrics.counter(__name__, "tar_metadata_crc32c_mismatch")
 DEP_DOES_NOT_EXIST = Metrics.counter(__name__, "dep_does_not_exist")
-NULL_DEPENDENCY = Metrics.counter(__name__, "null_dependency")
-NESTED_DEPENDENCY = Metrics.counter(__name__, "nested_dependency")
 INSTANCE_BLOB_CRC32C_MISMATCH = Metrics.counter(
     __name__, "instance_blob_crc32c_mismatch"
 )
-SERIES_DELETIONS_FAILED = Metrics.counter(__name__, "series_deletions_failed")
-SERIES_DELETED = Metrics.counter(__name__, "series_deleted")
-COD_OBJS_NOT_FOUND = Metrics.counter(__name__, "cod_objs_not_found")
 INSTANCES_NOT_FOUND = Metrics.counter(__name__, "instances_not_found")
 
 # thumbnail metrics
@@ -69,7 +67,8 @@ THUMBNAIL_NAMESPACE = f"{NAMESPACE}:thumbnail"
 SERIES_MISSING_PIXEL_DATA = Metrics.counter(
     THUMBNAIL_NAMESPACE, "series_missing_pixel_data"
 )
-THUMBNAIL_SUCCESS_COUNTER = Metrics.counter(THUMBNAIL_NAMESPACE, "thumbnail_success")
+THUMBNAIL_SUCCESSES = Metrics.counter(THUMBNAIL_NAMESPACE, "thumbnail_successes")
+THUMBNAIL_FAILS = Metrics.counter(THUMBNAIL_NAMESPACE, "thumbnail_fails")
 THUMBNAIL_BYTES_PROCESSED = Metrics.counter(
     THUMBNAIL_NAMESPACE, "thumbnail_bytes_processed"
 )
