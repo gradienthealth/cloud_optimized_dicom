@@ -61,6 +61,7 @@ INSTANCE_BLOB_CRC32C_MISMATCH = Metrics.counter(
     __name__, "instance_blob_crc32c_mismatch"
 )
 INSTANCES_NOT_FOUND = Metrics.counter(__name__, "instances_not_found")
+NUM_FILES_DELETED = Metrics.counter(__name__, "num_files_deleted")
 
 # thumbnail metrics
 THUMBNAIL_NAMESPACE = f"{NAMESPACE}:thumbnail"

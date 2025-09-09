@@ -505,6 +505,7 @@ class Instance:
                 continue
         # We don't want to spend GET requests to calculate exact deleted size. Instead we estimate with instance size
         metrics.BYTES_DELETED_COUNTER.inc(self.size())
+        metrics.NUM_FILES_DELETED.inc()
         return deleted_dependencies
 
     def append_diff_hash_dupe(self, duplicate_path: str) -> bool:
