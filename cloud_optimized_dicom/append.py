@@ -410,6 +410,22 @@ def _validate_new_instances(instances: list[Instance]):
     return validated_instances, errors
 
 
+def _compress_instances(instances: list[Instance]):
+    """Attempt to compress instances and record any errors"""
+    compressed_instances: list[Instance] = []
+    errors: list[tuple[Instance, Exception]] = []
+    for instance in instances:
+        try:
+            instance.compress()
+            compressed_instances.append(instance)
+        except Exception as e:
+            logger.exception(
+                f"Error compressing instance (dicom is likely corrupt): {instance}: {e}"
+            )
+            errors.append((instance, e))
+    return compressed_instances, errors
+
+
 def _handle_new(
     cod_object: "CODObject",
     new_state_changes: list[tuple[Instance, Optional[SeriesMetadata], Optional[str]]],
@@ -426,13 +442,11 @@ def _handle_new(
         [new for new, _, _ in new_state_changes]
     )
     # Step 2: compress instances (if specified)
-    if compress:
-        for instance in validated_instances:
-            instance.compress()
+    compressed_instances, compression_errors = _compress_instances(validated_instances)
 
     # Step 3: create/append to tar
     instances_added_to_tar, tar_errors = _handle_create_tar(
-        cod_object, validated_instances
+        cod_object, compressed_instances
     )
     # Step 4: add to series metadata
     _handle_create_metadata(cod_object, instances_added_to_tar)
@@ -441,7 +455,10 @@ def _handle_new(
         new=append_result.new + instances_added_to_tar,
         same=append_result.same,
         conflict=append_result.conflict,
-        errors=append_result.errors + validation_errors + tar_errors,
+        errors=append_result.errors
+        + validation_errors
+        + tar_errors
+        + compression_errors,
     )
 
 
