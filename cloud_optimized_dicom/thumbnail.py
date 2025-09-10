@@ -176,7 +176,6 @@ def _remove_instances_without_pixeldata(
         if instance.has_pixeldata
     }
     if len(filtered_dict) == 0:
-        metrics.SERIES_MISSING_PIXEL_DATA.inc()
         raise SeriesMissingPixelDataError(
             f"None of the {len(uid_to_instance)} instances have pixel data for cod object {cod_obj}"
         )
@@ -297,6 +296,12 @@ def generate_thumbnail(
         metrics.THUMBNAIL_SUCCESSES.inc()
         metrics.THUMBNAIL_BYTES_PROCESSED.inc(os.path.getsize(thumbnail_path))
         return thumbnail_path
+    except SeriesMissingPixelDataError:
+        metrics.SERIES_MISSING_PIXEL_DATA.inc()
+        logger.warning(
+            f"Could not generate thumbnail for {cod_obj} because it has no pixel data"
+        )
+        return None
     except Exception as e:
         # On exception, increment failure metric, log exception, and re-raise
         metrics.THUMBNAIL_FAILS.inc()
