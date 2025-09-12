@@ -1,4 +1,5 @@
 import dataclasses
+import logging
 import os
 from typing import TYPE_CHECKING, Tuple
 
@@ -7,13 +8,22 @@ import ffmpeg
 import numpy as np
 import pydicom3
 from google.cloud import storage
+from pydicom3.pixels import (
+    apply_color_lut,
+    apply_modality_lut,
+    apply_voi_lut,
+    apply_windowing,
+    convert_color_space,
+)
 
 import cloud_optimized_dicom.metrics as metrics
-from cloud_optimized_dicom.config import logger
+from cloud_optimized_dicom.config import get_child_logger
 from cloud_optimized_dicom.instance import Instance
 
 if TYPE_CHECKING:
     from cloud_optimized_dicom.cod_object import CODObject
+
+logger = get_child_logger("THUMBNAIL")
 
 DEFAULT_FPS = 4
 DEFAULT_QUALITY = 60
@@ -35,52 +45,27 @@ class NoExtractablePixelDataError(ThumbnailError):
 # Utility functions having to do with converting a numpy array of pixel data into jpgs and mp4s
 def _convert_frame_to_jpg(frame: np.ndarray, output_path: str):
     # Normalize and convert frame to uint8
-    frame_uint8 = cv2.normalize(frame, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U)
-    cv2.imwrite(output_path, frame_uint8)
+    cv2.imwrite(output_path, frame)
 
 
 def _convert_frames_to_mp4(
     frames: list[np.ndarray], output_path: str, fps: int = DEFAULT_FPS
 ):
     """Convert `frames` to an mp4 and save to `output_path`"""
-    if not frames:
-        raise ValueError("Frame list is empty.")
+    if len(frames) == 0:
+        raise ValueError("Cannot save frames as mp4 because frame list is empty.")
 
     # Assume all frames are the same shape
     height, width = frames[0].shape[:2]
     if any(frame.shape[:2] != (height, width) for frame in frames):
         raise ValueError("All frames must have the same shape.")
 
-    # if any frames are color, we must write a color video
-    thumbnail_is_color = any(len(frame.shape) > 2 for frame in frames)
-
-    def _process_frame(frame: np.ndarray) -> bytes:
-        """For color thumbnails, convert frame to BGR format. No conversion is necessary for grayscale thumbnails.
-        After formatting, normalize the frame (0-255), set data type to uint8, convert to bytes, and return.
-        """
-        if thumbnail_is_color:
-            if len(frame.shape) == 2:
-                # Convert grayscale frame to BGR
-                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-            elif frame.shape[2] == 3:
-                # Assume frame shape of 3 -> standard RGB
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            elif frame.shape[2] == 4:
-                # Assume frame shape of 4 -> RGBA
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
-        elif len(frame.shape) > 2:
-            # no conversion is necessary for grayscale frames in a grayscale thumbnail
-            raise ValueError(
-                f"Unsupported frame shape for grayscale thumbnail: {frame.shape}"
-            )
-        return cv2.normalize(frame, None, 255, 0, cv2.NORM_MINMAX, cv2.CV_8U).tobytes()
-
     # Create ffmpeg process
     process = (
         ffmpeg.input(
             "pipe:",
             format="rawvideo",
-            pix_fmt="bgr24" if thumbnail_is_color else "gray",
+            pix_fmt="bgr24",
             s=f"{width}x{height}",
             r=fps,
         )
@@ -94,7 +79,7 @@ def _convert_frames_to_mp4(
     try:
         # Write frames to ffmpeg process
         for frame in frames:
-            process.stdin.write(_process_frame(frame))
+            process.stdin.write(frame.tobytes())
         process.stdin.close()
         process.wait()
     except Exception as e:
@@ -102,15 +87,249 @@ def _convert_frames_to_mp4(
         raise RuntimeError(f"Failed to write video: {str(e)}")
 
 
+def _resize(frame: np.ndarray, max_dim=128) -> np.ndarray:
+    """Resize a frame so the longer dimension is `max_dim` and the shorter is proportional"""
+    resize_logger = logger.getChild("RESIZE")
+    height, width = frame.shape[:2]
+    large_size = max(width, height)
+    if large_size == max_dim:
+        resize_logger.debug(f"No resize needed. Longer dimension is already {max_dim}")
+        return frame
+    else:
+        ratio = large_size / max_dim
+        # Note: It"s important to use cv2 here, the numpy resize function returns something that looks like noise
+        # Note: this resize function has backward width and height from numpy arrays for some reason, so this is correct
+        frame = cv2.resize(
+            frame,
+            dsize=(int(width / ratio), int(height / ratio)),
+            interpolation=cv2.INTER_LINEAR,
+        )
+        resize_logger.debug(
+            f"Resized from {height}x{width} to {frame.shape[0]}x{frame.shape[1]}"
+        )
+        return frame
+
+
+def _apply_pydicom_handling(
+    frame: np.ndarray,
+    ds: pydicom3.Dataset,
+    apply_modality=True,
+    apply_voi=True,
+    apply_window=True,
+):
+    """
+    Apply pydicom grayscale transforms in the correct order:
+        1) Modality LUT / Rescale (if requested)
+        2) VOI transform: VOI LUT preferred; else WC/WW (if requested)
+    Skips non-monochrome images.
+    """
+    windowing_logger = logger.getChild("WINDOWING")
+
+    def _apply(func, arr, dataset, **kwargs):
+        # Attempt to apply function
+        try:
+            new_arr = func(arr, dataset, **kwargs)
+        except Exception as e:
+            windowing_logger.exception(f"Function '{func.__name__}' failed: {e}")
+            return arr
+        # Conditional debug logging
+        if windowing_logger.isEnabledFor(logging.DEBUG):
+            old_minmax = (np.min(arr), np.max(arr))
+            new_minmax = (np.min(new_arr), np.max(new_arr))
+            if new_minmax != old_minmax:
+                windowing_logger.debug(
+                    f"Func '{func.__name__}' altered frame min/max: {old_minmax} -> {new_minmax}"
+                )
+            elif not np.array_equal(new_arr, arr):
+                windowing_logger.debug(
+                    f"Func '{func.__name__}' made changes without min/max shift"
+                )
+            else:
+                windowing_logger.debug(f"Func '{func.__name__}' made NO changes")
+        # Return the new array with the function applied
+        return new_arr
+
+    # Extract photometric interpretation
+    phot_interp = ds.get("PhotometricInterpretation").upper().strip()
+    if phot_interp is None:
+        raise ValueError("PhotometricInterpretation not found in dataset")
+
+    # If PALLETE_COLOR, apply color LUT and return
+    if phot_interp == "PALETTE COLOR":
+        windowing_logger.debug("Applying color LUT (PALETTE_COLOR)")
+        frame = _apply(apply_color_lut, frame, ds)
+        return frame
+
+    # If not MONOCHROME1 or MONOCHROME2, skip windowing and return
+    if phot_interp not in ("MONOCHROME1", "MONOCHROME2"):
+        windowing_logger.debug(
+            f"Skipping windowing (non-monochrome PhotometricInterpretation '{phot_interp}')"
+        )
+        return frame
+
+    # First apply modality LUT
+    if apply_modality:
+        frame = _apply(apply_modality_lut, frame, ds)
+
+    # Next apply VOI LUT
+    # Default behavior (if both `apply_voi` and `apply_window` are true): a single call to `apply_voi_lut`
+    # uses VOI LUT if present, otherwise falls back to WC/WW
+    if apply_voi:
+        frame = _apply(apply_voi_lut, frame, ds)
+    # If user asked to skip VOI LUT and do WC/WW only (apply_voi is false and apply_window is true)
+    elif apply_window:
+        frame = _apply(apply_windowing, frame, ds)
+
+    return frame
+
+
+def _normalize_and_convert(
+    frame: np.ndarray, ds: pydicom3.Dataset, invert_monochrome1: bool = True
+) -> np.ndarray:
+    """Performs the following operations in sequence:
+        1) Normalize the frame between 0 and 255
+
+        2) (if `invert_monochrome1=True` and frame is MONOCHROME1) Invert the frame
+
+        3) Convert the frame data type to uint8
+
+    Args:
+        frame: The frame to normalize and convert (np array)
+        ds: The DICOM dataset
+        invert_monochrome1: Whether to invert the frame if MONOCHROME1 (default: `True`)
+
+    Returns:
+        A numpy array of the frame in uint8 format.
+
+    Raises:
+        ValueError: If the frame is blank (i.e. all pixels have the same value).
+    """
+
+    normalize_logger = logger.getChild("NORMALIZE")
+    min, max = np.min(frame), np.max(frame)
+    if min == 0 and max == 255:
+        normalize_logger.debug(
+            "No normalization needed (frame already ranges from 0-255)"
+        )
+        return frame
+    normalize_logger.debug(f"Normalizing frame: ({min},{max}) -> (0,255)")
+    if max == min:
+        raise ValueError(f"Frame is blank (all pixels have value {max})")
+    frame = ((frame - min) / (max - min)) * 255
+    phot_interp = ds.get("PhotometricInterpretation").upper().strip()
+    if phot_interp == "MONOCHROME1" and invert_monochrome1:
+        normalize_logger.debug("Inverting frame (MONOCHROME1)")
+        frame = 255 - frame
+    return frame.astype(np.uint8)
+
+
+def _convert_to_bgr(frame: np.ndarray) -> np.ndarray:
+    """Convert a frame to BGR (what openCV expects).
+    Note: For multi-sample data, we assume the frame is in RGB format, which it should be because pydicom3.iter_pixels converts YBR to RGB.
+
+    Returns:
+        A numpy array of the frame in BGR format.
+
+    Raises:
+        ValueError: If the frame array shape is unexpected.
+    """
+    conversion_logger = logger.getChild("CONVERT_TO_BGR")
+    match len(frame.shape):
+        case 2:
+            conversion_logger.debug("Converting grayscale -> BGR")
+            return cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+        case 3:
+            num_samples = frame.shape[2]
+            if num_samples == 3:
+                conversion_logger.debug("Converting RGB -> BGR")
+                return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            elif num_samples == 4:
+                conversion_logger.debug("Converting RGBA -> BGR")
+                return cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+            else:
+                raise ValueError(
+                    f"Unexpected number of samples for frame: {frame.shape}"
+                )
+        case _:
+            raise ValueError(f"Unexpected frame array shape: {frame.shape}")
+
+
+def _pad(
+    frame: np.ndarray, original_width: int, original_height: int
+) -> Tuple[np.ndarray, dict]:
+    """Pad a frame to make it square.
+
+    Args:
+        frame: The frame to pad (np array)
+        original_width: The width of the original frame
+        original_height: The height of the original frame
+
+    Returns:
+        A numpy array of the frame with padding.
+        A dictionary of anchor points mapping between original and thumbnail coordinates
+
+    Raises:
+        ValueError: If the frame array shape is unexpected.
+    """
+    pad_logger = logger.getChild("PAD")
+    if frame.ndim not in (2, 3):
+        raise ValueError(
+            f"Expected frame to have 2 or 3 dimensions but got {frame.ndim}"
+        )
+    # Extract width and height
+    frame_height, frame_width = frame.shape[:2]
+    # apply padding if frame is not square
+    if frame_width != frame_height:
+        # compute padding
+        max_dim = max(frame_width, frame_height)
+        if max_dim == frame_width:
+            pad_w = (0, 0)
+            total_height_pad = max_dim - frame_height
+            pad_h = (total_height_pad // 2, total_height_pad - total_height_pad // 2)
+            pad_logger.debug(f"Adding top/bottom padding {pad_h[0]}/{pad_h[1]}")
+        else:
+            total_width_pad = max_dim - frame_width
+            pad_w = (total_width_pad // 2, total_width_pad - total_width_pad // 2)
+            pad_h = (0, 0)
+            pad_logger.debug(f"Adding left/right padding {pad_w[0]}/{pad_w[1]}")
+
+        # construct padding array
+        pad = [pad_h, pad_w]
+        if frame.ndim == 3:  # do not pad the samples dimension
+            pad.append((0, 0))
+        # apply padding
+        frame = np.pad(frame, pad, mode="constant", constant_values=0)
+    else:
+        pad_logger.debug(
+            f"No padding needed (frame is already square with side length {frame_width})"
+        )
+        pad_h = (0, 0)
+        pad_w = (0, 0)
+    # compute anchor points
+    y_offset = pad_h[0]
+    x_offset = pad_w[0]
+    scale = original_width / frame_width
+    anchors = {
+        "original_size": {"width": original_width, "height": original_height},
+        "thumbnail_upper_left": {"row": y_offset, "col": x_offset},
+        "thumbnail_bottom_right": {
+            "row": y_offset + frame_height,
+            "col": x_offset + frame_width,
+        },
+        "scale_factor": scale,
+    }
+    return frame, anchors
+
+
 def _generate_thumbnail_frame_and_anchors(
-    pixel_array: np.ndarray, thumbnail_size: int
+    frame: np.ndarray, ds: pydicom3.Dataset, thumbnail_size: int
 ) -> Tuple[np.ndarray, dict]:
     """
-    Given a DICOM pixel array from pydicom.pixels.iter_pixels, create a thumbnail and record
+    Given a DICOM frame (from `pydicom.pixels.iter_pixels`), create a thumbnail and record
     the mapping information between original and thumbnail coordinates.
 
     Args:
-        pixel_array: A numpy array from pydicom.pixels.iter_pixels, either (rows, columns) for
+        frame: A numpy array from `pydicom.pixels.iter_pixels`, either (rows, columns) for
                     single sample data or (rows, columns, samples) for multi-sample data
         thumbnail_size: The size of the thumbnail to generate.
 
@@ -119,51 +338,19 @@ def _generate_thumbnail_frame_and_anchors(
         - The thumbnail as a numpy array (always thumbnail_size x thumbnail_size)
         - A dictionary of anchor points mapping between original and thumbnail coordinates
     """
-    # Get original dimensions
-    height, width = pixel_array.shape[:2]
-
-    # Calculate scaling factor to fit the longer dimension to thumbnail_size
-    scale = thumbnail_size / max(height, width)
-
-    # Calculate new dimensions while maintaining aspect ratio
-    new_height = int(height * scale)
-    new_width = int(width * scale)
-
-    # Resize the image using cv2
-    resized = cv2.resize(
-        pixel_array, (new_width, new_height), interpolation=cv2.INTER_AREA
-    )
-
-    # Create a black square canvas of size thumbnail_size x thumbnail_size
-    if len(pixel_array.shape) == 2:  # Grayscale
-        thumbnail = np.zeros((thumbnail_size, thumbnail_size), dtype=pixel_array.dtype)
-    else:  # Multi-sample (e.g., RGB)
-        thumbnail = np.zeros(
-            (thumbnail_size, thumbnail_size, pixel_array.shape[2]),
-            dtype=pixel_array.dtype,
-        )
-
-    # Calculate position to paste the resized image (centered)
-    y_offset = (thumbnail_size - new_height) // 2
-    x_offset = (thumbnail_size - new_width) // 2
-
-    # Place the resized image in the center of the square
-    thumbnail[y_offset : y_offset + new_height, x_offset : x_offset + new_width] = (
-        resized
-    )
-
-    # Calculate the mapping between original and thumbnail coordinates
-    anchors = {
-        "original_size": {"width": width, "height": height},
-        "thumbnail_upper_left": {"row": y_offset, "col": x_offset},
-        "thumbnail_bottom_right": {
-            "row": y_offset + new_height,
-            "col": x_offset + new_width,
-        },
-        "scale_factor": scale,
-    }
-
-    return thumbnail, anchors
+    height, width = frame.shape[:2]
+    # step 1: resize
+    frame = _resize(frame, max_dim=thumbnail_size)
+    # step 2: apply modality, voi LUT/windowing, color LUT, etc.
+    frame = _apply_pydicom_handling(frame, ds)
+    # step 3: normalize between 0 and 255
+    frame = _normalize_and_convert(frame, ds)
+    # step 4: convert to BGR (what openCV expects)
+    frame = _convert_to_bgr(frame)
+    # step 5: pad to make it square
+    frame, anchors = _pad(frame, original_width=width, original_height=height)
+    # Return result
+    return frame, anchors
 
 
 def _remove_instances_without_pixeldata(
@@ -189,22 +376,25 @@ def _generate_thumbnail_frames(
 ):
     """Iterate through instances and generate thumbnail frames.
 
+    Args:
+        cod_obj: The COD object to generate a thumbnail for.
+        uid_to_instance: A dictionary mapping instance UIDs to instances.
+        thumbnail_size: The size of the thumbnail to generate.
+
     Returns:
         all_frames: list of thumbnail frames, in the form of raw numpy ndarrays
-        thumbnail_instance_metadata: dict mapping instance uids to metadata for all frames in the instance
-        thumbnail_index_to_instance_frame: convenience list mapping thumbnail index to instance uid and frame index
-        (i.e. `thumbnail_index_to_instance_frame[4] = (some_uid, 0)` means the 5th thumbnail frame = 1st frame of instance `some_uid`)
-        thumbnail_size: The size of the thumbnail to generate.
+        thumbnail_metadata: metadata for the thumbnail
     """
     all_frames = []
     thumbnail_instance_metadata = {}
     thumbnail_index_to_instance_frame = []
     for instance_uid, instance in uid_to_instance.items():
         with instance.open() as f:
+            ds = pydicom3.dcmread(f, defer_size=1024)
             instance_frame_metadata = []
-            for instance_frame_index, frame in enumerate(pydicom3.iter_pixels(f)):
+            for instance_frame_index, frame in enumerate(pydicom3.iter_pixels(ds)):
                 thumbnail_frame, anchors = _generate_thumbnail_frame_and_anchors(
-                    frame, thumbnail_size
+                    frame, ds, thumbnail_size
                 )
                 # append thumbnail frame to list of all frames
                 all_frames.append(thumbnail_frame)

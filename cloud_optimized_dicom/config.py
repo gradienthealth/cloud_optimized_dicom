@@ -37,5 +37,9 @@ def debug(debug_on: bool = True, default_handler: bool = True) -> None:
         debugging = False
 
 
+def get_child_logger(name: str):
+    return logger.getChild(name)
+
+
 # by default, we leave the NullHandler in place and set logging to WARNING
 debug(False, False)
