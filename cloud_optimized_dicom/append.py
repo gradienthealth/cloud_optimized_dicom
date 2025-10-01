@@ -1,4 +1,3 @@
-import logging
 import os
 import tarfile
 from typing import TYPE_CHECKING, NamedTuple, Optional
@@ -6,11 +5,12 @@ from typing import TYPE_CHECKING, NamedTuple, Optional
 from ratarmountcore import open as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
+from cloud_optimized_dicom.config import logger
+from cloud_optimized_dicom.errors import HintMismatchError
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.utils import is_remote
 
-logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from cloud_optimized_dicom.cod_object import CODObject
 
@@ -38,15 +38,18 @@ def append(
     treat_metadata_diffs_as_same: bool = False,
     max_instance_size: float = None,
     max_series_size: float = None,
+    compress: bool = True,
 ) -> AppendResult:
     """Append a list of instances to the COD object.
+
     Args:
         cod_object (CODObject): The COD object to append to
         instances (list): list of instances to append
         delete_local_origin (bool): whether to delete instance origin files after successful append (if local, remote origins are never deleted)
         treat_metadata_diffs_as_same (bool): if True, when a diff hash dupe is found, compute & compare the hashes of JUST the pixel data. If they match, treat the dupe as same.
-        max_instance_size (float): maximum size of an instance to append, in gb.
+        max_instance_size (float): maximum size of an instance to append, in gb
         max_series_size (float): maximum size of the series to append, in gb
+        compress (bool): whether to transcode instances to JPEG2000Lossless syntax before appending to tar
     Returns: an AppendResult; a namedtuple with the following fields:
         new (list): list of new instances that were added successfully
         same (list): list of instances that were perfect duplicates of existing instances
@@ -81,7 +84,15 @@ def append(
     if not state_change.new:
         return append_result
     # handle new
-    append_result = _handle_new(cod_object, state_change.new, append_result)
+    append_result = _handle_new(
+        cod_object, state_change.new, append_result, compress=compress
+    )
+    # increment metrics
+    metrics.APPEND_CONFLICTS.inc(len(append_result.conflict))
+    metrics.APPEND_DUPLICATES.inc(len(append_result.same))
+    metrics.APPEND_FAILS.inc(len(append_result.errors))
+    metrics.APPEND_SUCCESSES.inc(len(append_result.new))
+    metrics.TOTAL_FILES_PROCESSED.inc(len(instances))
     metrics.TAR_SUCCESS_COUNTER.inc()
     metrics.TAR_BYTES_PROCESSED.inc(os.path.getsize(cod_object.tar_file_path))
     return append_result
@@ -166,6 +177,16 @@ def _dedupe(
             # handle duplicate instance id case
             if instance_id in instance_id_to_instance:
                 preexisting_instance = instance_id_to_instance[instance_id]
+                # if two instances share a UID AND the same URI, we don't have a duplicate - we have two versions of the same file.
+                # In this case, hints cannot be trusted (which version of the file is more recent?).
+                # Solution: keep the instance in the dict, but throw out the hints.
+                if instance.dicom_uri == preexisting_instance.dicom_uri:
+                    logger.warning(
+                        f"Input contains multiple instances with the same URI: {instance.dicom_uri}. Keeping a single version and throwing out hints"
+                    )
+                    preexisting_instance.remove_hints()
+                    preexisting_instance.validate()
+                    continue
                 if (
                     instance.crc32c(trust_hints_if_available=True)
                     != preexisting_instance.crc32c()
@@ -300,7 +321,6 @@ def _calculate_state_change(
                 and new_instance.get_pixeldata_hash()
                 == existing_instance.get_pixeldata_hash()
             ):
-                metrics.TRUE_DUPE_COUNTER.inc()
                 state_change.same.append(
                     (
                         new_instance,
@@ -310,7 +330,6 @@ def _calculate_state_change(
                 )
             # if the crc32c is different, we have a diff hash duplicate
             else:
-                metrics.DIFFHASH_DUPE_COUNTER.inc()
                 state_change.diff.append(
                     (
                         new_instance,
@@ -378,50 +397,106 @@ def _handle_diff(
     )
 
 
+def _validate_new_instances(instances: list[Instance]):
+    """Validate the instances; if hints are incorrect, we must know or else we risk corrupting the datastore"""
+    validated_instances: list[Instance] = []
+    errors: list[tuple[Instance, Exception]] = []
+    for instance in instances:
+        try:
+            instance.validate()
+            validated_instances.append(instance)
+        except HintMismatchError as e:
+            logger.exception(f"Hint mismatch for instance: {instance}: {e}")
+            errors.append((instance, e))
+        except Exception as e:
+            logger.exception(f"Unexpected error validating instance: {instance}: {e}")
+            errors.append((instance, e))
+    return validated_instances, errors
+
+
+def _compress_instances(instances: list[Instance]):
+    """Attempt to compress instances and record any errors"""
+    compressed_instances: list[Instance] = []
+    errors: list[tuple[Instance, Exception]] = []
+    for instance in instances:
+        try:
+            instance.compress()
+            compressed_instances.append(instance)
+        except Exception as e:
+            logger.exception(
+                f"Error compressing instance (dicom is likely corrupt): {instance}: {e}"
+            )
+            errors.append((instance, e))
+    return compressed_instances, errors
+
+
 def _handle_new(
     cod_object: "CODObject",
     new_state_changes: list[tuple[Instance, Optional[SeriesMetadata], Optional[str]]],
     append_result: AppendResult,
+    compress: bool = True,
 ) -> AppendResult:
     """
-    Create/append to tar & upload; add to series metadata & upload.
+    Compress instances if specified; create/append to tar & upload; add to series metadata & upload.
     Returns:
         updated_append_result
     """
-    instances_added_to_tar = _handle_create_tar(cod_object, new_state_changes)
+    # Step 1: validate new instances (if hints are wrong we throw them out)
+    validated_instances, validation_errors = _validate_new_instances(
+        [new for new, _, _ in new_state_changes]
+    )
+    # Step 2: compress instances (if specified)
+    compressed_instances, compression_errors = _compress_instances(validated_instances)
+
+    if not compressed_instances:
+        logger.warning(
+            "Entire series failed compression/validation; no instances to add to tar"
+        )
+        return AppendResult(
+            new=append_result.new,
+            same=append_result.same,
+            conflict=append_result.conflict,
+            errors=append_result.errors + validation_errors + compression_errors,
+        )
+
+    # Step 3: create/append to tar
+    instances_added_to_tar, tar_errors = _handle_create_tar(
+        cod_object, compressed_instances
+    )
+    # Step 4: add to series metadata
     _handle_create_metadata(cod_object, instances_added_to_tar)
-    # update append result
+    # Step 5: return updated append result
     return AppendResult(
         new=append_result.new + instances_added_to_tar,
         same=append_result.same,
         conflict=append_result.conflict,
-        errors=append_result.errors,
+        errors=append_result.errors
+        + validation_errors
+        + tar_errors
+        + compression_errors,
     )
 
 
 def _handle_create_tar(
     cod_object: "CODObject",
-    new_state_changes: list[tuple[Instance, SeriesMetadata, str]],
-) -> list[Instance]:
+    instances_to_add: list[Instance],
+):
     """
     Create/append to tar + index.sqlite locally
     Returns:
         instances_added_to_tar (list): list of instances that got added to the tar successfully
+        errors (list): list of instance, error tuples that occurred during the tar creation process
     """
     # If a tarball already exists (and this is a clean append), download it (no need to get index, will be recalculated anyways)
     if len(cod_object._metadata.instances) > 0:
         cod_object.pull_tar(dirty=not cod_object.lock)
 
-    instances_added_to_tar = _create_or_append_tar(
-        cod_object, [new for new, _, _ in new_state_changes]
-    )
+    instances_added_to_tar, errors = _create_or_append_tar(cod_object, instances_to_add)
     _create_sqlite_index(cod_object)
-    return instances_added_to_tar
+    return instances_added_to_tar, errors
 
 
-def _create_or_append_tar(
-    cod_object: "CODObject", instances_to_add: list[Instance]
-) -> list[Instance]:
+def _create_or_append_tar(cod_object: "CODObject", instances_to_add: list[Instance]):
     """Create/append to `cod_object.tar_file_path` all instances in `instances_to_add`
 
     Returns:
@@ -432,7 +507,8 @@ def _create_or_append_tar(
     # validate that at least one instance is being added
     assert len(instances_to_add) > 0, "No instances to add to tar"
     # create/append to tar
-    instances_added_to_tar, errors = [], []
+    instances_added_to_tar: list[Instance] = []
+    errors: list[tuple[Instance, Exception]] = []
     with tarfile.open(cod_object.tar_file_path, "a") as tar:
         for instance in instances_to_add:
             try:
@@ -450,7 +526,7 @@ def _create_or_append_tar(
     )
     # tar has been altered, so it is no longer in sync with the datastore
     cod_object._tar_synced = False
-    return instances_added_to_tar
+    return instances_added_to_tar, errors
 
 
 def _create_sqlite_index(cod_object: "CODObject"):

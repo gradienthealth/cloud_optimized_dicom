@@ -1,4 +1,3 @@
-import logging
 import os
 import shutil
 import tarfile
@@ -14,10 +13,12 @@ from ratarmountcore import open as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.append import append
+from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import (
     CODObjectNotFoundError,
     ErrorLogExistsError,
     HashMismatchError,
+    InstanceValidationError,
     TarMissingInstanceError,
     TarValidationError,
 )
@@ -40,8 +41,6 @@ from cloud_optimized_dicom.utils import (
     upload_and_count_file,
 )
 
-logger = logging.getLogger(__name__)
-
 
 class CODObject:
     """
@@ -60,6 +59,7 @@ class CODObject:
         create_if_missing: bool - If `False`, raise an error if series does not yet exist in the datastore.
         temp_dir: str - If a temp_dir with data pertaining to this series already exists, provide it here.
         override_errors: bool - If `True`, delete any existing error.log and upload a new one.
+        empty_lock_override_age: float - If `None`, do not override a stale lock if it exists. If `float`, override a stale lock if it exists and is older than the given age (in hours).
         lock_generation: int - The generation of the lock file. Should only be set if instantiation from serialized cod object.
     """
 
@@ -77,6 +77,7 @@ class CODObject:
         create_if_missing: bool = True,
         temp_dir: str = None,
         override_errors: bool = False,
+        empty_lock_override_age: float = None,
         # fields user should not set
         lock_generation: int = None,
         metadata: SeriesMetadata = None,
@@ -109,7 +110,10 @@ class CODObject:
                 )
         self._locker = CODLocker(self) if lock else None
         if self.lock:
-            self._locker.acquire(create_if_missing=create_if_missing)
+            self._locker.acquire(
+                create_if_missing=create_if_missing,
+                empty_lock_override_age=empty_lock_override_age,
+            )
         else:
             self.get_metadata(create_if_missing=create_if_missing, dirty=True)
         self._tar_synced = _tar_synced
@@ -225,12 +229,7 @@ class CODObject:
             dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
         """
         metadata = self.get_metadata(dirty=dirty)
-        metadata._sort_instances()
-        if not metadata.is_sorted:
-            if strict_sorting:
-                raise ValueError(f"Sorting was unsuccessful, and strict_sorting=True")
-            else:
-                logger.warning(f"Instance dict is unsorted")
+        metadata.sort_instances(strict=strict_sorting)
         return metadata.instances
 
     @public_method
@@ -317,6 +316,7 @@ class CODObject:
         max_instance_size: float = 10,
         max_series_size: float = 100,
         delete_local_origin: bool = False,
+        compress: bool = True,
         dirty: bool = False,
     ):
         """Append a list of instances to the COD object.
@@ -327,6 +327,7 @@ class CODObject:
             max_instance_size: float - The maximum size of an instance to append, in gb.
             max_series_size: float - The maximum size of the series to append, in gb.
             delete_local_origin: bool - If `True`, delete the local origin of the instances after appending.
+            compress: bool - If `True`, transcodes instances to JPEG2000Lossless during append to save space.
             dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
         """
         return append(
@@ -336,6 +337,7 @@ class CODObject:
             treat_metadata_diffs_as_same=treat_metadata_diffs_as_same,
             max_instance_size=max_instance_size,
             max_series_size=max_series_size,
+            compress=compress,
         )
 
     @public_method
@@ -697,30 +699,52 @@ class CODObject:
         for uid, local_path in instance_uid_to_local_path.items():
             self._metadata.instances[uid].dicom_uri = local_path
 
-    def assert_instance_belongs_to_cod_object(self, instance: Instance):
+    def assert_instance_belongs_to_cod_object(
+        self, instance: Instance, trust_hints_if_available: bool = True
+    ):
         """Compare relevant instance study/series UIDS (hashed if uid_hash_func provided, standard if not) to COD object study/series UIDs.
+        By default, we trust hints here, but if trust_hints_if_available is False, we will not trust hints and will use the true UIDs.
 
-        Raises an AssertionError if any of the following are true:
+        Returns:
+            True if the instance belongs to the COD object
+
+        Raises an InstanceValidationError if any of the following are true:
             - CODObject DOES have hashed UIDs but instance does NOT have a uid_hash_func
             - CODObject does NOT have hashed UIDs but instance DOES have a uid_hash_func
             - instance study/series UIDs don't match COD object study/series UIDs
         """
+        # Retrieve relevant Study/Series UIDs based on whether the CODObject has hashed UIDs
         if self.hashed_uids:
-            assert (
-                instance.uid_hash_func
-            ), f"CODObject {self} has hashed UIDs but instance is missing uid_hash_func: {instance}"
-            relevant_study_uid = instance.hashed_study_uid()
-            relevant_series_uid = instance.hashed_series_uid()
+            if not instance.uid_hash_func:
+                raise InstanceValidationError(
+                    f"CODObject {self} has hashed UIDs but instance is missing uid_hash_func: {instance}"
+                )
+            relevant_study_uid = instance.hashed_study_uid(
+                trust_hints_if_available=trust_hints_if_available
+            )
+            relevant_series_uid = instance.hashed_series_uid(
+                trust_hints_if_available=trust_hints_if_available
+            )
         else:
-            assert (
-                not instance.uid_hash_func
-            ), f"CODObject {self} does not have hashed UIDs but instance has uid_hash_func: {instance}"
-            relevant_study_uid = instance.study_uid()
-            relevant_series_uid = instance.series_uid()
-        assert (
-            relevant_study_uid == self.study_uid
-            and relevant_series_uid == self.series_uid
-        ), f"Instance {instance} does not belong to COD object {self}"
+            if instance.uid_hash_func:
+                raise InstanceValidationError(
+                    f"CODObject {self} does not have hashed UIDs but instance has uid_hash_func: {instance}"
+                )
+            relevant_study_uid = instance.study_uid(
+                trust_hints_if_available=trust_hints_if_available
+            )
+            relevant_series_uid = instance.series_uid(
+                trust_hints_if_available=trust_hints_if_available
+            )
+        # Compare the retrieved UIDs with the CODObject's UIDs
+        if (
+            relevant_study_uid != self.study_uid
+            or relevant_series_uid != self.series_uid
+        ):
+            raise InstanceValidationError(
+                f"Instance {instance} does not belong to COD object {self}"
+            )
+        return True
 
     # Serialization methods
     def serialize(self) -> dict:

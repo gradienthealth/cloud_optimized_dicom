@@ -9,11 +9,17 @@ import pydicom3.encaps
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 
+from cloud_optimized_dicom import config
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.tests.test_hashed_uids import example_hash_function
-from cloud_optimized_dicom.thumbnail import DEFAULT_SIZE, ThumbnailCoordConverter
+from cloud_optimized_dicom.thumbnail import (
+    DEFAULT_SIZE,
+    ThumbnailCoordConverter,
+    _convert_frame_to_jpg,
+    _convert_frames_to_mp4,
+)
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 
@@ -42,6 +48,7 @@ def validate_thumbnail(
     expected_frame_count: int,
     expected_frame_size: tuple[int, int] = (DEFAULT_SIZE, DEFAULT_SIZE),
     dirty: bool = True,
+    save_thumbnail: bool = False,
 ):
     testcls.assertTrue(
         len(thumbnail.shape) == 3 or len(thumbnail.shape) == 4,
@@ -94,6 +101,16 @@ def validate_thumbnail(
     )
     testcls.assertAlmostEqual(recovered_point[0], test_point[0])
     testcls.assertAlmostEqual(recovered_point[1], test_point[1])
+    # save the thumbnail if requested
+    if save_thumbnail:
+        if num_frames == 1:
+            _convert_frame_to_jpg(
+                thumbnail, os.path.join(testcls.test_data_dir, f"thumbnail.jpg")
+            )
+        else:
+            _convert_frames_to_mp4(
+                thumbnail, os.path.join(testcls.test_data_dir, f"thumbnail.mp4")
+            )
 
 
 class TestThumbnail(unittest.TestCase):

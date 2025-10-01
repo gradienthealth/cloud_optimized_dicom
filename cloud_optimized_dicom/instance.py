@@ -1,4 +1,3 @@
-import logging
 import os
 import tarfile
 import tempfile
@@ -7,10 +6,12 @@ from datetime import datetime
 from typing import Callable, Optional
 
 import pydicom3
+import pydicom3.uid
 from ratarmountcore import open as rmc_open
 from smart_open import open as smart_open
 
 import cloud_optimized_dicom.metrics as metrics
+from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.utils import (
@@ -23,8 +24,6 @@ from cloud_optimized_dicom.utils import (
     parse_uids_from_metadata,
 )
 from cloud_optimized_dicom.virtual_file import VirtualFile
-
-logger = logging.getLogger(__name__)
 
 TAR_IDENTIFIER = ".tar://"
 ZIP_IDENTIFIER = ".zip://"
@@ -130,7 +129,7 @@ class Instance:
         Returns:
             bool - True if the instance is valid
         Raises:
-            AssertionError if the instance is invalid.
+            HintMismatchError if the instance is invalid.
         """
         # populate all true values
         with self.open() as f:
@@ -309,6 +308,48 @@ class Instance:
         start, stop = self._byte_offsets[0], self._byte_offsets[1] + 1
         return VirtualFile(master_file_pointer, start, stop)
 
+    def compress(self, syntax: pydicom3.uid.UID = pydicom3.uid.JPEG2000Lossless):
+        """Compress the instance to the given syntax. Fails if used prior to fetching, or if the local instance is nested in a tar.
+
+        Args:
+            syntax: pydicom3.uid.UID to transcode to. Defaults to JPEG2000Lossless.
+        """
+        if self.is_nested_in_tar or is_remote(self.dicom_uri):
+            raise ValueError(
+                f"Attemtped to transcode an instance that is nested in a tar or is remote (unsupported): {self}"
+            )
+        if not self.has_pixeldata:
+            logger.info(f"Skipping transcode ({self} has no pixeldata to transcode)")
+            return
+
+        # open the original instance
+        with self.open() as f:
+            # read the instance
+            with pydicom3.dcmread(f, defer_size=1024) as ds:
+                if ds.file_meta.TransferSyntaxUID.is_compressed:
+                    logger.info(f"Skipping transcode ({self} is already compressed)")
+                    return
+                ds.compress(syntax)
+                # make a new temp file to write the transcoded instance to
+                with tempfile.NamedTemporaryFile(
+                    suffix=".dcm", delete=False
+                ) as temp_file:
+                    ds.save_as(temp_file.name)
+                    # if we were tracking a temp file, delete it
+                    if self._temp_file_path:
+                        # delete the old temp file (obsolete)
+                        os.remove(self._temp_file_path)
+                    # both temp file and dicom_uri point to the new temp file
+                    self.dicom_uri = temp_file.name
+                    self._temp_file_path = temp_file.name
+                    # old size, crc32c (and hints) are now invalid
+                    self.hints.crc32c = None
+                    self.hints.size = None
+                    self._size = None
+                    self._crc32c = None
+                    # call validate to recalculate these fields
+                    self.validate()
+
     def append_to_series_tar(
         self,
         tar: tarfile.TarFile,
@@ -464,6 +505,7 @@ class Instance:
                 continue
         # We don't want to spend GET requests to calculate exact deleted size. Instead we estimate with instance size
         metrics.BYTES_DELETED_COUNTER.inc(self.size())
+        metrics.NUM_FILES_DELETED.inc()
         return deleted_dependencies
 
     def append_diff_hash_dupe(self, duplicate_path: str) -> bool:
@@ -484,6 +526,10 @@ class Instance:
         self._diff_hash_dupe_paths.append(duplicate_path)
         self._modified_datetime = datetime.now().isoformat()
         return True
+
+    def remove_hints(self):
+        """Throw out the instance's hints, setting its Hints object to be empty."""
+        self.hints = Hints()
 
     def to_cod_dict_v1(self):
         """Convert this instance to a dict in accordance with the COD Metadata v1.0 spec"""
@@ -555,18 +601,6 @@ class Instance:
         Custom destructor that calls self.cleanup()
         """
         self.cleanup()
-
-    def __hash__(self):
-        """Make Instance hashable based on its unique identifiers."""
-        # Use a tuple of the UIDs as the basis for the hash
-        # We use trust_hints_if_available=True to avoid unnecessary validation
-        return hash(
-            (
-                self.instance_uid(trust_hints_if_available=True),
-                self.series_uid(trust_hints_if_available=True),
-                self.study_uid(trust_hints_if_available=True),
-            )
-        )
 
     def __eq__(self, other):
         """We say that two instances are equal if they have the same UIDs."""

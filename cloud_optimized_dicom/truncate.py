@@ -1,19 +1,12 @@
 import os
 from typing import TYPE_CHECKING
 
-from cloud_optimized_dicom.append import (
-    AppendResult,
-    _create_or_append_tar,
-    _handle_create_metadata,
-)
+from cloud_optimized_dicom.append import AppendResult
+from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.instance import Instance
 
 if TYPE_CHECKING:
     from cloud_optimized_dicom.cod_object import CODObject
-
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 def _skip_missing_instances(

@@ -1,4 +1,3 @@
-import logging
 from typing import Generator, Tuple
 
 import pydicom3
@@ -6,8 +5,7 @@ import pydicom3.errors
 import pydicom3.filebase
 import pydicom3.tag
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+from cloud_optimized_dicom.config import logger
 
 ITEM_TAG_PLUS_ITEM_LENGTH_SIZE = 8
 FRAGMENT_PADDING = 8

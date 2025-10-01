@@ -1,4 +1,3 @@
-import logging
 from itertools import groupby
 from typing import Callable, Iterator
 
@@ -6,11 +5,10 @@ from google.api_core.exceptions import NotFound
 from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
+from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import LockAcquisitionError
 from cloud_optimized_dicom.instance import Hints, Instance
 from cloud_optimized_dicom.metrics import INSTANCES_NOT_FOUND
-
-logger = logging.getLogger(__name__)
 
 SERIES_RATIO_WARNING_THRESHOLD = 0.5
 
@@ -120,7 +118,7 @@ def instances_to_codobj_tuples(
     client: storage.Client,
     instances: list[Instance],
     datastore_path: str,
-    validate_datastore_path: bool = True,
+    empty_lock_override_age: float = None,
     lock: bool = True,
 ) -> Iterator[tuple[CODObject, list[Instance]]]:
     """Group instances by study/series, make codobjects, and yield (codobj, instances) pairs"""
@@ -160,11 +158,12 @@ def instances_to_codobj_tuples(
                 series_uid=series_uid,
                 lock=lock,
                 hashed_uids=hashed_uids,
+                empty_lock_override_age=empty_lock_override_age,
             )
             num_series += 1
             yield (cod_obj, instances_list)
         except LockAcquisitionError as e:
-            logger.warning(
+            logger.exception(
                 f"COD:LOCK:ACQUISITION_FAILED:STUDY:{study_uid}:SERIES:{series_uid}:{e}"
             )
         except Exception as e:
