@@ -1,5 +1,7 @@
 import logging
 
+import pydicom3
+
 logger = logging.getLogger("cloud_optimized_dicom")
 logger.addHandler(logging.NullHandler())
 
@@ -43,3 +45,9 @@ def get_child_logger(name: str):
 
 # by default, we leave the NullHandler in place and set logging to WARNING
 debug(False, False)
+
+# To maximize compatibility we set pydicom3.config.convert_wrong_length_to_UN = True by default
+# Pydicom's default behavior (False) is to raise an error when attempting to read a DICOM file with a weird/bad private tag
+# The design philosophy of COD is to "ingest everything we can", which includes such technically invalid DICOM files
+# If a user wants to be more strict, they can set pydicom3.config.convert_wrong_length_to_UN = False
+pydicom3.config.convert_wrong_length_to_UN = True
