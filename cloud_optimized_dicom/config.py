@@ -47,7 +47,7 @@ def get_child_logger(name: str):
 debug(False, False)
 
 # To maximize compatibility we set pydicom3.config.convert_wrong_length_to_UN = True by default
-# By default when it is False, attempting to read a DICOM file with a weird/bad private tag will raise an error
+# Pydicom's default behavior (False) is to raise an error when attempting to read a DICOM file with a weird/bad private tag
 # The design philosophy of COD is to "ingest everything we can", which includes such technically invalid DICOM files
 # If a user wants to be more strict, they can set pydicom3.config.convert_wrong_length_to_UN = False
 pydicom3.config.convert_wrong_length_to_UN = True
