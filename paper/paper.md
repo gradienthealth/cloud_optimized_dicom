@@ -52,19 +52,19 @@ can be quite expensive if data is stored in raw instance-level DICOM files (see 
 
 ## Data Structure
 We propose a novel data structure for storing DICOM data at scale, consisting of the following series-level files:
-### `{series_uid}.tar`
+### {series_uid}.tar
 A tar file that contains every instance DICOM P10 file for a given series.
-### `{series_uid}/metadata.json`
+### {series_uid}/metadata.json
 A JSON file that contains DICOM tags for each instance along with additional metadata.
 This file is gzip-compressed to save space.
 To avoid costly and unnecessary storage redundancy,
 the contents of "bulk tags" that are larger than 1024 bytes (i.e. PixelData) are omitted from this JSON file.
-### `{series_uid}/index.sqlite`
+### {series_uid}/index.sqlite
 An index used by the `Ratarmount` package [@ratarmount] 
 to efficiently retrieve individual instances from the tar without indexing the whole thing.
 This file is used by the COD library to improve retrieval performance but is not required for reading;
 COD tar files can of course be extracted and read like any other tar file.
-### `{series_uid}/thumbnail.{mp4|jpg}`
+### {series_uid}/thumbnail.{mp4|jpg}
 An (optional) small thumbnail containing each frame in the series with a default size of 128x128 pixels.
 
 The overall file structure is modeled after the DICOMWEB spec, 
@@ -222,3 +222,6 @@ Averaging these three datasets, we estimate COD's ingestion cost per GB as $0.00
 and the ingestion cost per thousand files as $0.0145.
 
 Note: to compute these benchmarks COD ingestion was run in GCloud dataflow in `COST_OPTIMIZED` mode with machine type `t2a-standard-1`.
+
+## Acknowledgements
+The authors would like to thank Dr. Mark Palmeri, Dr. Gordon Harris, and Bill Wallace for their time and attention in reviewing this paper.
