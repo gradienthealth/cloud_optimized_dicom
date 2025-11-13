@@ -27,10 +27,12 @@ and retrieving DICOM files in the cloud in a cost-optimal way.
 It is designed to be a cheaper, more intuitive substitute for current DICOM file storage methods common in the healthcare industry,
 which range from proprietary implementations like GCloud for Healthcare to simply dumping raw files in a storage bucket.
 
-COD is not intended to replace PACs-server backends, as they have their own robust systems for managing medical data.
+COD is not intended to replace PACS (Picture Archiving and Communication System) backends,
+as they have their own robust systems for managing medical data.
+COD is more analogous to a PACS/VNA (Vendor Neutral Archive) storage format than a full PACS implementation.
 
 Instead, COD is specifically targeted to use cases involving storing and subsequently retrieving large quantities of actual DICOM files 
-(perhaps materialized from a PACs server). 
+(perhaps materialized from a PACS server).
 
 COD's main selling point is dramatic reduction in retrieval cost in comparison to raw instance-level DICOM file storage.
 Training AI models is likely the most common use case for such retrieval, 
