@@ -52,11 +52,20 @@ can be quite expensive if data is stored in raw instance-level DICOM files (see 
 
 ## Data Structure
 We propose a novel data structure for storing DICOM data at scale, consisting of the following series-level files:
-- `{series_uid}.tar`: contains all instance.dcm files for this series
-- `{series_uid}/metadata.json`: contains all DICOM tags for each instance, along with additional metadata
-- `{series_uid}/index.sqlite`: an index used by the `Ratarmount` package [@ratarmount] 
-to efficiently retrieve individual instances from the tar without indexing the whole thing
-- `{series_uid}/thumbnail.{mp4|jpg}`: (optional) a small thumbnail containing each frame in the series
+### `{series_uid}.tar`
+A tar file that contains every instance DICOM P10 file for a given series.
+### `{series_uid}/metadata.json`
+A JSON file that contains DICOM tags for each instance along with additional metadata.
+This file is gzip-compressed to save space.
+To avoid costly and unnecessary storage redundancy,
+the contents of "bulk tags" that are larger than 1024 bytes (i.e. PixelData) are omitted from this JSON file.
+### `{series_uid}/index.sqlite`
+An index used by the `Ratarmount` package [@ratarmount] 
+to efficiently retrieve individual instances from the tar without indexing the whole thing.
+This file is used by the COD library to improve retrieval performance but is not required for reading;
+COD tar files can of course be extracted and read like any other tar file.
+### `{series_uid}/thumbnail.{mp4|jpg}`
+An (optional) small thumbnail containing each frame in the series with a default size of 128x128 pixels.
 
 The overall file structure is modeled after the DICOMWEB spec, 
 i.e. an instance can be found at `studies/{study_uid}/series/{series_uid}.tar://instances/{instance_uid}.dcm`.
@@ -95,22 +104,32 @@ Note: In the edge case where $i \leq 3$ (your series have 3 or fewer instances o
 the cost of COD retrieval meets or exceeds the cost of raw retrieval. 
 This is overwhelmingly unlikely in practice, however.
 
-## Compression vs. Random Access: why `.tar` and not `.tar.gz`
-The shrewd observer might point out that COD could easily compress its tar files to save additional storage space.
-While this is true, the compression ratios on COD tars are almost always marginal (<1.1) because the vast majority of data in the tars
-is image data, which is already compressed. 
+## Frame-level Random Access: The Benefit of Leaving Series-Tars Uncompressed
+A shrewd observer might point out that COD could easily compress its tar files to save additional storage space.
+While this is true, the compression ratios on COD tars are almost always marginal (<1.1)
+because the vast majority of data in the tars is image data, which is already compressed. 
+In fact, in the event that a DICOM file with uncompressed image data is added to a COD series, 
+COD's default behavior is to apply JPEG2000Lossless compression to save space.
 
-In the event that a DICOM file with uncompressed image data is added to a COD series, 
-by default COD will apply JPEG2000Lossless compression to save space.
+The main benefit of leaving COD tars uncompressed is that it enables efficient frame-level random access.
+Say a user wanted to train an AI model on the middle slice of CT scans across 100 million series.
+If COD used any form of series-level compression, 
+each whole series would have to be fetched and decompressed just to retrieve these middle slices.
 
-The main benefit of leaving COD tars uncompressed is that it enables random access.
-Say a user wants to view a specific instance in a DICOM web viewer.
-If COD used compressed tar files, the only way to accomplish this would be to fetch the entire tar, 
-decompress it, extract it, and then load the requested DICOM file.
-Instead, COD stores the `start_byte` and `end_byte` of each DICOM file within the tar in it's metadata. 
-Therefore, using Google's download by byte range functionality [@gcs_byte_range_download],
-the user can download only the instance of interest directly into a DICOM file without having to fetch the entire series.
-In this way, COD is optimized for bulk data storage and retrieval at the series level but also efficiently supports instance level use cases.
+It would be theoretically possible to implement "instance-level random access" if COD archives were compressed
+(by fetching an instance file's compressed byte range and decompressing).
+However, because CT scans are often encoded as large multiframe DICOM P10 files, in the "middle-slice" use case
+the overwhelming majority of bytes fetched using such a method would be unused,
+posing significant cost and performance concerns.
+Using a library like restic [@restic] would have similar issues, as a full data chunk must be downloaded to access the data of interest.
+
+By keeping the series-level tars uncompressed it is possible to determine byte-ranges in the tar corresponding to each individual frame
+and fetch just the requested frames.
+COD enables this by storing the `start_byte` and `end_byte` of each DICOM file within the tar in it's metadata,
+as well as a multiframe offset table.
+Using this information, a range-read request can be made to download only the frame(s) of interest directly
+without having to fetch the entire instance (or series).
+In this way, COD is optimized for bulk data storage and retrieval at the series level but also efficiently supports frame-level use cases.
 
 ## Other solutions
 ### Multiframe DICOM files
@@ -178,7 +197,7 @@ Because COD preserves the underlying DICOM data, it only requires data to be un-
 which is a very common interface that would never require driver installation or custom code handling.
 
 COD also holds the advantage in robustness and diagnosability.
-Should a file be corrupted, the format which was provided can be easily inspected within the `.tar` file. 
+Should a file be corrupted, the format which was provided can be easily inspected within the `.tar` file.
 Furthermore, should either the `index.sqlite` or `metadata.json` become corrupted, they can be reformed from the `.tar` itself.
 
 ## Migrating existing DICOM storage to COD
