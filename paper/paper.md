@@ -27,18 +27,12 @@ and retrieving DICOM files in the cloud in a cost-optimal way.
 It is designed to be a cheaper, more intuitive substitute for current DICOM file storage methods common in the healthcare industry,
 which range from proprietary implementations like GCloud for Healthcare to simply dumping raw files in a storage bucket.
 
-COD is not intended to replace PACS (Picture Archiving and Communication System) backends,
-as they have their own robust systems for managing medical data.
-COD is more analogous to a PACS/VNA (Vendor Neutral Archive) storage format than a full PACS implementation.
-
-Instead, COD is specifically targeted to use cases involving storing and subsequently retrieving large quantities of actual DICOM files 
-(perhaps materialized from a PACS server).
+COD is a cloud blob first data storage layer which can be interfaced to work with common PACS / VNA DICOM endpoints.
+COD is specifically targeted to use cases involving storing and subsequently retrieving large quantities (daily TBs) of DICOM files.
 
 COD's main selling point is dramatic reduction in retrieval cost in comparison to raw instance-level DICOM file storage.
-Training AI models is likely the most common use case for such retrieval, 
-but any use case involving retrieving a large DICOM dataset from cloud storage is where COD shines.
-COD's retrieval savings scales linearly with the average number of instances per series in the dataset;
-the more instances in a series, the more money COD saves.
+Training AI models is anticipated as the most common use case for such retrieval, 
+but any use case involving retrieving a large DICOM dataset, such as AI training or Data Migration is where COD shines.
 
 # Statement of need
 
@@ -54,20 +48,20 @@ can be quite expensive if data is stored in raw instance-level DICOM files (see 
 
 ## Data Structure
 We propose a novel data structure for storing DICOM data at scale, consisting of the following series-level files:
-### {series_uid}.tar
+> ```{series_uid}.tar```
 A tar file that contains every instance DICOM P10 file for a given series.
-### {series_uid}/metadata.json
+> {series_uid}/metadata.json
 A JSON file that contains DICOM tags for each instance along with additional metadata.
 This file is gzip-compressed to save space.
 To avoid costly and unnecessary storage redundancy,
 the contents of "bulk tags" that are larger than 1024 bytes (i.e. PixelData) are omitted from this JSON file.
-### {series_uid}/index.sqlite
+> ```{series_uid}/index.sqlite```
 An index used by the `Ratarmount` package [@ratarmount] 
 to efficiently retrieve individual instances from the tar without indexing the whole thing.
 This file is used by the COD library to improve retrieval performance but is not required for reading;
 COD tar files can of course be extracted and read like any other tar file.
-### {series_uid}/thumbnail.{mp4|jpg}
-An (optional) small thumbnail containing each frame in the series with a default size of 128x128 pixels.
+> ```{series_uid}/thumbnail.{mp4|jpg}```
+An (optional) small lossy thumbnail containing each frame in the series with a default size of 128x128 pixels.
 
 The overall file structure is modeled after the DICOMWEB spec, 
 i.e. an instance can be found at `studies/{study_uid}/series/{series_uid}.tar://instances/{instance_uid}.dcm`.
@@ -154,12 +148,7 @@ This presents the potential for a "sharding" solution.
 Intelerad [@intelerad] is a proprietary implementation of this - 
 metadata is stored in a `.dcm` file, but pixel data is stored separately in an image file (`.jpg`, `.j2c`, etc.).
 
-Intelerad designed their system for actual disk architectures, where sharding does in fact provide performance/cost benefits
-when metadata and image data have different access rates.
-Unfortunately, in the context of image data retrieval in a blob storage architecture like GCS, sharding does not offer any cost savings.
-This is because because there is no reduction in retrieved file count.
-Consider again the Retrieval Cost Savings Example with Intelerad sharding;
-instead of retrieving 1 billion `.dcm` files we would instead retrieve 1 billion `.jpg` files, which would have identical cost.
+This approach requires reconstructing the dicom P10 which requires server middleware logic. In our case, we wanted the ability to call cloud blobs directly in a serverless approach to download dicom P10s directly. Metadata is still avaliable via the metadata.json files generated per series.
 
 ### Proprietary Implementations: GCloud & AWS for Healthcare
 Cloud providers have recognized the demand for and created their own healthcare data storage solutions.
@@ -193,7 +182,7 @@ The main selling point is scalability - there can be petabytes of cloud stored d
 but it simply is not feasible to have SSDs at the petabyte level for a single GPU cluster.
 
 While JuiceFS or a similar technology would indeed be an effective way to store and retrieve large quantities of DICOM files, 
-it lacks COD's DICOM-specific convenience features (like `get_series_uid()`, for example).
+it would require a server middleware to properly interface and directly DICOM blob downloads could not occur in a serverless manner. 
 
 Because COD preserves the underlying DICOM data, it only requires data to be un-tarred, 
 which is a very common interface that would never require driver installation or custom code handling.
@@ -212,7 +201,7 @@ All that is required is a data processing pipeline that:
 4. Calls COD's append() and sync() methods to populate the relevant COD tar file 
 
 ## Benchmarks
-Below is a table outlining the performance and cost savings of COD on various test datasets.
+Below is a table outlining the performance and cost savings of processing COD on various test datasets. These figures only capture processing costs into COD format and not monthly storage costs.
 
 | Dataset                          | Size (GB) | Num Files  | Total Cost ($)  | $ / GB  | $ / 1k files  |
 |----------------------------------|-----------|------------|-----------------|---------|---------------|
