@@ -85,3 +85,12 @@ compression_skipped_already_compressed = Metrics.counter(
 compression_performed = Metrics.counter(
     COMPRESSION_NAMESPACE, "compression_performed"
 )
+
+# validation metrics
+VALIDATION_NAMESPACE = f"{NAMESPACE}:validation"
+crc32c_hint_used = Metrics.counter(
+    VALIDATION_NAMESPACE, "crc32c_hint_used"
+)
+crc32c_computed = Metrics.counter(
+    VALIDATION_NAMESPACE, "crc32c_computed"
+)

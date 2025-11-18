@@ -187,8 +187,10 @@ class Instance:
         Getter for self._crc32c. Populates by calling self.validate() if necessary.
         """
         if trust_hints_if_available and self.hints.crc32c is not None:
+            metrics.crc32c_hint_used.inc()
             return self.hints.crc32c
         if self._crc32c is None:
+            metrics.crc32c_computed.inc()
             self.validate()
         return self._crc32c
 
