@@ -73,3 +73,15 @@ THUMBNAIL_FAILS = Metrics.counter(THUMBNAIL_NAMESPACE, "thumbnail_fails")
 THUMBNAIL_BYTES_PROCESSED = Metrics.counter(
     THUMBNAIL_NAMESPACE, "thumbnail_bytes_processed"
 )
+
+# compression metrics
+COMPRESSION_NAMESPACE = f"{NAMESPACE}:compression"
+compression_skipped_already_target = Metrics.counter(
+    COMPRESSION_NAMESPACE, "skipped_already_target_syntax"
+)
+compression_skipped_already_compressed = Metrics.counter(
+    COMPRESSION_NAMESPACE, "skipped_already_compressed"
+)
+compression_performed = Metrics.counter(
+    COMPRESSION_NAMESPACE, "compression_performed"
+)

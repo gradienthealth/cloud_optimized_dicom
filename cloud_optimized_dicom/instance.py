@@ -326,9 +326,30 @@ class Instance:
         with self.open() as f:
             # read the instance
             with pydicom3.dcmread(f, defer_size=1024) as ds:
-                if ds.file_meta.TransferSyntaxUID.is_compressed:
-                    logger.info(f"Skipping transcode ({self} is already compressed)")
+                current_syntax = ds.file_meta.TransferSyntaxUID
+
+                # Skip if already in target syntax
+                if current_syntax == syntax:
+                    logger.info(
+                        f"Skipping transcode ({self} is already in target syntax: {syntax.name})"
+                    )
+                    metrics.compression_skipped_already_target.inc()
                     return
+
+                # Skip if already compressed (to avoid decompression + recompression)
+                if current_syntax.is_compressed:
+                    logger.info(
+                        f"Skipping transcode ({self} is already compressed with {current_syntax.name}, "
+                        f"avoiding decompression+recompression to {syntax.name})"
+                    )
+                    metrics.compression_skipped_already_compressed.inc()
+                    return
+
+                # Actually perform compression
+                logger.info(
+                    f"Compressing {self} from {current_syntax.name} to {syntax.name}"
+                )
+                metrics.compression_performed.inc()
                 ds.compress(syntax)
                 # make a new temp file to write the transcoded instance to
                 with tempfile.NamedTemporaryFile(
