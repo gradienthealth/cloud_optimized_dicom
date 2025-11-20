@@ -32,7 +32,7 @@ COD is specifically targeted to use cases involving storing and subsequently ret
 
 COD's main selling point is dramatic reduction in retrieval cost in comparison to raw instance-level DICOM file storage.
 Training AI models is anticipated as the most common use case for such retrieval, 
-but any use case involving retrieving a large DICOM dataset, such as AI training or Data Migration is where COD shines.
+but any scenario involving retrieving a large DICOM dataset is where COD shines.
 
 # Statement of need
 
@@ -47,10 +47,10 @@ so operations that require retrieving large quantities of DICOM data from a buck
 can be quite expensive if data is stored in raw instance-level DICOM files (see example below).
 
 ## Data Structure
-We propose a novel data structure for storing DICOM data at scale, consisting of the following series-level files:
+COD introduces a novel data structure for storing DICOM data at scale consisting of the following series-level files:
 > ```{series_uid}.tar```
 A tar file that contains every instance DICOM P10 file for a given series.
-> {series_uid}/metadata.json
+> ```{series_uid}/metadata.json```
 A JSON file that contains DICOM tags for each instance along with additional metadata.
 This file is gzip-compressed to save space.
 To avoid costly and unnecessary storage redundancy,
@@ -74,14 +74,17 @@ and use a user-provided hash function to de-identify the UIDs in the URI and met
 
 ## Retrieval Cost Savings Example
 
-Consider a scenario where you are trying to train an AI model on a dataset of $n$ CT studies.
-For simplicity, let us say that each study consists of a single series with $i$ slices (or instances).
+Consider a scenario where a user is trying to train an AI model on a dataset of $n$ CT studies.
+For simplicity, say that each study consists of a single series with $i$ slices (or instances).
 In order to do this training the entire dataset must be retrieved (every single slice).
 In standard (non-multiframe) DICOM, each of these slices will be stored in its own `.dcm` file, for a total of $i \times n$ files.
 Therefore, retrieving all of these raw files would cost $i \times n \times g$, 
-where $g$ is the amount your cloud provider charges per GET request.
+where $g$ is the cost per GET request charged by the user's cloud provider.
 
-With COD, DICOM files are grouped into series-level tar files. 
+While cloud providers also charge by the GB for egress in addition to by request,
+the total size difference between COD and raw data storage is negligible and is therefore omitted from these calculations.
+
+With COD, DICOM files are grouped into series-level tar files.
 Regardless of how many instances/frames are in a series, it costs a fixed 3 GET requests
 to retrieve a series (one each for the `tar`, the `metadata.json`, and the `index.sqlite`).
 
@@ -91,10 +94,7 @@ we instead retrieve $n$ COD objects (for a total of $3 \times n$ GETs).
 This results in a cost savings of $1 - \frac{3n}{in} = 1 - \frac{3}{i}$ per retrieval of the dataset.
 
 Since our example involves CT studies, which commonly have $i=100$ or more instances per study,
-we can estimate a cost savings of $1 - \frac{3}{100} = 0.97 \rightarrow 97\%$.
-
-While cloud providers also charge by the GB for egress in addition to by request,
-the total size difference between COD and raw data storage is negligible and is therefore omitted from these calculations.
+we can estimate a GET-request cost savings of $1 - \frac{3}{100} = 0.97 \rightarrow 97\%$.
 
 Note: In the edge case where $i \leq 3$ (your series have 3 or fewer instances on average),
 the cost of COD retrieval meets or exceeds the cost of raw retrieval. 
@@ -102,14 +102,14 @@ This is overwhelmingly unlikely in practice, however.
 
 ## Frame-level Random Access: The Benefit of Leaving Series-Tars Uncompressed
 A shrewd observer might point out that COD could easily compress its tar files to save additional storage space.
-While this is true, the compression ratios on COD tars are almost always marginal (<1.1)
+While this is true, the compression ratios on COD tars are almost always marginal (< 1.1)
 because the vast majority of data in the tars is image data, which is already compressed. 
 In fact, in the event that a DICOM file with uncompressed image data is added to a COD series, 
 COD's default behavior is to apply JPEG2000Lossless compression to save space.
 
 The main benefit of leaving COD tars uncompressed is that it enables efficient frame-level random access.
 Say a user wanted to train an AI model on the middle slice of CT scans across 100 million series.
-If COD used any form of series-level compression, 
+If COD used any form of series-level compression,
 each whole series would have to be fetched and decompressed just to retrieve these middle slices.
 
 It would be theoretically possible to implement "instance-level random access" if COD archives were compressed
@@ -137,9 +137,9 @@ Manipulating raw data into a multiframe introduces another layer where something
 In contrast, COD does not alter the original data - the philosophy being "the less you touch it, the better".
 
 The tradeoff is that write operations are heavier and more expensive,
-but the main use case for DICOM is retrieval (not editing), which is why we believe this tradeoff is worth it.
+but this does not outweigh COD's benefits given that COD's main use case is retrieval (not editing).
 
-Our format is also more easily extensible than a multiframe DICOM, allowing for custom metadata fields
+The COD format is also more easily extensible than multiframe DICOM, allowing for custom metadata fields
 and even additional series level files like thumbnails (for which COD provides explicit support).
 
 ### Sharding (Intelerad)
@@ -148,7 +148,9 @@ This presents the potential for a "sharding" solution.
 Intelerad [@intelerad] is a proprietary implementation of this - 
 metadata is stored in a `.dcm` file, but pixel data is stored separately in an image file (`.jpg`, `.j2c`, etc.).
 
-This approach requires reconstructing the dicom P10 which requires server middleware logic. In our case, we wanted the ability to call cloud blobs directly in a serverless approach to download dicom P10s directly. Metadata is still avaliable via the metadata.json files generated per series.
+This approach requires reconstructing the DICOM P10, which requires server middleware logic.
+In Gradient's case, a serverless approach enabling the direct download of DICOM P10s from cloud blobs was desired for improved cost and efficiency.
+Metadata is still available via the `metadata.json` files generated per series.
 
 ### Proprietary Implementations: GCloud & AWS for Healthcare
 Cloud providers have recognized the demand for and created their own healthcare data storage solutions.
@@ -182,7 +184,7 @@ The main selling point is scalability - there can be petabytes of cloud stored d
 but it simply is not feasible to have SSDs at the petabyte level for a single GPU cluster.
 
 While JuiceFS or a similar technology would indeed be an effective way to store and retrieve large quantities of DICOM files, 
-it would require a server middleware to properly interface and directly DICOM blob downloads could not occur in a serverless manner. 
+it would require a server middleware to properly interface and direct DICOM blob downloads could not occur in a serverless manner. 
 
 Because COD preserves the underlying DICOM data, it only requires data to be un-tarred, 
 which is a very common interface that would never require driver installation or custom code handling.
@@ -201,7 +203,8 @@ All that is required is a data processing pipeline that:
 4. Calls COD's append() and sync() methods to populate the relevant COD tar file 
 
 ## Benchmarks
-Below is a table outlining the performance and cost savings of processing COD on various test datasets. These figures only capture processing costs into COD format and not monthly storage costs.
+Below is a table outlining the performance and cost savings of processing COD on various test datasets.
+Note that these figures only capture processing costs into COD format and not monthly storage costs.
 
 | Dataset                          | Size (GB) | Num Files  | Total Cost ($)  | $ / GB  | $ / 1k files  |
 |----------------------------------|-----------|------------|-----------------|---------|---------------|
