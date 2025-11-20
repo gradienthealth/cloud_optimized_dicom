@@ -48,19 +48,19 @@ can be quite expensive if data is stored in raw instance-level DICOM files (see 
 
 ## Data Structure
 COD introduces a novel data structure for storing DICOM data at scale consisting of the following series-level files:
-### `{series_uid}.tar`
+### {series_uid}.tar
 A tar file that contains every instance DICOM P10 file for a given series.
-### `{series_uid}/metadata.json`
+### {series_uid}/metadata.json
 A JSON file that contains DICOM tags for each instance along with additional metadata.
 This file is gzip-compressed to save space.
 To avoid costly and unnecessary storage redundancy,
 the contents of "bulk tags" that are larger than 1024 bytes (i.e. PixelData) are omitted from this JSON file.
-### `{series_uid}/index.sqlite`
+### {series_uid}/index.sqlite
 An index used by the `Ratarmount` package [@ratarmount] 
 to efficiently retrieve individual instances from the tar without indexing the whole thing.
 This file is used by the COD library to improve retrieval performance but is not required for reading;
 COD tar files can of course be extracted and read like any other tar file.
-### `{series_uid}/thumbnail.{mp4|jpg}`
+### {series_uid}/thumbnail.{mp4|jpg}
 An (optional) small lossy thumbnail containing each frame in the series with a default size of 128x128 pixels.
 
 The overall file structure is modeled after the DICOMWEB spec, 
