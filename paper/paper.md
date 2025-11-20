@@ -47,7 +47,7 @@ so operations that require retrieving large quantities of DICOM data from a buck
 can be quite expensive if data is stored in raw instance-level DICOM files (see example below).
 
 ## Data Structure
-COD introduces a novel data structure for storing DICOM data at scale consisting of the following series-level files:
+COD introduces a novel data structure for storing DICOM data at scale consisting of the following series-level files
 ### {series_uid}.tar
 A tar file that contains every instance DICOM P10 file for a given series.
 ### {series_uid}/metadata.json
