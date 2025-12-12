@@ -601,6 +601,9 @@ class Instance:
         # Get the compressed string
         compressed_metadata = self._dicom_metadata._dicom_metadata
         return {
+            "instance_uid": self.instance_uid(),
+            "series_uid": self.series_uid(),
+            "study_uid": self.study_uid(),
             "metadata": compressed_metadata,
             "uri": self.dicom_uri,
             "headers": {
@@ -686,9 +689,9 @@ class Instance:
             _original_path=instance_dict["original_path"],
             _modified_datetime=instance_dict["modified_datetime"],
             _diff_hash_dupe_paths=instance_dict["diff_hash_dupe_paths"],
-            _instance_uid=None,
-            _series_uid=None,
-            _study_uid=None,
+            _instance_uid=instance_dict["instance_uid"],
+            _series_uid=instance_dict["series_uid"],
+            _study_uid=instance_dict["study_uid"],
             _has_pixeldata=None,
         )
 
