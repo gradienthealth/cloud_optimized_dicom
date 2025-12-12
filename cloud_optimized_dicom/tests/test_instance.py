@@ -81,7 +81,7 @@ class TestInstance(unittest.TestCase):
 
     def test_extract_metadata(self):
         instance = Instance(self.local_instance_path)
-        self.assertIsNone(instance._metadata)
+        self.assertIsNone(instance._dicom_metadata)
         self.assertIsNone(instance._custom_offset_tables)
         instance.extract_metadata(
             output_uri="gs://some_series.tar://instances/some_instance.dcm"

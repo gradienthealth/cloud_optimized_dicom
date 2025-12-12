@@ -14,6 +14,7 @@ import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 from cloud_optimized_dicom.hints import Hints
+from cloud_optimized_dicom.instance_metadata import DicomMetadata, DicomMetadataState
 from cloud_optimized_dicom.utils import (
     DICOM_PREAMBLE,
     _delete_gcs_dep,
@@ -27,6 +28,19 @@ from cloud_optimized_dicom.virtual_file import VirtualFile
 
 TAR_IDENTIFIER = ".tar://"
 ZIP_IDENTIFIER = ".zip://"
+
+from enum import Enum
+
+
+class InstanceState(Enum):
+    """Status of an instance.
+    Possible states:
+    - UNFETCHED
+    """
+
+    UNPOPULATED = 1
+    FETCHED = 2
+    DELETED = 3
 
 
 @dataclass
@@ -51,7 +65,7 @@ class Instance:
 
     # private internal fields
     _temp_file_path: str = None
-    _metadata: dict[str, dict] = None
+    _dicom_metadata: Optional[DicomMetadata] = None
     _custom_offset_tables: dict = None
     _diff_hash_dupe_paths: list[str] = field(default_factory=list)
     _modified_datetime: str = datetime.now().isoformat()
@@ -157,11 +171,11 @@ class Instance:
     @property
     def metadata(self):
         """
-        Getter for self._metadata. Populates by calling self.extract_metadata() if necessary.
+        Getter for self._dicom_metadata. Populates by calling self.extract_metadata() if necessary.
         """
-        if self._metadata is None:
+        if self._dicom_metadata is None:
             self.extract_metadata()
-        return self._metadata
+        return self._dicom_metadata.get_dicom_metadata()
 
     @property
     def has_pixeldata(self):
@@ -397,10 +411,13 @@ class Instance:
         # point local_origin_file within the local tar
         self.dicom_uri = f"{tar.name}://instances/{uid_for_uri}.dcm"
 
-    def extract_metadata(self, output_uri: str):
+    def extract_metadata(self, output_uri: Optional[str] = None):
         """
-        Extract metadata from the instance, populating self._metadata and self._custom_offset_tables
+        Extract metadata from the instance, populating self._dicom_metadata and self._custom_offset_tables
         """
+        # Use dicom_uri as fallback if output_uri is not provided
+        if output_uri is None:
+            output_uri = self.dicom_uri
         with self.open() as f:
             with pydicom3.dcmread(f, defer_size=1024) as ds:
                 # set custom offset tables
@@ -431,8 +448,10 @@ class Instance:
                         bulk_data_element_handler=bulk_data_handler
                     )
                 )
-                # populate self._metadata
-                self._metadata = ds_dict
+                # populate self._dicom_metadata with DECOMPRESSED state
+                self._dicom_metadata = DicomMetadata(
+                    state=DicomMetadataState.DECOMPRESSED, _dicom_metadata=ds_dict
+                )
 
     def get_pixeldata_hash(self) -> str:
         """Compute the crc32c hash of just the pixeldata"""
@@ -539,8 +558,12 @@ class Instance:
         else:
             start_byte, end_byte = self._byte_offsets
         # now return dict
+        if self._dicom_metadata is None:
+            raise ValueError(
+                "Cannot serialize instance without metadata. Call extract_metadata() first."
+            )
         return {
-            "metadata": self._metadata,
+            "metadata": self._dicom_metadata.get_dicom_metadata(),
             "uri": self.dicom_uri,
             "headers": {
                 "start_byte": start_byte,
@@ -571,10 +594,15 @@ class Instance:
             instance_dict["metadata"]
         )
         has_pixeldata = "7FE00010" in instance_dict["metadata"]
+        # Create DicomMetadata with DECOMPRESSED state from the dict
+        dicom_metadata = DicomMetadata(
+            state=DicomMetadataState.DECOMPRESSED,
+            _dicom_metadata=instance_dict["metadata"],
+        )
         return Instance(
             dicom_uri=instance_dict["uri"],
             uid_hash_func=uid_hash_func,
-            _metadata=instance_dict["metadata"],
+            _dicom_metadata=dicom_metadata,
             _byte_offsets=byte_offsets,
             _custom_offset_tables=instance_dict["offset_tables"],
             _size=instance_dict["size"],
