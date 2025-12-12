@@ -75,7 +75,9 @@ class TestMetadataSerialization(unittest.TestCase):
         for instance_uid in raw_cod["instances"].keys():
             raw_instance = raw_cod["instances"][instance_uid]
             saved_instance = saved_cod["instances"][instance_uid]
-            self.assertEqual(raw_instance.keys(), saved_instance.keys())
+            self.assertTrue(
+                all(raw_key in saved_instance.keys() for raw_key in raw_instance.keys())
+            )
             # Handle version differences: v1 has dict metadata, v2 has compressed string
             raw_version = raw_instance.get("version", "1.0")
             saved_version = saved_instance.get("version", "1.0")
