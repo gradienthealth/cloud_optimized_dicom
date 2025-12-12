@@ -29,19 +29,6 @@ from cloud_optimized_dicom.virtual_file import VirtualFile
 TAR_IDENTIFIER = ".tar://"
 ZIP_IDENTIFIER = ".zip://"
 
-from enum import Enum
-
-
-class InstanceState(Enum):
-    """Status of an instance.
-    Possible states:
-    - UNFETCHED
-    """
-
-    UNPOPULATED = 1
-    FETCHED = 2
-    DELETED = 3
-
 
 @dataclass
 class Instance:
