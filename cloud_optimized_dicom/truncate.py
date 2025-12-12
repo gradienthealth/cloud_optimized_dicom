@@ -108,7 +108,9 @@ def truncate(
     Essentially, a wrapper for deleting a COD Object and then appending the given instances.
     """
     # determine what instances will be kept (if any)
-    instances_in_cod = list(cod_object.get_metadata(dirty=dirty).instances.values())
+    instances_in_cod = cod_object.get_instances(
+        strict_sorting=False, dirty=dirty
+    ).values()
     instances_to_keep = [
         instance for instance in instances_in_cod if instance in instances
     ]
