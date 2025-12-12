@@ -110,7 +110,7 @@ class SeriesMetadata:
             self.is_sorted = False
 
     def to_dict(self) -> dict:
-        # TODO version handling once we have a new version
+        # Use v2 format by default for new metadata
         study_uid_key = "deid_study_uid" if self.hashed_uids else "study_uid"
         series_uid_key = "deid_series_uid" if self.hashed_uids else "series_uid"
         base_dict = {
@@ -118,7 +118,7 @@ class SeriesMetadata:
             series_uid_key: self.series_uid,
             "cod": {
                 "instances": {
-                    instance_uid: instance.to_cod_dict_v1()
+                    instance_uid: instance.to_cod_dict_v2()
                     for instance_uid, instance in self.instances.items()
                 },
             },
@@ -159,12 +159,19 @@ class SeriesMetadata:
 
         # Parse standard cod metadata
         cod_dict: dict = series_metadata_dict.pop("cod")
-        instances = {
-            instance_uid: Instance.from_cod_dict_v1(
-                instance_dict, uid_hash_func=uid_hash_func
-            )
-            for instance_uid, instance_dict in cod_dict.get("instances", {}).items()
-        }
+        instances = {}
+        for instance_uid, instance_dict in cod_dict.get("instances", {}).items():
+            # Detect format based on version field
+            version = instance_dict.get("version", "1.0")
+            if version == "2.0":
+                instances[instance_uid] = Instance.from_cod_dict_v2(
+                    instance_dict, uid_hash_func=uid_hash_func
+                )
+            else:
+                # Default to v1 for backwards compatibility
+                instances[instance_uid] = Instance.from_cod_dict_v1(
+                    instance_dict, uid_hash_func=uid_hash_func
+                )
 
         # Treat any remaining keys as metadata fields
         metadata_fields = series_metadata_dict

@@ -581,6 +581,42 @@ class Instance:
             "modified_datetime": self._modified_datetime,
         }
 
+    def to_cod_dict_v2(self):
+        """Convert this instance to a dict in accordance with the COD Metadata v2.0 spec"""
+        # first unpack byte offsets
+        if self._byte_offsets is None:
+            start_byte, end_byte = None, None
+        else:
+            start_byte, end_byte = self._byte_offsets
+        # now return dict
+        if self._dicom_metadata is None:
+            raise ValueError(
+                "Cannot serialize instance without metadata. Call extract_metadata() first."
+            )
+        # Ensure metadata is in DECOMPRESSED state, then compress it
+        if self._dicom_metadata.state != DicomMetadataState.DECOMPRESSED:
+            self._dicom_metadata.get_dicom_metadata()  # This will decompress if needed
+        # Compress the metadata
+        self._dicom_metadata.compress()
+        # Get the compressed string
+        compressed_metadata = self._dicom_metadata._dicom_metadata
+        return {
+            "metadata": compressed_metadata,
+            "uri": self.dicom_uri,
+            "headers": {
+                "start_byte": start_byte,
+                "end_byte": end_byte,
+            },
+            "offset_tables": self._custom_offset_tables,
+            "crc32c": self.crc32c(),
+            "size": self.size(),
+            "original_path": self._original_path,
+            "dependencies": self.dependencies,
+            "diff_hash_dupe_paths": self._diff_hash_dupe_paths,
+            "version": "2.0",
+            "modified_datetime": self._modified_datetime,
+        }
+
     @classmethod
     def from_cod_dict_v1(
         cls, instance_dict: dict, uid_hash_func: Optional[Callable] = None
@@ -617,6 +653,43 @@ class Instance:
             _series_uid=series_uid,
             _study_uid=study_uid,
             _has_pixeldata=has_pixeldata,
+        )
+
+    @classmethod
+    def from_cod_dict_v2(
+        cls, instance_dict: dict, uid_hash_func: Optional[Callable] = None
+    ) -> "Instance":
+        """Convert a COD Metadata v2.0 dict to an Instance."""
+        if (found_version := instance_dict.get("version")) != "2.0":
+            logger.warning(f"Expected version 2.0, but got {found_version}")
+        byte_offsets = (
+            instance_dict["headers"]["start_byte"],
+            instance_dict["headers"]["end_byte"],
+        )
+        # Create DicomMetadata with COMPRESSED state from the compressed string
+        # Do NOT decompress during deserialization (lazy loading)
+        dicom_metadata = DicomMetadata(
+            state=DicomMetadataState.COMPRESSED,
+            _dicom_metadata=instance_dict["metadata"],
+        )
+        # UIDs are set to None - they will be populated when metadata is accessed
+        # has_pixeldata also cannot be determined without decompressing
+        return Instance(
+            dicom_uri=instance_dict["uri"],
+            uid_hash_func=uid_hash_func,
+            _dicom_metadata=dicom_metadata,
+            _byte_offsets=byte_offsets,
+            _custom_offset_tables=instance_dict["offset_tables"],
+            _size=instance_dict["size"],
+            _crc32c=instance_dict["crc32c"],
+            dependencies=instance_dict["dependencies"],
+            _original_path=instance_dict["original_path"],
+            _modified_datetime=instance_dict["modified_datetime"],
+            _diff_hash_dupe_paths=instance_dict["diff_hash_dupe_paths"],
+            _instance_uid=None,
+            _series_uid=None,
+            _study_uid=None,
+            _has_pixeldata=None,
         )
 
     def cleanup(self):
