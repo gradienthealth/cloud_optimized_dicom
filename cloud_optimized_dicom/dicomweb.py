@@ -179,9 +179,8 @@ class DicomwebRequest:
             lock=False,
             create_if_missing=False,
         )
-        return cod_obj.get_metadata(dirty=True).to_dict()["cod"]["instances"][
-            self.instance_uid
-        ]["metadata"]
+        instance = cod_obj.get_instance(self.instance_uid, dirty=True)
+        return instance.metadata
 
     def _handle_series_level_request(self, client: storage.Client):
         """For a series-level request, return a list of metadata for each instance"""
@@ -193,12 +192,8 @@ class DicomwebRequest:
             lock=False,
             create_if_missing=False,
         )
-        return [
-            i_dict["metadata"]
-            for i_dict in cod_obj.get_metadata(dirty=True)
-            .to_dict()["cod"]["instances"]
-            .values()
-        ]
+        instances = cod_obj.get_instances(strict_sorting=False, dirty=True)
+        return [instance.metadata for instance in instances.values()]
 
     def _handle_study_level_request(self, client: storage.Client):
         series_uid = _get_series_uid_for_study(
