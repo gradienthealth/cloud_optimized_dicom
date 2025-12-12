@@ -1,9 +1,10 @@
 import base64
 import json
-import zlib
 from dataclasses import dataclass
 from enum import Enum
 from typing import Union
+
+import zstandard
 
 from cloud_optimized_dicom.config import logger
 
@@ -43,7 +44,7 @@ class DicomMetadata:
                 f"DicomMetadata.compress() expects state to be DECOMPRESSED (got {self.state})"
             )
         json_bytes = json.dumps(self._dicom_metadata).encode("utf-8")
-        compressed_bytes = zlib.compress(json_bytes)
+        compressed_bytes = zstandard.compress(json_bytes)
         compressed_base64_string = base64.b64encode(compressed_bytes).decode("utf-8")
         self._dicom_metadata = compressed_base64_string
         self.state = DicomMetadataState.COMPRESSED
@@ -65,7 +66,7 @@ class DicomMetadata:
                 f"DicomMetadata.decompress() called on unpopulated metadata"
             )
         compressed_bytes = base64.b64decode(self._dicom_metadata)
-        decompressed_bytes = zlib.decompress(compressed_bytes)
+        decompressed_bytes = zstandard.decompress(compressed_bytes)
         self._dicom_metadata = json.loads(decompressed_bytes.decode("utf-8"))
         self.state = DicomMetadataState.DECOMPRESSED
 
