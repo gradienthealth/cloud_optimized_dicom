@@ -133,7 +133,9 @@ class Instance:
         """
         # populate all true values
         with self.open() as f:
-            with pydicom3.dcmread(f, defer_size=512, stop_before_pixels=True) as ds:
+            # defer loading all tags (every tag is > 1 byte) bc we only need UIDs and pixeldata existence
+            # stop_before_pixels=True cannot be used here bc it prevents us from checking for pixeldata existence
+            with pydicom3.dcmread(f, defer_size=1) as ds:
                 self._instance_uid = getattr(ds, "SOPInstanceUID")
                 self._series_uid = getattr(ds, "SeriesInstanceUID")
                 self._study_uid = getattr(ds, "StudyInstanceUID")
