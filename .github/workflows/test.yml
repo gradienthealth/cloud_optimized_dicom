@@ -13,12 +13,17 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+
     - uses: actions/setup-python@v4
       with:
         python-version: 3.11
         cache: 'pip'
 
-    - name: Install dependencies
+    - name: Install Python dependencies
       run: |
         pip install -e ".[test]"
 
