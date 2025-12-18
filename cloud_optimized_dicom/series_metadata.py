@@ -162,16 +162,19 @@ class SeriesMetadata:
         instances = {}
         for instance_uid, instance_dict in cod_dict.get("instances", {}).items():
             # Detect format based on version field
-            version = instance_dict.get("version", "1.0")
+            version = instance_dict.get("version", None)
             if version == "2.0":
                 instances[instance_uid] = Instance.from_cod_dict_v2(
                     instance_dict, uid_hash_func=uid_hash_func
                 )
-            else:
-                # Default to v1 for backwards compatibility
+            elif version in ["1.0", None]:
+                # The original metadata format was identical to v1, but missing the version field.
+                # Therefore we try to load as v1 if the version field is missing.
                 instances[instance_uid] = Instance.from_cod_dict_v1(
                     instance_dict, uid_hash_func=uid_hash_func
                 )
+            else:
+                raise ValueError(f"Unexpected COD metadata version: {version}")
 
         # Treat any remaining keys as metadata fields
         metadata_fields = series_metadata_dict
