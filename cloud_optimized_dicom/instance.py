@@ -582,7 +582,7 @@ class Instance:
             raise ValueError(
                 "Cannot serialize instance without metadata. Call extract_metadata() first."
             )
-        # Compress the metadata (no-op if already compressed)
+        # Compress the metadata (if necessary)
         self._dicom_metadata.compress()
         # Get the compressed string
         compressed_metadata = self._dicom_metadata._dicom_metadata

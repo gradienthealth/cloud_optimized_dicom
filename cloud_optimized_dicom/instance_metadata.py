@@ -65,10 +65,7 @@ class DicomMetadata:
         and the uncompressed dict is freed to save memory.
         """
         if hasattr(self, "_compressed_string"):
-            # Already compressed
-            logger.warning(
-                "NO-OP: DicomMetadata.compress() called on already compressed metadata"
-            )
+            # Already compressed, exit early
             return
         self._compressed_string = _compress(self._metadata)
         self._metadata = None  # Free the uncompressed dict to save memory
@@ -135,10 +132,4 @@ class CompressedDicomMetadata(DicomMetadata):
         return self._compressed_metadata
 
     def compress(self):
-        """No-op for already compressed metadata.
-
-        Logs a warning if called on already compressed data.
-        """
-        logger.warning(
-            "NO-OP: DicomMetadata.compress() called on already compressed metadata"
-        )
+        """Already compressed, exit early"""
