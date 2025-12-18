@@ -5,7 +5,7 @@ from typing import Union
 import zstandard
 
 from cloud_optimized_dicom.config import logger
-from cloud_optimized_dicom.metrics import METADATA_CACHE_HITS
+from cloud_optimized_dicom.metrics import METADATA_CACHE_HITS, METADATA_CACHE_MISSES
 
 # We check compressed size, and zstd typically achieves 5-10x compression on JSON.
 # So we set threshold a compressed string length of 1K, which should correspond to ~5-10KB uncompressed.
@@ -115,6 +115,7 @@ class CompressedDicomMetadata(DicomMetadata):
             METADATA_CACHE_HITS.inc()
             return self._cached_metadata
 
+        METADATA_CACHE_MISSES.inc()
         metadata = _decompress(self._compressed_metadata)
 
         # Cache the metadata if the compressed size is small.

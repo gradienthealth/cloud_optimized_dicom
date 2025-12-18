@@ -77,3 +77,4 @@ THUMBNAIL_BYTES_PROCESSED = Metrics.counter(
 # metadata caching metrics
 METADATA_NAMESPACE = f"{NAMESPACE}:metadata"
 METADATA_CACHE_HITS = Metrics.counter(METADATA_NAMESPACE, "cache_hits")
+METADATA_CACHE_MISSES = Metrics.counter(METADATA_NAMESPACE, "cache_misses")
