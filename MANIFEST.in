@@ -1,1 +1,0 @@
-recursive-include cloud_optimized_dicom/pydicom/src/pydicom *
