@@ -2,7 +2,7 @@ import json
 import os
 import unittest
 
-from cloud_optimized_dicom.instance_metadata import DicomMetadataState
+from cloud_optimized_dicom.instance_metadata import CompressedDicomMetadata
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 
 
@@ -207,18 +207,16 @@ class TestMetadataSerialization(unittest.TestCase):
         v2_dict = metadata.to_dict()
         reloaded_metadata = SeriesMetadata.from_dict(v2_dict)
 
-        # Check that metadata is in COMPRESSED state before access
+        # Check that metadata is CompressedDicomMetadata (not yet decompressed)
         instance = list(reloaded_metadata.instances.values())[0]
         self.assertIsNotNone(instance._dicom_metadata)
-        self.assertEqual(instance._dicom_metadata.state, DicomMetadataState.COMPRESSED)
+        self.assertIsInstance(instance._dicom_metadata, CompressedDicomMetadata)
 
         # Access metadata - should trigger decompression
         metadata_dict = instance.metadata
         self.assertIsInstance(metadata_dict, dict)
-        # Verify it's now decompressed
-        self.assertEqual(
-            instance._dicom_metadata.state, DicomMetadataState.DECOMPRESSED
-        )
+        # Verify it's still CompressedDicomMetadata (type doesn't change)
+        self.assertIsInstance(instance._dicom_metadata, CompressedDicomMetadata)
 
     def test_v2_compression_ratio(self):
         """Test that v2 format provides compression (metadata is smaller as string)."""

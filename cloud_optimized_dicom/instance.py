@@ -14,7 +14,7 @@ import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 from cloud_optimized_dicom.hints import Hints
-from cloud_optimized_dicom.instance_metadata import DicomMetadata, DicomMetadataState
+from cloud_optimized_dicom.instance_metadata import DicomMetadata
 from cloud_optimized_dicom.utils import (
     DICOM_PREAMBLE,
     _delete_gcs_dep,
@@ -441,10 +441,8 @@ class Instance:
                         bulk_data_element_handler=bulk_data_handler
                     )
                 )
-                # populate self._dicom_metadata with DECOMPRESSED state
-                self._dicom_metadata = DicomMetadata(
-                    state=DicomMetadataState.DECOMPRESSED, _dicom_metadata=ds_dict
-                )
+                # populate self._dicom_metadata with uncompressed metadata
+                self._dicom_metadata = DicomMetadata(ds_dict)
 
     def get_pixeldata_hash(self) -> str:
         """Compute the crc32c hash of just the pixeldata"""
@@ -584,10 +582,7 @@ class Instance:
             raise ValueError(
                 "Cannot serialize instance without metadata. Call extract_metadata() first."
             )
-        # Ensure metadata is in DECOMPRESSED state, then compress it
-        if self._dicom_metadata.state != DicomMetadataState.DECOMPRESSED:
-            self._dicom_metadata.get_dicom_metadata()  # This will decompress if needed
-        # Compress the metadata
+        # Compress the metadata (no-op if already compressed)
         self._dicom_metadata.compress()
         # Get the compressed string
         compressed_metadata = self._dicom_metadata._dicom_metadata
@@ -626,11 +621,8 @@ class Instance:
             instance_dict["metadata"]
         )
         has_pixeldata = "7FE00010" in instance_dict["metadata"]
-        # Create DicomMetadata with DECOMPRESSED state from the dict
-        dicom_metadata = DicomMetadata(
-            state=DicomMetadataState.DECOMPRESSED,
-            _dicom_metadata=instance_dict["metadata"],
-        )
+        # Create DicomMetadata from the dict (uncompressed)
+        dicom_metadata = DicomMetadata(instance_dict["metadata"])
         return Instance(
             dicom_uri=instance_dict["uri"],
             uid_hash_func=uid_hash_func,
@@ -660,12 +652,9 @@ class Instance:
             instance_dict["headers"]["start_byte"],
             instance_dict["headers"]["end_byte"],
         )
-        # Create DicomMetadata with COMPRESSED state from the compressed string
+        # Create DicomMetadata using factory method (compressed string -> CompressedDicomMetadata)
         # Do NOT decompress during deserialization (lazy loading)
-        dicom_metadata = DicomMetadata(
-            state=DicomMetadataState.COMPRESSED,
-            _dicom_metadata=instance_dict["metadata"],
-        )
+        dicom_metadata = DicomMetadata.create(instance_dict["metadata"])
         # UIDs are set to None - they will be populated when metadata is accessed
         # has_pixeldata also cannot be determined without decompressing
         return Instance(
