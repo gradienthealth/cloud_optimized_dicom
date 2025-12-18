@@ -2,6 +2,7 @@ import json
 import os
 import unittest
 
+from cloud_optimized_dicom.instance_metadata import DicomMetadataState
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 
 
@@ -209,8 +210,6 @@ class TestMetadataSerialization(unittest.TestCase):
         # Check that metadata is in COMPRESSED state before access
         instance = list(reloaded_metadata.instances.values())[0]
         self.assertIsNotNone(instance._dicom_metadata)
-        from cloud_optimized_dicom.instance_metadata import DicomMetadataState
-
         self.assertEqual(instance._dicom_metadata.state, DicomMetadataState.COMPRESSED)
 
         # Access metadata - should trigger decompression
