@@ -588,6 +588,7 @@ class Instance:
             "instance_uid": self.instance_uid(),
             "series_uid": self.series_uid(),
             "study_uid": self.study_uid(),
+            "has_pixeldata": self.has_pixeldata,
             "metadata": compressed_metadata,
             "uri": self.dicom_uri,
             "headers": {
@@ -653,7 +654,6 @@ class Instance:
         # Create DicomMetadata using factory method (compressed string -> CompressedDicomMetadata)
         # Does NOT decompress during deserialization. Lazy loading.
         dicom_metadata = DicomMetadata.create(instance_dict["metadata"])
-        # has_pixeldata also cannot be determined without decompressing
         return Instance(
             dicom_uri=instance_dict["uri"],
             uid_hash_func=uid_hash_func,
@@ -669,7 +669,7 @@ class Instance:
             _instance_uid=instance_dict["instance_uid"],
             _series_uid=instance_dict["series_uid"],
             _study_uid=instance_dict["study_uid"],
-            _has_pixeldata=None,
+            _has_pixeldata=instance_dict["has_pixeldata"],
         )
 
     def cleanup(self):
