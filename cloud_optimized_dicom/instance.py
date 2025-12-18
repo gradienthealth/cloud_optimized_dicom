@@ -404,6 +404,10 @@ class Instance:
         """
         Extract metadata from the instance, populating self._dicom_metadata and self._custom_offset_tables
         """
+        # output_uri depends on the cod object that the instance is being appended to.
+        # Specifically, the tar_uri, as well as whether the UIDs are hashed or not.
+        # It is possible for extract_metadata() to be called before the instance is appended to a cod object,
+        # in which case we don't necessarily know the output_uri.
         # Use dicom_uri as fallback if output_uri is not provided
         if output_uri is None:
             output_uri = self.dicom_uri
