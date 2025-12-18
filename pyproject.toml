@@ -22,7 +22,7 @@ dependencies = [
     "pylibjpeg==2.0.1",
     "pylibjpeg-libjpeg==2.3.0",
     "pylibjpeg-openjpeg==2.4.0",
-    "pydicom3 @ git+https://github.com/gradienthealth/pydicom-3.git",
+    "pydicom3>=3.1.0",
     "opencv-python-headless==4.11.0.86",
     "ffmpeg-python==0.2.0",
     "zstandard>=0.24.0",
