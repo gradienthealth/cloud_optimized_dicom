@@ -651,9 +651,8 @@ class Instance:
             instance_dict["headers"]["end_byte"],
         )
         # Create DicomMetadata using factory method (compressed string -> CompressedDicomMetadata)
-        # Do NOT decompress during deserialization (lazy loading)
+        # Does NOT decompress during deserialization. Lazy loading.
         dicom_metadata = DicomMetadata.create(instance_dict["metadata"])
-        # UIDs are set to None - they will be populated when metadata is accessed
         # has_pixeldata also cannot be determined without decompressing
         return Instance(
             dicom_uri=instance_dict["uri"],
