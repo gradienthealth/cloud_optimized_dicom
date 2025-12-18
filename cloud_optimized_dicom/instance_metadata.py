@@ -70,6 +70,17 @@ class DicomMetadata:
         self._compressed_string = _compress(self._metadata)
         self._metadata = None  # Free the uncompressed dict to save memory
 
+    def get_compressed_metadata(self) -> str:
+        """Get the compressed metadata string.
+
+        If the metadata has not been compressed yet, this will compress it first.
+
+        Returns:
+            Base64-encoded zstandard-compressed JSON string
+        """
+        self.compress()
+        return self._compressed_string
+
     @classmethod
     def create(cls, obj: Union[dict, str]) -> "DicomMetadata":
         """Factory method to create the appropriate DicomMetadata subclass.
@@ -133,3 +144,11 @@ class CompressedDicomMetadata(DicomMetadata):
 
     def compress(self):
         """Already compressed, exit early"""
+
+    def get_compressed_metadata(self) -> str:
+        """Get the compressed metadata string.
+
+        Returns:
+            Base64-encoded zstandard-compressed JSON string
+        """
+        return self._compressed_metadata
