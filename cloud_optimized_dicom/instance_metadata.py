@@ -1,13 +1,14 @@
 import base64
 import json
-import sys
 from typing import Union
 
 import zstandard
 
 from cloud_optimized_dicom.config import logger
 
-_MAX_CACHE_SIZE_BYTES = 5 * 1024  # 5KB
+# We check compressed size, and zstd typically achieves 5-10x compression on JSON.
+# So we set threshold a compressed string length of 1K, which should correspond to ~5-10KB uncompressed.
+COMPRESSED_METADATA_LEN_THRESHOLD = 1000
 
 
 def _decompress(compressed_metadata: str) -> dict:
@@ -106,8 +107,13 @@ class CompressedDicomMetadata(DicomMetadata):
 
         metadata = _decompress(self._compressed_metadata)
 
-        # Cache the metadata if small
-        if sys.getsizeof(metadata) < _MAX_CACHE_SIZE_BYTES:
+        # Cache the metadata if the compressed size is small.
+        # We use the length of the compressed string as a proxy for uncompressed memory usage because:
+        # 1. sys.getsizeof(dict) only measures shallow size, not nested contents
+        # 2. Compressed size correlates with decompressed size (zstandard: ~5-10x compression)
+        # 3. We already have the compressed string, so this check is fast
+        # Current threshold: compressed string length of 1K corresponds to ~5-10KB uncompressed
+        if len(self._compressed_metadata) < COMPRESSED_METADATA_LEN_THRESHOLD:
             self._cached_metadata = metadata
 
         return metadata
