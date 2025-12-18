@@ -2,6 +2,61 @@
 
 A library for efficiently storing and interacting with DICOM files in the cloud.
 
+# Development Setup
+
+## Prerequisites
+
+- Python 3.11 or higher (Note: Python 3.14 is not yet supported due to build system compatibility issues)
+- pip
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd cloud_optimized_dicom
+```
+
+2. Create and activate a virtual environment:
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+3. Install the package in editable mode:
+```bash
+pip install -e .
+```
+
+4. To install with development dependencies (includes pre-commit and test dependencies):
+```bash
+pip install -e ".[dev]"
+```
+
+5. Set up pre-commit hooks (required for development):
+```bash
+pre-commit install
+```
+
+Alternatively, to install only test dependencies without pre-commit:
+```bash
+pip install -e ".[test]"
+```
+
+## Running Tests
+
+```bash
+SISKIN_ENV_ENABLED=1 python -m unittest discover -v cloud_optimized_dicom.tests
+```
+
+## Project Structure
+
+The project uses `pyproject.toml` for package configuration and dependency management. Key dependencies include:
+- `pydicom3`: Custom fork of pydicom with namespace isolation
+- `google-cloud-storage`: For cloud storage operations
+- `apache-beam[gcp]`: For data processing pipelines
+- `zstandard`: For metadata compression (v2.0)
+
 # Concepts & Design Philosophy
 
 ## Hashed vs. regular study/series/instance UIDs
