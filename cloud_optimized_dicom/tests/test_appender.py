@@ -402,7 +402,7 @@ class TestAppender(unittest.TestCase):
         )
         self.assertEqual(len(new), 1)
         self.assertEqual(len(same + conflict + errors), 0)
-        self.assertTrue(instance.is_nested_in_tar)
+        self.assertLess(instance.size(), uncompressed_size)
         with instance.open() as f:
             ds = pydicom3.dcmread(f)
             self.assertEqual(
