@@ -6,10 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "cloud-optimized-dicom"
 version = "0.1.0"
 description = "A library for efficiently storing and interacting with DICOM files in the cloud"
+readme = "README.md"
 authors = [
     {name = "Cal Nightingale", email = "cal@gradienthealth.io"}
 ]
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.8"
 dependencies = [
     "smart-open==7.0.4",
