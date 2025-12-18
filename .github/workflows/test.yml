@@ -1,0 +1,39 @@
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+
+    - uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+        cache: 'pip'
+
+    - name: Install Python dependencies
+      run: |
+        pip install -e ".[test]"
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Run tests
+      env:
+        SISKIN_ENV_ENABLED: 1
+      run: |
+        python -m unittest discover -v cloud_optimized_dicom.tests
