@@ -558,6 +558,8 @@ def _handle_create_metadata(
         uid = instance.get_instance_uid(hashed=cod_object.hashed_uids)
         output_uri = f"{cod_object.tar_uri}://instances/{uid}.dcm"
         instance.extract_metadata(output_uri)
+        # compress metadata immediately to avoid ballooning memory usage
+        instance._dicom_metadata.compress()
         cod_object._metadata.instances[uid] = instance
     # if we added any instances, metadata is now desynced
     cod_object._metadata_synced = False if len(instances_added_to_tar) > 0 else True

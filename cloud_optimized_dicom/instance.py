@@ -14,6 +14,7 @@ import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 from cloud_optimized_dicom.hints import Hints
+from cloud_optimized_dicom.instance_metadata import DicomMetadata
 from cloud_optimized_dicom.utils import (
     DICOM_PREAMBLE,
     _delete_gcs_dep,
@@ -51,7 +52,7 @@ class Instance:
 
     # private internal fields
     _temp_file_path: str = None
-    _metadata: dict[str, dict] = None
+    _dicom_metadata: Optional[DicomMetadata] = None
     _custom_offset_tables: dict = None
     _diff_hash_dupe_paths: list[str] = field(default_factory=list)
     _modified_datetime: str = datetime.now().isoformat()
@@ -159,11 +160,11 @@ class Instance:
     @property
     def metadata(self):
         """
-        Getter for self._metadata. Populates by calling self.extract_metadata() if necessary.
+        Getter for self._dicom_metadata. Populates by calling self.extract_metadata() if necessary.
         """
-        if self._metadata is None:
+        if self._dicom_metadata is None:
             self.extract_metadata()
-        return self._metadata
+        return self._dicom_metadata.get_dicom_metadata()
 
     @property
     def has_pixeldata(self):
@@ -399,10 +400,17 @@ class Instance:
         # point local_origin_file within the local tar
         self.dicom_uri = f"{tar.name}://instances/{uid_for_uri}.dcm"
 
-    def extract_metadata(self, output_uri: str):
+    def extract_metadata(self, output_uri: Optional[str] = None):
         """
-        Extract metadata from the instance, populating self._metadata and self._custom_offset_tables
+        Extract metadata from the instance, populating self._dicom_metadata and self._custom_offset_tables
         """
+        # output_uri depends on the cod object that the instance is being appended to.
+        # Specifically, the tar_uri, as well as whether the UIDs are hashed or not.
+        # It is possible for extract_metadata() to be called before the instance is appended to a cod object,
+        # in which case we don't necessarily know the output_uri.
+        # Use dicom_uri as fallback if output_uri is not provided
+        if output_uri is None:
+            output_uri = self.dicom_uri
         with self.open() as f:
             with pydicom3.dcmread(f, defer_size=1024) as ds:
                 # set custom offset tables
@@ -433,8 +441,8 @@ class Instance:
                         bulk_data_element_handler=bulk_data_handler
                     )
                 )
-                # populate self._metadata
-                self._metadata = ds_dict
+                # populate self._dicom_metadata with uncompressed metadata
+                self._dicom_metadata = DicomMetadata(ds_dict)
 
     def get_pixeldata_hash(self) -> str:
         """Compute the crc32c hash of just the pixeldata"""
@@ -541,8 +549,12 @@ class Instance:
         else:
             start_byte, end_byte = self._byte_offsets
         # now return dict
+        if self._dicom_metadata is None:
+            raise ValueError(
+                "Cannot serialize instance without metadata. Call extract_metadata() first."
+            )
         return {
-            "metadata": self._metadata,
+            "metadata": self._dicom_metadata.get_dicom_metadata(),
             "uri": self.dicom_uri,
             "headers": {
                 "start_byte": start_byte,
@@ -555,6 +567,41 @@ class Instance:
             "dependencies": self.dependencies,
             "diff_hash_dupe_paths": self._diff_hash_dupe_paths,
             "version": "1.0",
+            "modified_datetime": self._modified_datetime,
+        }
+
+    def to_cod_dict_v2(self):
+        """Convert this instance to a dict in accordance with the COD Metadata v2.0 spec"""
+        # first unpack byte offsets
+        if self._byte_offsets is None:
+            start_byte, end_byte = None, None
+        else:
+            start_byte, end_byte = self._byte_offsets
+        # now return dict
+        if self._dicom_metadata is None:
+            raise ValueError(
+                "Cannot serialize instance without metadata. Call extract_metadata() first."
+            )
+        # Get the compressed metadata string
+        compressed_metadata = self._dicom_metadata.get_compressed_metadata()
+        return {
+            "instance_uid": self.instance_uid(),
+            "series_uid": self.series_uid(),
+            "study_uid": self.study_uid(),
+            "has_pixeldata": self.has_pixeldata,
+            "metadata": compressed_metadata,
+            "uri": self.dicom_uri,
+            "headers": {
+                "start_byte": start_byte,
+                "end_byte": end_byte,
+            },
+            "offset_tables": self._custom_offset_tables,
+            "crc32c": self.crc32c(),
+            "size": self.size(),
+            "original_path": self._original_path,
+            "dependencies": self.dependencies,
+            "diff_hash_dupe_paths": self._diff_hash_dupe_paths,
+            "version": "2.0",
             "modified_datetime": self._modified_datetime,
         }
 
@@ -573,10 +620,12 @@ class Instance:
             instance_dict["metadata"]
         )
         has_pixeldata = "7FE00010" in instance_dict["metadata"]
+        # Create DicomMetadata from the dict (uncompressed)
+        dicom_metadata = DicomMetadata(instance_dict["metadata"])
         return Instance(
             dicom_uri=instance_dict["uri"],
             uid_hash_func=uid_hash_func,
-            _metadata=instance_dict["metadata"],
+            _dicom_metadata=dicom_metadata,
             _byte_offsets=byte_offsets,
             _custom_offset_tables=instance_dict["offset_tables"],
             _size=instance_dict["size"],
@@ -589,6 +638,38 @@ class Instance:
             _series_uid=series_uid,
             _study_uid=study_uid,
             _has_pixeldata=has_pixeldata,
+        )
+
+    @classmethod
+    def from_cod_dict_v2(
+        cls, instance_dict: dict, uid_hash_func: Optional[Callable] = None
+    ) -> "Instance":
+        """Convert a COD Metadata v2.0 dict to an Instance."""
+        if (found_version := instance_dict.get("version")) != "2.0":
+            logger.warning(f"Expected version 2.0, but got {found_version}")
+        byte_offsets = (
+            instance_dict["headers"]["start_byte"],
+            instance_dict["headers"]["end_byte"],
+        )
+        # Create DicomMetadata using factory method (compressed string -> CompressedDicomMetadata)
+        # Does NOT decompress during deserialization. Lazy loading.
+        dicom_metadata = DicomMetadata.create(instance_dict["metadata"])
+        return Instance(
+            dicom_uri=instance_dict["uri"],
+            uid_hash_func=uid_hash_func,
+            _dicom_metadata=dicom_metadata,
+            _byte_offsets=byte_offsets,
+            _custom_offset_tables=instance_dict["offset_tables"],
+            _size=instance_dict["size"],
+            _crc32c=instance_dict["crc32c"],
+            dependencies=instance_dict["dependencies"],
+            _original_path=instance_dict["original_path"],
+            _modified_datetime=instance_dict["modified_datetime"],
+            _diff_hash_dupe_paths=instance_dict["diff_hash_dupe_paths"],
+            _instance_uid=instance_dict["instance_uid"],
+            _series_uid=instance_dict["series_uid"],
+            _study_uid=instance_dict["study_uid"],
+            _has_pixeldata=instance_dict["has_pixeldata"],
         )
 
     def cleanup(self):

@@ -23,6 +23,7 @@ setup(
         "pydicom3 @ git+https://github.com/gradienthealth/pydicom-3.git",
         "opencv-python-headless==4.11.0.86",
         "ffmpeg-python==0.2.0",
+        "zstandard>=0.24.0",
     ],
     extras_require={
         "test": [

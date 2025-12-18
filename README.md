@@ -172,32 +172,84 @@ In this case, `dicom_uri` is not meaningful in the context of deletion (it's lik
 After ingestion, one can conveniently delete these files by calling `Instance.delete_dependencies()`.
 
 # Metadata format
-TODO: needs to be reconciled with deid changes from original implementation
+
+COD supports two metadata formats: v1.0 (legacy) and v2.0 (current). The formats differ primarily in how DICOM metadata is stored and whether certain fields are explicitly indexed.
+
+## Metadata v2.0 (Current)
+
+Version 2.0 introduces several optimizations:
+- **Compressed metadata**: DICOM metadata is zstandard-compressed and base64-encoded to reduce storage size (typically achieves 5-10x compression on JSON)
+- **Explicit UID indexing**: Study, Series, and Instance UIDs are stored as top-level fields for faster querying without decompression
+- **Explicit pixeldata flag**: `has_pixeldata` boolean stored at top level
+- **Lazy decompression**: Metadata is only decompressed when accessed via `instance.metadata`
+- **Smart caching**: Small metadata (compressed size < 1KB) is cached after first decompression
+
+Instance metadata structure (within `cod.instances`):
+```json
+{
+  "instance_uid": "1.2.3.4.5",
+  "series_uid": "1.2.3.4",
+  "study_uid": "1.2.3",
+  "has_pixeldata": true,
+  "metadata": "<base64-encoded zstandard-compressed DICOM JSON dict>",
+  "uri": "gs://.../series.tar://instances/{instance_uid}.dcm",
+  "headers": {"start_byte": 123, "end_byte": 456},
+  "offset_tables": {"CustomOffsetTable": [...], "CustomOffsetTableLengths": [...]},
+  "crc32c": "the_blob_hash",
+  "size": 123,
+  "original_path": "path/where/this/file/was/originally/located",
+  "dependencies": ["path/to/a/dependency", ...],
+  "diff_hash_dupe_paths": ["path/to/a/duplicate", ...],
+  "version": "2.0",
+  "modified_datetime": "2024-01-01T00:00:00"
+}
+```
+
+## Metadata v1.0 (Legacy)
+
+Version 1.0 stores metadata uncompressed:
+- **Uncompressed metadata**: Full DICOM JSON dict stored inline
+- **UIDs parsed from metadata**: UIDs must be extracted from the metadata dict when needed
+- **Pixeldata detection**: Presence of tag `7FE00010` in metadata indicates pixeldata
+
+Instance metadata structure (within `cod.instances`):
+```json
+{
+  "metadata": {
+    "00080018": {"vr": "UI", "Value": ["1.2.3.4.5"]},
+    "0020000D": {"vr": "UI", "Value": ["1.2.3"]},
+    "0020000E": {"vr": "UI", "Value": ["1.2.3.4"]},
+    ...
+  },
+  "uri": "gs://.../series.tar://instances/{instance_uid}.dcm",
+  "headers": {"start_byte": 123, "end_byte": 456},
+  "offset_tables": {"CustomOffsetTable": [...], "CustomOffsetTableLengths": [...]},
+  "crc32c": "the_blob_hash",
+  "size": 123,
+  "original_path": "path/where/this/file/was/originally/located",
+  "dependencies": ["path/to/a/dependency", ...],
+  "diff_hash_dupe_paths": ["path/to/a/duplicate", ...],
+  "version": "1.0",
+  "modified_datetime": "2024-01-01T00:00:00"
+}
+```
+
+## Complete COD Object Structure
+
+Both versions use the same overall structure:
 ```json
 {
   "deid_study_uid": "deid(StudyInstanceUID)",
   "deid_series_uid": "deid(SeriesInstanceUID)",
   "cod": {
     "instances": {
-      "deid(SOPInstanceUID)": {
-        "metadata": {ds.to_json_dict() + ds.file_meta.to_json_dict()},
-        "uri": "gs://.../dicomweb/studies/{deid(series.study_uid)}/series/{deid(series.series_uid)}.tar://instances/{deid(file_metadata.instance_uid)}.dcm",
-        "headers": {"start_byte": 123, "end_byte": 456},
-        "offset_tables": {"CustomOffsetTable": [...], "CustomOffsetTableLengths": [...]},
-        "crc32c": "the_blob_hash",
-        "size": 123,
-        "original_path": "path/where/this/file/was/originally/located",
-        "dependencies": ["path/to/a/dependency", ...],
-        "diff_hash_dupe_paths": ["path/to/a/duplicate", ...],
-        "version": "1.0",
-        "modified_datetime": "2024-01-01T00:00:00"
-      }, ...
+      "deid(SOPInstanceUID)": { /* instance metadata (v1 or v2 format) */ }
     }
   },
   "thumbnail": {
     "version": "1.0",
     "uri": "studies/{deid(StudyInstanceUID)}/series/{deid(SeriesInstanceUID)}.(mp4|jpg)",
-    "thumbnail_index_to_instance_frame": [(deid(SOPInstanceUID), frame_index), ...],
+    "thumbnail_index_to_instance_frame": [["deid(SOPInstanceUID)", frame_index], ...],
     "instances": {
       "deid(SOPInstanceUID)": {
         "frames": [
@@ -208,9 +260,9 @@ TODO: needs to be reconciled with deid changes from original implementation
               "thumbnail_upper_left": {"row": 0, "col": 10},
               "thumbnail_bottom_right": {"row": 127, "col": 117}
             }
-          }, ...
+          }
         ]
-      }, ...
+      }
     }
   },
   "other": {}
