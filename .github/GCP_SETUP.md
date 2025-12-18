@@ -24,12 +24,13 @@ This guide explains how to set up Google Cloud Platform authentication for runni
 
 ### 2. Grant Required Permissions
 
-Grant the service account access to Google Cloud Storage:
+Grant the service account access to Google Cloud Storage and Service Usage:
 
 1. Click **Select a role**
 2. Add the following roles:
    - **Storage Object Admin** - Allows creating, reading, and deleting objects in GCS
    - **Storage Bucket Reader** - Allows listing buckets
+   - **Service Usage Consumer** - Required for quota_project_id usage (provides serviceusage.services.use permission)
 3. Click **Continue**, then **Done**
 
 ### 3. Create and Download JSON Key
@@ -76,7 +77,12 @@ Grant the service account access to Google Cloud Storage:
 
 ### Tests fail with permission errors
 
-- Verify the service account has the required roles (Storage Object Admin, Storage Bucket Reader)
+If you see `serviceusage.services.use access to the Google Cloud project` error:
+- The service account is missing the **Service Usage Consumer** role
+- Go to IAM & Admin > IAM, find the service account, and add this role
+
+For other permission errors:
+- Verify the service account has all three required roles (Storage Object Admin, Storage Bucket Reader, Service Usage Consumer)
 - Ensure the test buckets (`siskin-172863-test-data`, `siskin-172863-temp`) exist
 - Check that the service account has access to these specific buckets
 
