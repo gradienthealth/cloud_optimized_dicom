@@ -115,10 +115,17 @@ def delete_uploaded_blobs(client: storage.Client, uris_to_delete: list[str]):
     These URIs should be folders (e.g. 'gs://siskin-172863-test-data/concat-output'), and
     this method will delete everything in the folder
     """
+    from google.api_core.exceptions import NotFound
+
     for gcs_uri in uris_to_delete:
         bucket_name, folder_name = gcs_uri.replace("gs://", "").split("/", 1)
         for blob in client.list_blobs(bucket_name, prefix=f"{folder_name}/"):
-            blob.delete()
+            try:
+                blob.delete()
+            except NotFound:
+                # Blob already deleted or doesn't exist - this is fine since
+                # the goal is to ensure the blob doesn't exist
+                pass
 
 
 def generate_ptr_crc32c(ptr: io.BufferedReader, blocksize: int = 2**20) -> str:
