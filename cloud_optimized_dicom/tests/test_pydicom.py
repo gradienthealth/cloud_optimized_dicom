@@ -10,4 +10,4 @@ class TestPydicom(unittest.TestCase):
         import pydicom3
 
         self.assertEqual(pydicom.__version__, "2.3.0")
-        self.assertEqual(pydicom3.__version__, "3.1.0.dev0")
+        self.assertEqual(pydicom3.__version__, "3.1.0")
