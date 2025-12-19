@@ -1,5 +1,6 @@
 import logging
 import os
+import tempfile
 import unittest
 
 import cv2
@@ -16,6 +17,7 @@ from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.tests.test_hashed_uids import example_hash_function
 from cloud_optimized_dicom.thumbnail import (
     DEFAULT_SIZE,
+    SeriesMissingPixelDataError,
     ThumbnailCoordConverter,
     _convert_frame_to_jpg,
     _convert_frames_to_mp4,
@@ -368,3 +370,41 @@ class TestThumbnail(unittest.TestCase):
         self.assertEqual(
             instance_retrieved_by_index, instance_retrieved_by_thumbnail_index
         )
+
+    def test_series_missing_pixel_data_error(self):
+        """Test that SeriesMissingPixelDataError is raised when series has no pixel data"""
+        # Create a DICOM file without pixel data by reading an existing file
+        # and removing the pixel data
+        dicom_path = os.path.join(self.test_data_dir, "monochrome1.dcm")
+        ds = pydicom3.dcmread(dicom_path)
+
+        # Remove pixel data
+        if hasattr(ds, "PixelData"):
+            delattr(ds, "PixelData")
+
+        # Save the modified DICOM to a temporary file
+        with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as tmp_file:
+            temp_dicom_path = tmp_file.name
+            ds.save_as(temp_dicom_path)
+
+        try:
+            # Create instance and COD object
+            instance = Instance(dicom_uri=temp_dicom_path)
+            with CODObject(
+                datastore_path=self.datastore_path,
+                client=self.client,
+                study_uid=instance.study_uid(),
+                series_uid=instance.series_uid(),
+                lock=False,
+            ) as cod_obj:
+                cod_obj.append([instance], dirty=True)
+                # Attempting to get thumbnail should raise SeriesMissingPixelDataError
+                with self.assertRaises(SeriesMissingPixelDataError) as context:
+                    cod_obj.get_thumbnail(dirty=True)
+
+                # Verify the error message contains helpful info
+                self.assertIn("pixel data", str(context.exception))
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_dicom_path):
+                os.remove(temp_dicom_path)

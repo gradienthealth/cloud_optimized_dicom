@@ -356,7 +356,18 @@ def _generate_thumbnail_frame_and_anchors(
 def _remove_instances_without_pixeldata(
     cod_obj: "CODObject", uid_to_instance: dict[str, Instance]
 ):
-    """Remove instances that do not have pixel data. Raise an error if no instances have pixel data."""
+    """Remove instances that do not have pixel data.
+
+    Args:
+        cod_obj: The COD object.
+        uid_to_instance: Dictionary mapping instance UIDs to Instance objects.
+
+    Returns:
+        Dictionary of instances that have pixel data.
+
+    Raises:
+        SeriesMissingPixelDataError: If none of the instances have pixel data.
+    """
     filtered_dict = {
         uid: instance
         for uid, instance in uid_to_instance.items()
@@ -452,7 +463,10 @@ def generate_thumbnail(
         thumbnail_size: The size of the thumbnail to generate (default: 128px).
 
     Returns:
-        thumbnail_path: the path to the thumbnail on disk, or None if the thumbnail was not generated
+        thumbnail_path: the path to the thumbnail on disk.
+
+    Raises:
+        SeriesMissingPixelDataError: If none of the instances have pixel data.
     """
     try:
         # can infer whether the operation is dirty by checking if the cod object is locked
@@ -491,7 +505,7 @@ def generate_thumbnail(
         logger.warning(
             f"Could not generate thumbnail for {cod_obj} because it has no pixel data"
         )
-        return None
+        raise
     except Exception as e:
         # On exception, increment failure metric, log exception, and re-raise
         metrics.THUMBNAIL_FAILS.inc()
