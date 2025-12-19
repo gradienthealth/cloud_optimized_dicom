@@ -486,6 +486,7 @@ class CODObject:
 
         Raises:
             ValueError: If the thumbnail does not exist and `generate_if_missing=False`, or if opening the thumbnail fails for any reason.
+            SeriesMissingPixelDataError: If thumbnail generation was attempted but none of the instances in the series have pixel data.
         """
         thumbnail_metadata = self.get_metadata_field("thumbnail", dirty=dirty)
         # Cases where we need to generate a new thumbnail:
