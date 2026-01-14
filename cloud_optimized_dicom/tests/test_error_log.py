@@ -36,7 +36,7 @@ class TestErrorLog(unittest.TestCase):
                 client=self.client,
                 study_uid=self.study_uid,
                 series_uid=self.series_uid,
-                lock=True,
+                mode="w",
             ) as cod_obj:
                 # simulate doing something with the CODObjet and causing an error
                 raise Exception("test error")
@@ -59,7 +59,7 @@ class TestErrorLog(unittest.TestCase):
             client=self.client,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=True,
+            mode="w",
         ) as cod_obj:
             cod_obj.upload_error_log("test error")
 
@@ -70,7 +70,7 @@ class TestErrorLog(unittest.TestCase):
                 client=self.client,
                 study_uid=self.study_uid,
                 series_uid=self.series_uid,
-                lock=True,
+                mode="w",
             ) as cod_obj:
                 pass
 
@@ -82,7 +82,7 @@ class TestErrorLog(unittest.TestCase):
             client=self.client,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=True,
+            mode="w",
         ) as cod_obj:
             cod_obj.upload_error_log("test error")
 
@@ -92,7 +92,7 @@ class TestErrorLog(unittest.TestCase):
             client=self.client,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=True,
+            mode="w",
             override_errors=True,
         ) as cod_obj:
             pass

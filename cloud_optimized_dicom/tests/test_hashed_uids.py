@@ -87,7 +87,8 @@ class TestDeid(unittest.TestCase):
             client=self.client,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
         # create instance with original uids
         instance = Instance(
@@ -129,7 +130,8 @@ class TestDeid(unittest.TestCase):
             client=self.client,
             study_uid=twice_hashed_study_uid,
             series_uid=twice_hashed_series_uid,
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
             hashed_uids=True,
         )
         instance = Instance(dicom_uri=self.local_instance_path)
@@ -144,16 +146,17 @@ class TestDeid(unittest.TestCase):
             client=self.client,
             study_uid=example_hash_function(self.test_study_uid),
             series_uid=example_hash_function(self.test_series_uid),
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
             hashed_uids=True,
         )
         instance = Instance(
             dicom_uri=self.local_instance_path, uid_hash_func=example_hash_function
         )
-        append_result = cod_object.append([instance], dirty=True)
+        append_result = cod_object.append([instance])
         # verify append success
         self.assertEqual(append_result.new[0], instance)
-        metadata_dict = cod_object.get_metadata(dirty=True).to_dict()
+        metadata_dict = cod_object.get_metadata().to_dict()
         # because the cod_object has hashed_uids=True, the metadata should have deid_uids
         self.assertEqual(
             metadata_dict["deid_study_uid"], example_hash_function(self.test_study_uid)
@@ -180,13 +183,14 @@ class TestDeid(unittest.TestCase):
             client=self.client,
             study_uid=example_hash_function(self.test_study_uid),
             series_uid=example_hash_function(self.test_series_uid),
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
             hashed_uids=True,
         )
         instance = Instance(
             dicom_uri=self.local_instance_path, uid_hash_func=example_hash_function
         )
-        append_result = cod_object.append([instance], dirty=True)
+        append_result = cod_object.append([instance])
         self.assertEqual(append_result.new[0], instance)
         # make a diff hash dupe
         with NamedTemporaryFile(suffix=".dcm") as f:
@@ -196,7 +200,7 @@ class TestDeid(unittest.TestCase):
             diff_hash_dupe = Instance(
                 dicom_uri=f.name, uid_hash_func=example_hash_function
             )
-            append_result = cod_object.append([diff_hash_dupe], dirty=True)
+            append_result = cod_object.append([diff_hash_dupe])
             self.assertEqual(append_result.conflict[0], diff_hash_dupe)
 
     def test_serialize_deserialize_with_hashed_uids(self):
@@ -206,13 +210,14 @@ class TestDeid(unittest.TestCase):
             client=self.client,
             study_uid=example_hash_function(self.test_study_uid),
             series_uid=example_hash_function(self.test_series_uid),
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
             hashed_uids=True,
         )
         instance = Instance(
             dicom_uri=self.local_instance_path, uid_hash_func=example_hash_function
         )
-        cod_object.append([instance], dirty=True)
+        cod_object.append([instance])
         # serialize the cod_object
         serialized_cod_object = cod_object.serialize()
         # deserialize the cod_object

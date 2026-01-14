@@ -52,17 +52,16 @@ class TestTruncate(unittest.TestCase):
             client=self.client,
             study_uid=instance1.study_uid(),
             series_uid=instance1.series_uid(),
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
-        append_result = cod_obj.append(instances=[instance1], dirty=True)
+        append_result = cod_obj.append(instances=[instance1])
         self.assertEqual(len(append_result.new), 1)
-        truncate_result = cod_obj.truncate(instances=[instance2], dirty=True)
+        truncate_result = cod_obj.truncate(instances=[instance2])
         self.assertEqual(len(truncate_result.new), 1)
         self.assertEqual(truncate_result.new[0], instance2)
         # cod object should ONLY contain the new instance
-        self.assertEqual(
-            list(cod_obj.get_metadata(dirty=True).instances.values()), [instance2]
-        )
+        self.assertEqual(list(cod_obj.get_metadata().instances.values()), [instance2])
         with tarfile.open(cod_obj.tar_file_path, "r") as tar:
             self.assertEqual(len(tar.getmembers()), 1)
             self.assertEqual(
@@ -92,26 +91,25 @@ class TestTruncate(unittest.TestCase):
             client=self.client,
             study_uid=instance1.study_uid(),
             series_uid=instance1.series_uid(),
-            lock=True,
+            mode="w",
         ) as cod_obj:
             append_result = cod_obj.append(instances=[instance1])
             self.assertEqual(len(append_result.new), 1)
-            cod_obj.sync()
+            # sync happens automatically on context exit
 
         cod_obj = CODObject(
             datastore_path=self.datastore_path,
             client=self.client,
             study_uid=instance1.study_uid(),
             series_uid=instance1.series_uid(),
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
-        truncate_result = cod_obj.truncate(instances=[instance2], dirty=True)
+        truncate_result = cod_obj.truncate(instances=[instance2])
         self.assertEqual(len(truncate_result.new), 1)
         self.assertEqual(truncate_result.new[0], instance2)
         # cod object should ONLY contain the new instance
-        self.assertEqual(
-            list(cod_obj.get_metadata(dirty=True).instances.values()), [instance2]
-        )
+        self.assertEqual(list(cod_obj.get_metadata().instances.values()), [instance2])
 
     def test_truncate_preexisting(self):
         """
@@ -136,17 +134,16 @@ class TestTruncate(unittest.TestCase):
             client=self.client,
             study_uid=instance1.study_uid(),
             series_uid=instance1.series_uid(),
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
-        append_result = cod_obj.append(instances=[instance1, instance2], dirty=True)
+        append_result = cod_obj.append(instances=[instance1, instance2])
         self.assertEqual(len(append_result.new), 2)
-        truncate_result = cod_obj.truncate(instances=[instance2], dirty=True)
+        truncate_result = cod_obj.truncate(instances=[instance2])
         self.assertEqual(len(truncate_result.new), 1)
         self.assertEqual(truncate_result.new[0], instance2)
         # cod object should ONLY contain the new instance
-        self.assertEqual(
-            list(cod_obj.get_metadata(dirty=True).instances.values()), [instance2]
-        )
+        self.assertEqual(list(cod_obj.get_metadata().instances.values()), [instance2])
 
 
 class TestRemove(unittest.TestCase):
@@ -190,18 +187,17 @@ class TestRemove(unittest.TestCase):
             client=self.client,
             study_uid=instance1.study_uid(),
             series_uid=instance1.series_uid(),
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
-        append_result = cod_obj.append(instances=[instance1, instance2], dirty=True)
+        append_result = cod_obj.append(instances=[instance1, instance2])
         self.assertEqual(len(append_result.new), 2)
 
-        remove_result = cod_obj.remove(instances=[instance1], dirty=True)
+        remove_result = cod_obj.remove(instances=[instance1])
         # assert that there's one instance left (and its the one we didn't remove)
         self.assertEqual(len(remove_result.new), 1)
         self.assertEqual(remove_result.new[0], instance2)
-        self.assertEqual(
-            list(cod_obj.get_metadata(dirty=True).instances.values()), [instance2]
-        )
+        self.assertEqual(list(cod_obj.get_metadata().instances.values()), [instance2])
 
     def test_remove_remote(self):
         """
@@ -226,33 +222,31 @@ class TestRemove(unittest.TestCase):
             client=self.client,
             study_uid=instance1.study_uid(),
             series_uid=instance1.series_uid(),
-            lock=True,
+            mode="w",
         ) as cod_obj:
             append_result = cod_obj.append(instances=[instance1, instance2])
             self.assertEqual(len(append_result.new), 2)
-            cod_obj.sync()
+            # sync happens automatically on context exit
 
         with CODObject(
             datastore_path=self.datastore_path,
             client=self.client,
             study_uid=instance1.study_uid(),
             series_uid=instance1.series_uid(),
-            lock=True,
+            mode="w",
         ) as cod_obj:
-            remove_result = cod_obj.remove(instances=[instance1], dirty=False)
-            cod_obj.sync()
+            remove_result = cod_obj.remove(instances=[instance1])
+            # sync happens automatically on context exit
 
         cod_obj = CODObject(
             datastore_path=self.datastore_path,
             client=self.client,
             study_uid=instance1.study_uid(),
             series_uid=instance1.series_uid(),
-            lock=False,
+            mode="r",
         )
-        self.assertEqual(len(cod_obj.get_metadata(dirty=True).instances), 1)
-        self.assertEqual(
-            list(cod_obj.get_metadata(dirty=True).instances.values()), [instance2]
-        )
+        self.assertEqual(len(cod_obj.get_metadata().instances), 1)
+        self.assertEqual(list(cod_obj.get_metadata().instances.values()), [instance2])
 
     def test_remove_all_raises_error(self):
         """
@@ -270,12 +264,13 @@ class TestRemove(unittest.TestCase):
             client=self.client,
             study_uid=instance1.study_uid(),
             series_uid=instance1.series_uid(),
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
-        append_result = cod_obj.append(instances=[instance1], dirty=True)
+        append_result = cod_obj.append(instances=[instance1])
         self.assertEqual(len(append_result.new), 1)
         with self.assertRaises(ValueError):
-            cod_obj.remove(instances=[instance1], dirty=True)
+            cod_obj.remove(instances=[instance1])
 
     def test_remove_nonexistent(self):
         """
@@ -300,12 +295,11 @@ class TestRemove(unittest.TestCase):
             client=self.client,
             study_uid=instance1.study_uid(),
             series_uid=instance1.series_uid(),
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
-        cod_obj.append(instances=[instance1], dirty=True)
-        remove_result = cod_obj.remove(instances=[instance2], dirty=True)
+        cod_obj.append(instances=[instance1])
+        remove_result = cod_obj.remove(instances=[instance2])
         self.assertEqual(len(remove_result.new), 1)
         self.assertEqual(remove_result.new[0], instance1)
-        self.assertEqual(
-            list(cod_obj.get_metadata(dirty=True).instances.values()), [instance1]
-        )
+        self.assertEqual(list(cod_obj.get_metadata().instances.values()), [instance1])
