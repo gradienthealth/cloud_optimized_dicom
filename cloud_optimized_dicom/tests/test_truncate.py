@@ -31,7 +31,7 @@ class TestTruncate(unittest.TestCase):
 
     def test_truncate(self):
         """
-        Test that a cod object can be successfully truncated.
+        Test that a cod object can be successfully truncated using mode="w" + append().
         """
         instance1 = Instance(
             dicom_uri=os.path.join(
@@ -57,7 +57,9 @@ class TestTruncate(unittest.TestCase):
         )
         append_result = cod_obj.append(instances=[instance1])
         self.assertEqual(len(append_result.new), 1)
-        truncate_result = cod_obj.truncate(instances=[instance2])
+        # Truncate by wiping and rebuilding with mode="w" + append()
+        cod_obj._wipe_local()
+        truncate_result = cod_obj.append(instances=[instance2])
         self.assertEqual(len(truncate_result.new), 1)
         self.assertEqual(truncate_result.new[0], instance2)
         # cod object should ONLY contain the new instance
@@ -70,7 +72,7 @@ class TestTruncate(unittest.TestCase):
 
     def test_truncate_remote(self):
         """
-        Test that a cod object can be successfully truncated from a remote cod object.
+        Test that a cod object can be successfully truncated from a remote cod object using mode="w" + append().
         """
         instance1 = Instance(
             dicom_uri=os.path.join(
@@ -97,23 +99,26 @@ class TestTruncate(unittest.TestCase):
             self.assertEqual(len(append_result.new), 1)
             # sync happens automatically on context exit
 
-        cod_obj = CODObject(
+        # Truncate by creating new CODObject with mode="w" and appending desired instances
+        # mode="w" will overwrite the remote tar/metadata on sync
+        with CODObject(
             datastore_path=self.datastore_path,
             client=self.client,
             study_uid=instance1.study_uid(),
             series_uid=instance1.series_uid(),
             mode="w",
-            sync_on_exit=False,
-        )
-        truncate_result = cod_obj.truncate(instances=[instance2])
-        self.assertEqual(len(truncate_result.new), 1)
-        self.assertEqual(truncate_result.new[0], instance2)
-        # cod object should ONLY contain the new instance
-        self.assertEqual(list(cod_obj.get_metadata().instances.values()), [instance2])
+        ) as cod_obj:
+            truncate_result = cod_obj.append(instances=[instance2])
+            self.assertEqual(len(truncate_result.new), 1)
+            self.assertEqual(truncate_result.new[0], instance2)
+            # cod object should ONLY contain the new instance
+            self.assertEqual(
+                list(cod_obj.get_metadata().instances.values()), [instance2]
+            )
 
     def test_truncate_preexisting(self):
         """
-        Test that a cod object can be successfully truncated with preexisting instances.
+        Test that a cod object can be successfully truncated with preexisting instances using mode="w" + append().
         """
         instance1 = Instance(
             dicom_uri=os.path.join(
@@ -139,11 +144,24 @@ class TestTruncate(unittest.TestCase):
         )
         append_result = cod_obj.append(instances=[instance1, instance2])
         self.assertEqual(len(append_result.new), 2)
-        truncate_result = cod_obj.truncate(instances=[instance2])
+        # Truncate by wiping and rebuilding with mode="w" + append()
+        # Create a fresh instance2 from the original file path since the old one
+        # now points to the tar location which will be deleted by _wipe_local()
+        cod_obj._wipe_local()
+        instance2_fresh = Instance(
+            dicom_uri=os.path.join(
+                self.test_data_dir,
+                "series",
+                "1.2.826.0.1.3680043.8.498.28109707839310833322020505651875585013.dcm",
+            )
+        )
+        truncate_result = cod_obj.append(instances=[instance2_fresh])
         self.assertEqual(len(truncate_result.new), 1)
-        self.assertEqual(truncate_result.new[0], instance2)
+        self.assertEqual(truncate_result.new[0], instance2_fresh)
         # cod object should ONLY contain the new instance
-        self.assertEqual(list(cod_obj.get_metadata().instances.values()), [instance2])
+        self.assertEqual(
+            list(cod_obj.get_metadata().instances.values()), [instance2_fresh]
+        )
 
 
 class TestRemove(unittest.TestCase):

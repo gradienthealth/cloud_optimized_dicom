@@ -70,8 +70,9 @@ Pre-commit hooks automatically run:
 
 **Access Modes**
 - `mode="r"`: Read-only access; no lock acquired; allows all read operations
-- `mode="w"`: Write access; acquires exclusive lock automatically (raises `LockAcquisitionError` if exists)
-- `sync_on_exit=True` (default): Auto-syncs and releases lock on context exit for `mode="w"`
+- `mode="w"`: Write access (overwrite); acquires exclusive lock automatically (raises `LockAcquisitionError` if exists); starts fresh with empty metadata/tar locally; overwrites remote tar/metadata on sync; never fetches remote tar
+- `mode="a"`: Append access; acquires exclusive lock automatically (raises `LockAcquisitionError` if exists); fetches remote tar if it exists; appends to existing tar/metadata on sync
+- `sync_on_exit=True` (default): Auto-syncs and releases lock on context exit for `mode="w"` or `mode="a"`
 - `sync_on_exit=False`: No lock acquired, no auto-sync; useful for local testing/debugging
 - Locks persist through serialization/deserialization (for Apache Beam workflows)
 - Locks deliberately "hang" on errors to indicate series corruption
@@ -155,13 +156,18 @@ with CODObject(client=..., datastore_path=..., mode="r") as cod:
     metadata = cod.get_metadata()
     instances = cod.get_instances()
 
-# Write access (lock acquired, auto-sync on exit)
+# Write access - overwrite mode (lock acquired, starts fresh, overwrites on sync)
 with CODObject(client=..., datastore_path=..., mode="w") as cod:
     cod.append(instances)
-# sync() called automatically, lock released
+# sync() called automatically, lock released, overwrites remote tar/metadata
+
+# Append access - append mode (lock acquired, fetches existing tar, appends on sync)
+with CODObject(client=..., datastore_path=..., mode="a") as cod:
+    cod.append(instances)
+# sync() called automatically, lock released, appends to remote tar/metadata
 
 # Local testing (no lock, no sync - efficient for debugging)
-with CODObject(client=..., datastore_path=..., mode="w", sync_on_exit=False) as cod:
+with CODObject(client=..., datastore_path=..., mode="a", sync_on_exit=False) as cod:
     cod.append(instances)
 # no lock acquired, no sync on exit
 

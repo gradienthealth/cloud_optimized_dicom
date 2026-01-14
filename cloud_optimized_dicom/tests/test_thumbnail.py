@@ -272,7 +272,7 @@ class TestThumbnail(unittest.TestCase):
             study_uid=instance_b.hashed_study_uid(),
             series_uid=instance_b.hashed_series_uid(),
             hashed_uids=True,
-            mode="w",
+            mode="a",
         ) as cod_obj:
             cod_obj.append([instance_b])
             thumbnail = cod_obj.get_thumbnail()
