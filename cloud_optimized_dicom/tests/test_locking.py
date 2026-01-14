@@ -6,11 +6,7 @@ from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
-from cloud_optimized_dicom.errors import (
-    CleanOpOnUnlockedCODObjectError,
-    LockAcquisitionError,
-    LockVerificationError,
-)
+from cloud_optimized_dicom.errors import LockAcquisitionError, LockVerificationError
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
@@ -34,9 +30,9 @@ class TestLocking(unittest.TestCase):
         cls.local_instance_path = os.path.join(cls.test_data_dir, "monochrome2.dcm")
         delete_uploaded_blobs(cls.client, [cls.datastore_path])
 
-    def test_lock_unspecified(self):
-        """Test that not specifying lock raises an error"""
-        with self.assertRaises(TypeError):
+    def test_mode_unspecified(self):
+        """Test that not specifying mode raises an error"""
+        with self.assertRaises(ValueError):
             CODObject(
                 datastore_path=self.datastore_path,
                 client=self.client,
@@ -111,33 +107,39 @@ class TestLocking(unittest.TestCase):
                 self.assertEqual(locked_metadata.study_uid, self.study_uid)
                 self.assertEqual(locked_metadata.series_uid, self.series_uid)
 
-    def test_unlocked_clean_fail(self):
-        """Test that you cannot do a clean operation on an unlocked CODObject"""
+    def test_read_mode_allows_reads(self):
+        """Test that mode='r' allows read operations without errors"""
         with CODObject(
             client=self.client,
             datastore_path=self.datastore_path,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=False,
+            mode="r",
         ) as cod:
-            with self.assertRaises(CleanOpOnUnlockedCODObjectError):
-                cod.get_metadata()
+            # Read operations should work without any dirty parameter
+            metadata = cod.get_metadata()
+            self.assertEqual(metadata.study_uid, self.study_uid)
+            self.assertEqual(metadata.series_uid, self.series_uid)
 
-    def test_warn_dirty_on_locked(self):
-        """Test that we warn about dirty operations on locked CODObjects"""
+    def test_deprecation_warning_for_dirty_param(self):
+        """Test that using dirty parameter emits a deprecation warning"""
+        import warnings
+
         with CODObject(
             client=self.client,
             datastore_path=self.datastore_path,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=True,
+            mode="r",
         ) as cod:
-            with self.assertLogs(level="WARNING") as cm:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
                 cod.get_metadata(dirty=True)
-            self.assertRegex(
-                cm.output[0],
-                r"Performing dirty operation 'get_metadata' on locked CODObject: .*",
-            )
+                # Check that a deprecation warning was issued for the dirty parameter
+                self.assertTrue(
+                    any("dirty" in str(warning.message) for warning in w),
+                    "Expected deprecation warning for 'dirty' parameter",
+                )
 
     def test_lock_gone_on_cleanup(self):
         """Test that we get an error if the lock disappears while the COD is active"""

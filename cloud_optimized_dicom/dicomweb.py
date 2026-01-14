@@ -147,10 +147,10 @@ class DicomwebRequest:
             client=client,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=False,
+            mode="r",
             create_if_missing=False,
         )
-        instance = cod_obj.get_metadata(dirty=True).instances[self.instance_uid]
+        instance = cod_obj._get_metadata().instances[self.instance_uid]
         # make frame indices 0-indexed (in dicomweb requests, frames are 1-indexed)
         frame_indices = [i - 1 for i in self.frames]
         _validate_frame_request(instance, frame_indices)
@@ -176,10 +176,10 @@ class DicomwebRequest:
             client=client,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=False,
+            mode="r",
             create_if_missing=False,
         )
-        instance = cod_obj.get_instance(self.instance_uid, dirty=True)
+        instance = cod_obj._get_instance(self.instance_uid)
         return instance.metadata
 
     def _handle_series_level_request(self, client: storage.Client):
@@ -189,10 +189,10 @@ class DicomwebRequest:
             client=client,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=False,
+            mode="r",
             create_if_missing=False,
         )
-        instances = cod_obj.get_instances(strict_sorting=False, dirty=True)
+        instances = cod_obj._get_instances(strict_sorting=False)
         return [instance.metadata for instance in instances.values()]
 
     def _handle_study_level_request(self, client: storage.Client):
@@ -204,11 +204,11 @@ class DicomwebRequest:
             client=client,
             study_uid=self.study_uid,
             series_uid=series_uid,
-            lock=False,
+            mode="r",
             create_if_missing=False,
         )
         # return just the study level tags for the first instance in the series
-        some_instance = next(iter(cod_obj.get_metadata(dirty=True).instances.values()))
+        some_instance = next(iter(cod_obj._get_metadata().instances.values()))
         return {tag: some_instance.metadata.get(tag, None) for tag in STUDY_LEVEL_TAGS}
 
     @classmethod

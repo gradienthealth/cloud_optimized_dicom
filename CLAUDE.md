@@ -44,9 +44,9 @@ Pre-commit hooks automatically run:
 **CODObject** (`cod_object.py`)
 - Primary interface for interacting with cloud-optimized DICOM series
 - Manages series-level tar archives and metadata in GCS
-- Handles locking, serialization/deserialization, and state synchronization
+- Handles access modes, serialization/deserialization, and state synchronization
 - Key URI pattern: `<datastore_path>/studies/<study_uid>/series/<series_uid>.tar`
-- Must be used as context manager when `lock=True` to ensure proper lock release
+- Must be used as context manager for `mode="w"` to ensure proper lock release and sync
 
 **Instance** (`instance.py`)
 - Represents a single DICOM file
@@ -68,13 +68,19 @@ Pre-commit hooks automatically run:
 
 ### Key Concepts
 
-**Locking**
-- Prevents race conditions when multiple processes modify the same series
-- `lock=True`: Acquires exclusive lock (raises `LockAcquisitionError` if exists)
-- `lock=False`: Read-only mode; state changes require `dirty=True` flag
+**Access Modes**
+- `mode="r"`: Read-only access; no lock acquired; allows all read operations
+- `mode="w"`: Write access; acquires exclusive lock automatically (raises `LockAcquisitionError` if exists)
+- `sync_on_exit=True` (default): Auto-syncs and releases lock on context exit for `mode="w"`
+- `sync_on_exit=False`: No lock acquired, no auto-sync; useful for local testing/debugging
 - Locks persist through serialization/deserialization (for Apache Beam workflows)
 - Locks deliberately "hang" on errors to indicate series corruption
-- User responsible for lock release via context manager
+- User must use context manager for proper lock release
+
+**Deprecated Parameters**
+- `lock` parameter: Replaced by `mode`; emits DeprecationWarning if used
+- `dirty` parameter on methods: No longer needed; emits DeprecationWarning if used
+- `sync()` method: Called automatically on context exit; explicit calls emit DeprecationWarning
 
 **UID Hashing**
 - `Instance.uid_hash_func`: Optional callable for de-identification
@@ -144,27 +150,36 @@ cloud_optimized_dicom/
 
 **Context Manager Usage:**
 ```python
-# Correct: Lock released on context exit
-with CODObject(client=..., datastore_path=..., lock=True) as cod:
+# Read-only access (no lock acquired)
+with CODObject(client=..., datastore_path=..., mode="r") as cod:
+    metadata = cod.get_metadata()
+    instances = cod.get_instances()
+
+# Write access (lock acquired, auto-sync on exit)
+with CODObject(client=..., datastore_path=..., mode="w") as cod:
     cod.append(instances)
-    cod.sync()
+# sync() called automatically, lock released
+
+# Local testing (no lock, no sync - efficient for debugging)
+with CODObject(client=..., datastore_path=..., mode="w", sync_on_exit=False) as cod:
+    cod.append(instances)
+# no lock acquired, no sync on exit
 
 # Incorrect: Lock persists indefinitely
-cod = CODObject(client=..., datastore_path=..., lock=True)
-cod.sync()
+cod = CODObject(client=..., datastore_path=..., mode="w")
 del cod  # Lock still exists remotely!
 ```
 
 **Apache Beam Pattern:**
 ```python
 def first_dofn():
-    cod = CODObject(..., lock=True)  # No context manager
+    cod = CODObject(..., mode="w")  # No context manager
     yield cod.serialize()  # Lock persists
 
 def last_dofn(serialized_cod):
     with CODObject.deserialize(**serialized_cod) as cod:  # Reacquires lock
-        cod.sync()
-    # Lock released here
+        pass  # Work happens here
+    # sync() called automatically, lock released
 ```
 
 ### Testing Notes
@@ -180,7 +195,7 @@ def last_dofn(serialized_cod):
 All custom errors inherit from `CODError`:
 - `LockAcquisitionError`: Lock already exists
 - `CODObjectNotFoundError`: Series not found when `create_if_missing=False`
-- `CleanOpOnUnlockedCODObjectError`: State change attempted without lock
+- `WriteOperationInReadModeError`: Write operation attempted in read mode (`mode="r"`)
 - `ErrorLogExistsError`: Error log exists in datastore (series corrupt)
 - `TarValidationError`, `TarMissingInstanceError`, `HashMismatchError`: Integrity failures
 - `HintMismatchError`: Hints don't match actual values
