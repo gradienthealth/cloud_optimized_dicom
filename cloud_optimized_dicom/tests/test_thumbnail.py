@@ -303,7 +303,7 @@ class TestThumbnail(unittest.TestCase):
             client=self.client,
             study_uid=instance.study_uid(),
             series_uid=instance.series_uid(),
-            mode="w",
+            mode="a",
             sync_on_exit=False,
         ) as cod_obj:
             # should get ValueError if we try to get the missing thumbnail without generating
