@@ -71,7 +71,7 @@ class TestLocking(unittest.TestCase):
                 ) as cod2:
                     pass
 
-    def test_dirty_read(self):
+    def test_read_mode(self):
         """Test that you can read metadata in read mode"""
         with CODObject(
             client=self.client,
@@ -84,7 +84,7 @@ class TestLocking(unittest.TestCase):
             self.assertEqual(metadata.study_uid, self.study_uid)
             self.assertEqual(metadata.series_uid, self.series_uid)
 
-    def test_concurrent_dirty_read(self):
+    def test_concurrent_read(self):
         """Test that you can read while another cod has a lock"""
         with CODObject(
             client=self.client,
