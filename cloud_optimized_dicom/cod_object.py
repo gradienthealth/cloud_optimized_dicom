@@ -109,12 +109,8 @@ class CODObject:
                 mode = "w" if lock else "r"
 
         # Validate mode
-        if mode is None:
-            raise ValueError(
-                "mode must be specified: 'r' for read-only, 'w' for write, 'a' for append"
-            )
         if mode not in ("r", "w", "a"):
-            raise ValueError(f"mode must be 'r', 'w', or 'a', got: {mode}")
+            raise ValueError(f"mode must be 'r', 'w', or 'a', got: {mode!r}")
 
         self._mode = mode
         self._sync_on_exit = sync_on_exit
@@ -142,9 +138,9 @@ class CODObject:
                 )
         # Only acquire lock for write/append mode WITH sync_on_exit=True
         # sync_on_exit=False means no lock (efficient for testing)
-        needs_lock = mode in ("w", "a") and sync_on_exit
-        self._locker = CODLocker(self) if needs_lock else None
-        if self._locker:
+        self._locker = None
+        if mode in ("w", "a") and sync_on_exit:
+            self._locker = CODLocker(self)
             self._locker.acquire(
                 create_if_missing=create_if_missing,
                 empty_lock_override_age=empty_lock_override_age,
@@ -159,11 +155,13 @@ class CODObject:
             )
             self._metadata_synced = False
             self._tar_synced = False
-        else:
+        elif mode in ("r", "a"):
             # Read and append modes fetch existing metadata
             self._get_metadata(create_if_missing=create_if_missing)
             self._tar_synced = _tar_synced
             self._metadata_synced = _metadata_synced
+        else:
+            raise ValueError(f"Unexpected mode: {mode!r}")
         # if the thumbnail exists, it is not synced (we did not fetch it)
         self._thumbnail_synced = self._get_metadata_field("thumbnail") is None
 

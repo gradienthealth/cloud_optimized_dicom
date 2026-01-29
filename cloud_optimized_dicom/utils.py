@@ -21,6 +21,7 @@ from google.cloud.storage.retry import DEFAULT_RETRY
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.config import logger
+from cloud_optimized_dicom.errors import WriteOperationInReadModeError
 
 
 def find_pattern(f: io.BufferedReader, pattern: bytes, buffer_size=8192):
@@ -199,7 +200,6 @@ def public_method(write_only: bool = False):
 
     Handles deprecated 'dirty' parameter with warnings for all public methods.
     """
-    from cloud_optimized_dicom.errors import WriteOperationInReadModeError
 
     def decorator(func):
         def wrapper(self, *args, **kwargs):
