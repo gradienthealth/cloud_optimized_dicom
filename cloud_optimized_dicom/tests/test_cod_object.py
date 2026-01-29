@@ -33,7 +33,7 @@ class TestCODObject(unittest.TestCase):
             client=self.client,
             study_uid="1.2.3.4.5.6.7.8.9.0",
             series_uid="1.2.3.4.5.6.7.8.9.0",
-            lock=False,
+            mode="r",
         )
         self.assertEqual(cod_object.datastore_path, self.datastore_path)
         self.assertEqual(
@@ -61,7 +61,7 @@ class TestCODObject(unittest.TestCase):
                 client=self.client,
                 study_uid="1.2.3.4.5",
                 series_uid="1.2.3.4.5",
-                lock=False,
+                mode="r",
             )
 
     def test_pull_tar(self):
@@ -74,21 +74,21 @@ class TestCODObject(unittest.TestCase):
             client=self.client,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=True,
+            mode="w",
         ) as cod_obj:
             cod_obj.append([instance])
-            cod_obj.sync()
+            # sync happens automatically on context exit
         cod_obj = CODObject(
             datastore_path=self.datastore_path,
             client=self.client,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="r",
         )
-        instance = cod_obj.get_metadata(dirty=True).instances[self.test_instance_uid]
+        instance = cod_obj.get_metadata().instances[self.test_instance_uid]
         # Before we pull the tar, the instance should have a remote URI (it exists in the COD datastore)
         self.assertTrue(is_remote(instance.dicom_uri))
-        cod_obj.pull_tar(dirty=True)
+        cod_obj.pull_tar()
         # After we pull the tar, the instance should have a local URI (it exists in the local tar file)
         self.assertEqual(
             instance.dicom_uri,
@@ -111,21 +111,21 @@ class TestCODObject(unittest.TestCase):
             client=self.client,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=True,
+            mode="w",
         ) as cod_obj:
             cod_obj.append([instance])
-            cod_obj.sync()
+            # sync happens automatically on context exit
         cod_obj = CODObject(
             datastore_path=self.datastore_path,
             client=self.client,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="r",
         )
-        instance = cod_obj.get_metadata(dirty=True).instances[self.test_instance_uid]
+        instance = cod_obj.get_metadata().instances[self.test_instance_uid]
         # Before we extract, the instance should have a remote URI (it exists in the COD datastore)
         self.assertTrue(is_remote(instance.dicom_uri) and instance.is_nested_in_tar)
-        cod_obj.extract_locally(dirty=True)
+        cod_obj.extract_locally()
         # After we extract, the instance should be local and not nested in a tar
         self.assertTrue(
             not is_remote(instance.dicom_uri) and not instance.is_nested_in_tar
@@ -144,7 +144,8 @@ class TestCODObject(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid="1.2.3.4.5.6.7.8.9.0",
             series_uid="1.2.3.4.5.6.7.8.9.0",
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         ) as cod_obj:
             serialized = cod_obj.serialize()
         with CODObject.deserialize(serialized, self.client) as deserialized:
@@ -162,11 +163,11 @@ class TestCODObject(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=True,
+            mode="w",
         ) as cod_obj:
             instance = Instance(dicom_uri=self.local_instance_path)
             cod_obj.append([instance])
-            cod_obj.sync()
+            cod_obj._sync()
             with instance.open() as f:
                 ds = dcmread(f)
                 self.assertEqual(ds.StudyInstanceUID, self.test_study_uid)

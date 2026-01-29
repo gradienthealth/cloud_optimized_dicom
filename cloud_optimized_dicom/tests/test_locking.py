@@ -6,11 +6,7 @@ from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
-from cloud_optimized_dicom.errors import (
-    CleanOpOnUnlockedCODObjectError,
-    LockAcquisitionError,
-    LockVerificationError,
-)
+from cloud_optimized_dicom.errors import LockAcquisitionError, LockVerificationError
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
@@ -34,9 +30,9 @@ class TestLocking(unittest.TestCase):
         cls.local_instance_path = os.path.join(cls.test_data_dir, "monochrome2.dcm")
         delete_uploaded_blobs(cls.client, [cls.datastore_path])
 
-    def test_lock_unspecified(self):
-        """Test that not specifying lock raises an error"""
-        with self.assertRaises(TypeError):
+    def test_mode_unspecified(self):
+        """Test that not specifying mode raises an error"""
+        with self.assertRaises(ValueError):
             CODObject(
                 datastore_path=self.datastore_path,
                 client=self.client,
@@ -51,7 +47,7 @@ class TestLocking(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=False,
+            mode="r",
         ) as cod:
             with self.assertRaises(AttributeError):
                 cod.lock = True
@@ -63,7 +59,7 @@ class TestLocking(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=True,
+            mode="w",
         ) as cod1:
             with self.assertRaises(LockAcquisitionError):
                 with CODObject(
@@ -71,31 +67,31 @@ class TestLocking(unittest.TestCase):
                     datastore_path=self.datastore_path,
                     study_uid=self.study_uid,
                     series_uid=self.series_uid,
-                    lock=True,
+                    mode="w",
                 ) as cod2:
                     pass
 
-    def test_dirty_read(self):
-        """Test that you can read dirty metadata"""
+    def test_read_mode(self):
+        """Test that you can read metadata in read mode"""
         with CODObject(
             client=self.client,
             datastore_path=self.datastore_path,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=False,
+            mode="r",
         ) as cod:
-            metadata = cod.get_metadata(dirty=True)
+            metadata = cod.get_metadata()
             self.assertEqual(metadata.study_uid, self.study_uid)
             self.assertEqual(metadata.series_uid, self.series_uid)
 
-    def test_concurrent_dirty_read(self):
-        """Test that you can dirty read while another cod has a lock"""
+    def test_concurrent_read(self):
+        """Test that you can read while another cod has a lock"""
         with CODObject(
             client=self.client,
             datastore_path=self.datastore_path,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=True,
+            mode="w",
         ) as cod1:
             locked_metadata = cod1.get_metadata()
             with CODObject(
@@ -103,41 +99,47 @@ class TestLocking(unittest.TestCase):
                 datastore_path=self.datastore_path,
                 study_uid=self.study_uid,
                 series_uid=self.series_uid,
-                lock=False,
+                mode="r",
             ) as cod2:
-                dirty_metadata = cod2.get_metadata(dirty=True)
-                self.assertEqual(dirty_metadata.study_uid, self.study_uid)
-                self.assertEqual(dirty_metadata.series_uid, self.series_uid)
+                read_metadata = cod2.get_metadata()
+                self.assertEqual(read_metadata.study_uid, self.study_uid)
+                self.assertEqual(read_metadata.series_uid, self.series_uid)
                 self.assertEqual(locked_metadata.study_uid, self.study_uid)
                 self.assertEqual(locked_metadata.series_uid, self.series_uid)
 
-    def test_unlocked_clean_fail(self):
-        """Test that you cannot do a clean operation on an unlocked CODObject"""
+    def test_read_mode_allows_reads(self):
+        """Test that mode='r' allows read operations without errors"""
         with CODObject(
             client=self.client,
             datastore_path=self.datastore_path,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=False,
+            mode="r",
         ) as cod:
-            with self.assertRaises(CleanOpOnUnlockedCODObjectError):
-                cod.get_metadata()
+            # Read operations should work without any dirty parameter
+            metadata = cod.get_metadata()
+            self.assertEqual(metadata.study_uid, self.study_uid)
+            self.assertEqual(metadata.series_uid, self.series_uid)
 
-    def test_warn_dirty_on_locked(self):
-        """Test that we warn about dirty operations on locked CODObjects"""
+    def test_deprecation_warning_for_dirty_param(self):
+        """Test that using dirty parameter emits a deprecation warning"""
+        import warnings
+
         with CODObject(
             client=self.client,
             datastore_path=self.datastore_path,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=True,
+            mode="r",
         ) as cod:
-            with self.assertLogs(level="WARNING") as cm:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
                 cod.get_metadata(dirty=True)
-            self.assertRegex(
-                cm.output[0],
-                r"Performing dirty operation 'get_metadata' on locked CODObject: .*",
-            )
+                # Check that a deprecation warning was issued for the dirty parameter
+                self.assertTrue(
+                    any("dirty" in str(warning.message) for warning in w),
+                    "Expected deprecation warning for 'dirty' parameter",
+                )
 
     def test_lock_gone_on_cleanup(self):
         """Test that we get an error if the lock disappears while the COD is active"""
@@ -147,7 +149,7 @@ class TestLocking(unittest.TestCase):
                 datastore_path=self.datastore_path,
                 study_uid=self.study_uid,
                 series_uid=self.series_uid,
-                lock=True,
+                mode="w",
             ) as cod:
                 cod._locker.get_lock_blob().delete()
             # when the with block exits, cod will attempt to release the lock and will find it missing
@@ -161,11 +163,11 @@ class TestLocking(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=True,
+            mode="w",
         )
         cod_obj.get_lock_blob().delete()
         with self.assertRaises(LockVerificationError):
-            cod_obj.sync()
+            cod_obj._sync()
 
     def test_lock_changes(self):
         """Test that we get an error if the lock changes while the COD is active"""
@@ -175,7 +177,7 @@ class TestLocking(unittest.TestCase):
                 datastore_path=self.datastore_path,
                 study_uid=self.study_uid,
                 series_uid=self.series_uid,
-                lock=True,
+                mode="w",
             ) as cod:
                 # simulate some other cod somehow stealing the lock
                 cod._locker.get_lock_blob().upload_from_string(
@@ -188,23 +190,21 @@ class TestLocking(unittest.TestCase):
     def test_lock_stolen_during_metadata_fetch(self):
         """Test that we get an error if another process creates the lock while we're fetching metadata"""
 
-        original_get_metadata = CODObject.get_metadata
+        original_get_metadata = CODObject._get_metadata
 
-        def mock_get_metadata(self: CODObject, dirty=False, create_if_missing=True):
+        def mock_get_metadata(self: CODObject, create_if_missing=True):
             # First get the metadata normally
-            result = original_get_metadata(
-                self, dirty=dirty, create_if_missing=create_if_missing
-            )
+            result = original_get_metadata(self, create_if_missing=create_if_missing)
             # Then simulate another process creating the lock file
             self._locker.get_lock_blob().upload_from_string(
                 "competing lock", content_type="application/json", if_generation_match=0
             )
             return result
 
-        # Patch the get_metadata method temporarily for this test.
+        # Patch the _get_metadata method temporarily for this test.
         # Now in acquire_lock, it will now get_metadata, upload a lock, and then attempt to upload the lock again
         # We expect this to raise our assertion error about a stolen lock
-        CODObject.get_metadata = mock_get_metadata
+        CODObject._get_metadata = mock_get_metadata
 
         try:
             with self.assertRaisesRegex(
@@ -216,11 +216,11 @@ class TestLocking(unittest.TestCase):
                     datastore_path=self.datastore_path,
                     study_uid=self.study_uid,
                     series_uid=self.series_uid,
-                    lock=True,
+                    mode="w",
                 )
         finally:
             # Restore the original method
-            CODObject.get_metadata = original_get_metadata
+            CODObject._get_metadata = original_get_metadata
             # Clean up any locks that might have been created
             delete_uploaded_blobs(self.client, [self.datastore_path])
 
@@ -232,7 +232,7 @@ class TestLocking(unittest.TestCase):
                 datastore_path=self.datastore_path,
                 study_uid=self.study_uid,
                 series_uid=self.series_uid,
-                lock=True,
+                mode="w",
             ) as cod:
                 raise ValueError("test")
         # The lock should still exist
@@ -249,7 +249,7 @@ class TestLocking(unittest.TestCase):
                 datastore_path=self.datastore_path,
                 study_uid=self.study_uid,
                 series_uid=self.series_uid,
-                lock=True,
+                mode="w",
             ) as cod:
                 raise ValueError("test")
         # because there's a hanging lock, we should get an error
@@ -259,7 +259,7 @@ class TestLocking(unittest.TestCase):
                 datastore_path=self.datastore_path,
                 study_uid=self.study_uid,
                 series_uid=self.series_uid,
-                lock=True,
+                mode="w",
             ) as cod:
                 pass
 
@@ -269,7 +269,7 @@ class TestLocking(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.study_uid,
             series_uid=self.series_uid,
-            lock=True,
+            mode="w",
             empty_lock_override_age=0.00000001,
         ) as cod:
             pass
@@ -287,10 +287,10 @@ class TestLocking(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=instance.study_uid(),
             series_uid=instance.series_uid(),
-            lock=True,
+            mode="w",
         ) as cod:
             cod.append([instance])
-            cod.sync()
+            cod._sync()
 
         # simulate non empty hanging lock
         with self.assertRaises(ValueError):
@@ -299,7 +299,7 @@ class TestLocking(unittest.TestCase):
                 datastore_path=self.datastore_path,
                 study_uid=instance.study_uid(),
                 series_uid=instance.series_uid(),
-                lock=True,
+                mode="w",
             ) as cod:
                 raise ValueError("simulated error causing lock to hang")
         # assert lock exists
@@ -315,7 +315,7 @@ class TestLocking(unittest.TestCase):
                 datastore_path=self.datastore_path,
                 study_uid=instance.study_uid(),
                 series_uid=instance.series_uid(),
-                lock=True,
+                mode="w",
                 empty_lock_override_age=0.00000001,
             ) as cod:
                 pass
