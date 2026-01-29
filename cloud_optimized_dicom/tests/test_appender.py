@@ -41,7 +41,8 @@ class TestAppender(unittest.TestCase):
             client=self.client,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
         # test instance of acceptable size is not filtered
         filtered_instances, append_result = _assert_not_too_large(
@@ -79,10 +80,11 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
         instance = Instance(dicom_uri=self.local_instance_path)
-        new, same, conflict, errors = cod_obj.append([instance], dirty=True)
+        new, same, conflict, errors = cod_obj.append([instance])
         self.assertEqual(len(new), 1)
         self.assertEqual(len(same + conflict + errors), 0)
 
@@ -106,9 +108,10 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=instance_a.study_uid(),
             series_uid=instance_a.series_uid(),
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
-        new, same, conflict, errors = cod_obj.append([instance_a], dirty=True)
+        new, same, conflict, errors = cod_obj.append([instance_a])
         self.assertEqual(len(new), 1)
         self.assertEqual(len(same + conflict + errors), 0)
         cod_obj = CODObject(
@@ -116,9 +119,10 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=instance_a.study_uid(),
             series_uid=instance_a.series_uid(),
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
-        new, same, conflict, errors = cod_obj.append([instance_b], dirty=True)
+        new, same, conflict, errors = cod_obj.append([instance_b])
         self.assertEqual(len(new), 1)
         self.assertEqual(len(same + conflict + errors), 0)
 
@@ -128,15 +132,16 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
         # start by appending instance normally
         instance = Instance(dicom_uri=self.local_instance_path)
-        new, same, conflict, errors = cod_obj.append([instance], dirty=True)
+        new, same, conflict, errors = cod_obj.append([instance])
         self.assertEqual(len(new), 1)
         self.assertEqual(len(same + conflict + errors), 0)
         # now append the same instance again, which should be a duplicate
-        new, same, conflict, errors = cod_obj.append([instance], dirty=True)
+        new, same, conflict, errors = cod_obj.append([instance])
         self.assertEqual(len(same), 1)
         self.assertEqual(len(conflict + new + errors), 0)
 
@@ -146,11 +151,12 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
         # start by appending instance normally
         instance = Instance(dicom_uri=self.local_instance_path)
-        new, same, conflict, errors = cod_obj.append([instance], dirty=True)
+        new, same, conflict, errors = cod_obj.append([instance])
         self.assertEqual(len(new), 1)
         self.assertEqual(len(same + conflict + errors), 0)
         self.assertEqual(len(cod_obj._metadata.instances), 1)
@@ -166,7 +172,7 @@ class TestAppender(unittest.TestCase):
             self.assertTrue(os.path.exists(f.name))
             diff_hash_dupe = Instance(dicom_uri=f.name)
             self.assertNotEqual(diff_hash_dupe.crc32c(), instance.crc32c())
-            new, same, conflict, errors = cod_obj.append([diff_hash_dupe], dirty=True)
+            new, same, conflict, errors = cod_obj.append([diff_hash_dupe])
             self.assertEqual(len(conflict), 1)
             self.assertEqual(len(same + new + errors), 0)
 
@@ -176,7 +182,7 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=True,
+            mode="w",
         )
         instance = Instance(dicom_uri=self.local_instance_path)
         new, same, conflict, errors = cod_obj.append([instance])
@@ -192,7 +198,7 @@ class TestAppender(unittest.TestCase):
             cod_obj.metadata_uri, client=self.client
         )
         self.assertFalse(metadata_blob.exists())
-        cod_obj.sync()
+        cod_obj._sync()
         self.assertTrue(cod_obj._tar_synced)
         self.assertTrue(cod_obj._metadata_synced)
         self.assertTrue(tar_blob.exists())
@@ -219,20 +225,21 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=instance_a.study_uid(),
             series_uid=instance_a.series_uid(),
-            lock=True,
+            mode="w",
         ) as cod_obj:
-            new, same, conflict, errors = cod_obj.append([instance_a], dirty=False)
+            new, same, conflict, errors = cod_obj.append([instance_a])
             self.assertEqual(len(new), 1)
             self.assertEqual(len(same + conflict + errors), 0)
-            cod_obj.sync()
+            # sync happens automatically on context exit
         with CODObject(
             client=self.client,
             datastore_path=self.datastore_path,
             study_uid=instance_a.study_uid(),
             series_uid=instance_a.series_uid(),
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         ) as cod_obj:
-            new, same, conflict, errors = cod_obj.append([instance_b], dirty=True)
+            new, same, conflict, errors = cod_obj.append([instance_b])
             self.assertEqual(len(new), 1)
             self.assertEqual(len(same + conflict + errors), 0)
 
@@ -243,10 +250,11 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid="some_other_study_uid",
             series_uid="some_other_series_uid",
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
         bad_instance = Instance(dicom_uri=self.local_instance_path)
-        new, same, conflict, errors = cod_obj.append([bad_instance], dirty=True)
+        new, same, conflict, errors = cod_obj.append([bad_instance])
         self.assertEqual(len(errors), 1)
         self.assertEqual(len(new + same + conflict), 0)
         self.assertIn("does not belong to COD object", str(errors[0][1]))
@@ -258,13 +266,14 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
         bad_instance = Instance(
             dicom_uri=self.local_instance_path,
             hints=Hints(study_uid="bad_study_uid"),
         )
-        new, same, conflict, errors = cod_obj.append([bad_instance], dirty=True)
+        new, same, conflict, errors = cod_obj.append([bad_instance])
         self.assertEqual(len(errors), 1)
         self.assertEqual(len(new + same + conflict), 0)
         self.assertIn("Hint mismatch for field study_uid", str(errors[0][1]))
@@ -276,10 +285,11 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
         instance = Instance(dicom_uri="gs://some-hospital/that/does/not/exist.dcm")
-        new, same, conflict, errors = cod_obj.append([instance], dirty=True)
+        new, same, conflict, errors = cod_obj.append([instance])
         self.assertEqual(len(errors), 1)
         self.assertEqual(len(new + same + conflict), 0)
         self.assertIn("not found", str(errors[0][1]))
@@ -291,10 +301,11 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
         instance = Instance(dicom_uri="/some/local/path/that/does/not/exist.dcm")
-        new, same, conflict, errors = cod_obj.append([instance], dirty=True)
+        new, same, conflict, errors = cod_obj.append([instance])
         self.assertEqual(len(errors), 1)
         self.assertEqual(len(new + same + conflict), 0)
         self.assertIn("No such file or directory", str(errors[0][1]))
@@ -306,13 +317,12 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
         good_instance = Instance(dicom_uri=self.local_instance_path)
         bad_instance = Instance(dicom_uri="gs://some-hospital/that/does/not/exist.dcm")
-        new, same, conflict, errors = cod_obj.append(
-            [good_instance, bad_instance], dirty=True
-        )
+        new, same, conflict, errors = cod_obj.append([good_instance, bad_instance])
         self.assertEqual(len(errors), 1)
         self.assertEqual(len(new + same + conflict), 1)
 
@@ -349,7 +359,8 @@ class TestAppender(unittest.TestCase):
                 client=self.client,
                 study_uid=good_instance.study_uid(),
                 series_uid=good_instance.series_uid(),
-                lock=True,
+                mode="w",
+                sync_on_exit=False,
             ) as cod_obj:
                 new, same, conflict, errors = cod_obj.append(
                     [bad_instance, good_instance]
@@ -366,7 +377,8 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
         instance = Instance(dicom_uri=self.local_instance_path)
         instance_v2 = Instance(
@@ -377,9 +389,7 @@ class TestAppender(unittest.TestCase):
                 size=instance.size() + 1,
             ),
         )
-        new, same, conflict, errors = cod_obj.append(
-            [instance_v2, instance], dirty=True
-        )
+        new, same, conflict, errors = cod_obj.append([instance_v2, instance])
 
     def test_append_compress(self):
         """test that compressing instances works"""
@@ -388,7 +398,8 @@ class TestAppender(unittest.TestCase):
             datastore_path=self.datastore_path,
             study_uid=self.test_study_uid,
             series_uid=self.test_series_uid,
-            lock=False,
+            mode="w",
+            sync_on_exit=False,
         )
         instance = Instance(dicom_uri=self.local_instance_path)
         with instance.open() as f:
@@ -397,9 +408,7 @@ class TestAppender(unittest.TestCase):
                 ds.file_meta.TransferSyntaxUID, pydicom3.uid.ImplicitVRLittleEndian
             )
         uncompressed_size = instance.size()
-        new, same, conflict, errors = cod_obj.append(
-            [instance], dirty=True, compress=True
-        )
+        new, same, conflict, errors = cod_obj.append([instance], compress=True)
         self.assertEqual(len(new), 1)
         self.assertEqual(len(same + conflict + errors), 0)
         self.assertLess(instance.size(), uncompressed_size)

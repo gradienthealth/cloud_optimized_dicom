@@ -1,8 +1,9 @@
 import os
 import shutil
 import tarfile
+import warnings
 from tempfile import mkdtemp
-from typing import Callable, Optional, Union
+from typing import Callable, Literal, Optional, Union
 
 import numpy as np
 from google.api_core.exceptions import NotFound
@@ -21,6 +22,7 @@ from cloud_optimized_dicom.errors import (
     InstanceValidationError,
     TarMissingInstanceError,
     TarValidationError,
+    WriteOperationInReadModeError,
 )
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
@@ -32,7 +34,6 @@ from cloud_optimized_dicom.thumbnail import (
     get_instance_by_thumbnail_index,
     get_instance_thumbnail_slice,
 )
-from cloud_optimized_dicom.truncate import remove, truncate
 from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
     is_remote,
@@ -54,13 +55,19 @@ class CODObject:
         client: storage.Client - The client to use to interact with the datastore.
         study_uid: str - The study_uid of the series.
         series_uid: str - The series_uid of the series.
-        lock: bool - If `True`, acquire a lock on initialization. If `False`, no changes made on this object will be synced to the datastore.
+        mode: str - Access mode: "r" for read-only, "w" for write (overwrite), "a" for append.
+            - "r": Read-only, no lock acquired, no sync on exit.
+            - "w": Write mode, acquires lock, starts fresh (no remote tar fetch), overwrites on sync.
+            - "a": Append mode, acquires lock, fetches remote tar if exists, appends on sync.
+        sync_on_exit: bool - If True (default), sync changes on context exit for mode="w" or "a". If False, no lock is
+            acquired and no sync occurs (useful for testing).
         hashed_uids: bool - Flag whether UIDs are hashed. If `True`, Instances appended to this CODObject must have a `uid_hash_func`.
         create_if_missing: bool - If `False`, raise an error if series does not yet exist in the datastore.
         temp_dir: str - If a temp_dir with data pertaining to this series already exists, provide it here.
         override_errors: bool - If `True`, delete any existing error.log and upload a new one.
         empty_lock_override_age: float - If `None`, do not override a stale lock if it exists. If `float`, override a stale lock if it exists and is older than the given age (in hours).
         lock_generation: int - The generation of the lock file. Should only be set if instantiation from serialized cod object.
+        lock: bool - DEPRECATED. Use mode="r", mode="w", or mode="a" instead.
     """
 
     # Constructor and basic validation
@@ -71,8 +78,9 @@ class CODObject:
         client: storage.Client,
         study_uid: str,
         series_uid: str,
-        lock: bool,
+        mode: Literal["r", "w", "a"] = None,
         # fields user can set but does not have to
+        sync_on_exit: bool = True,
         hashed_uids: bool = False,
         create_if_missing: bool = True,
         temp_dir: str = None,
@@ -84,7 +92,28 @@ class CODObject:
         _tar_synced: bool = False,
         _metadata_synced: bool = True,
         _thumbnail_synced: bool = False,
+        # deprecated
+        lock: bool = None,
     ):
+        # Set temp_dir early so cleanup_temp_dir doesn't fail if __init__ raises
+        self.temp_dir = temp_dir
+
+        # Handle deprecated lock parameter
+        if lock is not None:
+            warnings.warn(
+                "The 'lock' parameter is deprecated. Use mode='r', mode='w', or mode='a' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if mode is None:
+                mode = "w" if lock else "r"
+
+        # Validate mode
+        if mode not in ("r", "w", "a"):
+            raise ValueError(f"mode must be 'r', 'w', or 'a', got: {mode!r}")
+
+        self._mode = mode
+        self._sync_on_exit = sync_on_exit
         self.datastore_path = datastore_path
         self.client = client
         self.study_uid = study_uid
@@ -92,7 +121,6 @@ class CODObject:
         self._validate_uids()
         self.hashed_uids = hashed_uids
         self._metadata = metadata
-        self.temp_dir = temp_dir
         self.override_errors = override_errors
         self.lock_generation = lock_generation
         # check for error.log existence - if it exists, fail initialization
@@ -108,20 +136,34 @@ class CODObject:
                 raise ErrorLogExistsError(
                     f"Cannot initialize; error log exists: {self.error_log_uri}"
                 )
-        self._locker = CODLocker(self) if lock else None
-        if self.lock:
+        # Only acquire lock for write/append mode WITH sync_on_exit=True
+        # sync_on_exit=False means no lock (efficient for testing)
+        self._locker = None
+        if mode in ("w", "a") and sync_on_exit:
+            self._locker = CODLocker(self)
             self._locker.acquire(
                 create_if_missing=create_if_missing,
                 empty_lock_override_age=empty_lock_override_age,
             )
+        # Mode-specific initialization (independent of lock)
+        if mode == "w":
+            # Write mode always starts fresh with empty metadata
+            self._metadata = SeriesMetadata(
+                study_uid=self.study_uid,
+                series_uid=self.series_uid,
+                hashed_uids=self.hashed_uids,
+            )
+            self._metadata_synced = False
+            self._tar_synced = False
+        elif mode in ("r", "a"):
+            # Read and append modes fetch existing metadata
+            self._get_metadata(create_if_missing=create_if_missing)
+            self._tar_synced = _tar_synced
+            self._metadata_synced = _metadata_synced
         else:
-            self.get_metadata(create_if_missing=create_if_missing, dirty=True)
-        self._tar_synced = _tar_synced
-        self._metadata_synced = _metadata_synced
+            raise ValueError(f"Unexpected mode: {mode!r}")
         # if the thumbnail exists, it is not synced (we did not fetch it)
-        self._thumbnail_synced = (
-            self.get_metadata_field("thumbnail", dirty=not lock) is None
-        )
+        self._thumbnail_synced = self._get_metadata_field("thumbnail") is None
 
     def _validate_uids(self):
         """Validate the UIDs are valid DICOM UIDs (TODO make this more robust, for now just check length)"""
@@ -130,8 +172,13 @@ class CODObject:
 
     # Core properties and getters
     @property
+    def mode(self) -> str:
+        """Read-only property for access mode ('r', 'w', or 'a')."""
+        return self._mode
+
+    @property
     def lock(self) -> bool:
-        """Read-only property for lock status."""
+        """Read-only property - True if a lock is currently held."""
         return self._locker is not None
 
     # Temporary directory management
@@ -146,7 +193,7 @@ class CODObject:
     def tar_file_path(self) -> str:
         """The path to the tar file for this series in the temporary directory."""
         _tar_file_path = os.path.join(self.get_temp_dir(), f"{self.series_uid}.tar")
-        # create tar if it doesn't exist (needs to exist so we can open later in append mode)
+        # create empty tar if it doesn't exist (needed for append/write operations)
         if not os.path.exists(_tar_file_path):
             with tarfile.open(_tar_file_path, "w"):
                 pass
@@ -191,12 +238,9 @@ class CODObject:
         """The URI of the error log file for this series in the COD datastore."""
         return os.path.join(self.datastore_series_uri, "error.log")
 
-    # Core public operations
-    @public_method
-    def get_metadata(
-        self, create_if_missing: bool = True, dirty: bool = False
-    ) -> SeriesMetadata:
-        """Get the metadata for this series."""
+    # Private implementations (no decorator, for internal use)
+    def _get_metadata(self, create_if_missing: bool = True) -> SeriesMetadata:
+        """Private: Get the metadata for this series (bypasses public_method decorator)."""
         # early exit if metadata is already set
         if self._metadata is not None:
             return self._metadata
@@ -219,38 +263,64 @@ class CODObject:
             )
         return self._metadata
 
-    @public_method
+    def _get_metadata_field(self, field_name: str) -> Optional[dict]:
+        """Private: Get a custom field from the metadata (bypasses public_method decorator)."""
+        return self._get_metadata().metadata_fields.get(field_name, None)
+
+    def _get_instances(self, strict_sorting: bool = True) -> dict:
+        """Private: Get instances dict (bypasses public_method decorator)."""
+        metadata = self._get_metadata()
+        metadata.sort_instances(strict=strict_sorting)
+        return metadata.instances
+
+    def _get_instance(self, instance_uid: str) -> "Instance":
+        """Private: Get an instance by uid (bypasses public_method decorator)."""
+        return self._get_instances(strict_sorting=False)[instance_uid]
+
+    def _get_instance_by_index(self, index: int) -> "Instance":
+        """Private: Get an instance by index (bypasses public_method decorator)."""
+        return list(self._get_instances(strict_sorting=True).values())[index]
+
+    # Core public operations
+    @public_method()
+    def get_metadata(
+        self, create_if_missing: bool = True, dirty: bool = False
+    ) -> SeriesMetadata:
+        """Get the metadata for this series."""
+        return self._get_metadata(create_if_missing=create_if_missing)
+
+    @public_method()
     def get_instances(self, strict_sorting: bool = True, dirty: bool = False):
         """Get a dictionary mapping instance UIDs to instances. These instance UIDs are hashed if `hashed_uids=True`, otherwise they are the original UIDs.
         COD will attempt to sort this dictionary so that instances appear in the proper order.
 
         Args:
             strict_sorting: bool - If `True`, raise an error if sorting fails (log a warning if `False`).
-            dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+            dirty: bool - DEPRECATED. Use mode='r' or mode='w' at initialization.
         """
-        metadata = self.get_metadata(dirty=dirty)
-        metadata.sort_instances(strict=strict_sorting)
-        return metadata.instances
+        return self._get_instances(strict_sorting=strict_sorting)
 
-    @public_method
+    @public_method()
     def get_instance(self, instance_uid: str, dirty: bool = False) -> Instance:
-        """Get an instance by uid. `instance_uid` should be hashed if `hashed_uids=True`, otherwise it should be the original UID."""
-        return self.get_instances(strict_sorting=False, dirty=dirty)[instance_uid]
+        """Get an instance by uid. `instance_uid` should be hashed if `hashed_uids=True`, otherwise it should be the original UID.
 
-    @public_method
+        Args:
+            instance_uid: str - The instance UID to get.
+            dirty: bool - DEPRECATED. Use mode='r' or mode='w' at initialization.
+        """
+        return self._get_instance(instance_uid)
+
+    @public_method()
     def get_instance_by_index(self, index: int, dirty: bool = False) -> Instance:
         """Get an instance by index.
 
         Args:
             index: int - The index of the instance to get.
-            dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+            dirty: bool - DEPRECATED. Use mode='r' or mode='w' at initialization.
         """
-        # for access by index, we require strict sorting
-        return list(self.get_instances(strict_sorting=True, dirty=dirty).values())[
-            index
-        ]
+        return self._get_instance_by_index(index)
 
-    @public_method
+    @public_method()
     def get_instance_by_thumbnail_index(
         self, thumbnail_index: int, dirty: bool = False
     ) -> Instance:
@@ -268,7 +338,7 @@ class CODObject:
         """
         return get_instance_by_thumbnail_index(self, thumbnail_index)
 
-    @public_method
+    @public_method()
     def open_instance(self, instance: Union[Instance, str, int], dirty: bool = False):
         """Open an instance (first fetches the series tar if necessary). For convenience, the instance parameter can be one of:
             - `Instance`: An actual instance object to open.
@@ -277,7 +347,7 @@ class CODObject:
 
         Args:
             instance: Instance | str | int - The instance to open
-            dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+            dirty: bool - DEPRECATED. Use mode='r' or mode='w' at initialization.
 
         Returns:
             A file pointer to the instance.
@@ -292,23 +362,23 @@ class CODObject:
                 instance.get_instance_uid(
                     hashed=self.hashed_uids, trust_hints_if_available=True
                 )
-                not in self.get_metadata(dirty=dirty).instances
+                not in self._get_metadata().instances
             ):
                 raise FileNotFoundError(f"Instance not found in CODObject: {instance}")
         elif isinstance(instance, str):
-            instance = self.get_instance(instance, dirty=dirty)
+            instance = self._get_instance(instance)
         elif isinstance(instance, int):
-            instance = self.get_instance_by_index(instance, dirty=dirty)
+            instance = self._get_instance_by_index(instance)
         else:
             raise ValueError(
                 f"Invalid instance parameter: {instance} (must be Instance, str, or int)"
             )
         # pull the tar file if necessary
         if not self._tar_synced:
-            self.pull_tar(dirty=dirty)
+            self._pull_tar()
         return instance.open()
 
-    @public_method
+    @public_method(write_only=True)
     def append(
         self,
         instances: list[Instance],
@@ -340,39 +410,8 @@ class CODObject:
             compress=compress,
         )
 
-    @public_method
-    def remove(self, instances: list[Instance], dirty: bool = False):
-        """
-        Remove instances from a cod object. Because tar files do not natively support removal,
-        this method just determines a list of instances to keep (if any) and calls truncate.
-        Returns the AppendResult of the truncate operation (i.e. what's left in the cod object)
-        """
-        return remove(cod_object=self, instances=instances, dirty=dirty)
-
-    @public_method
-    def truncate(
-        self,
-        instances: list[Instance],
-        treat_metadata_diffs_as_same: bool = False,
-        max_instance_size: float = 10,
-        max_series_size: float = 100,
-        delete_local_origin: bool = False,
-        dirty: bool = False,
-    ):
-        """Truncate the COD object to the given instances."""
-        return truncate(
-            cod_object=self,
-            instances=instances,
-            treat_metadata_diffs_as_same=treat_metadata_diffs_as_same,
-            max_instance_size=max_instance_size,
-            max_series_size=max_series_size,
-            delete_local_origin=delete_local_origin,
-            dirty=dirty,
-        )
-
-    @public_method
-    def sync(self, tar_storage_class: str = STANDARD_STORAGE_CLASS):
-        """Sync tar+index and/or metadata to GCS, as needed
+    def _sync(self, tar_storage_class: str = STANDARD_STORAGE_CLASS):
+        """Private: Sync tar+index and/or metadata to GCS, as needed.
 
         Args:
             tar_storage_class: str - Storage class to use for the tar file (default: `STANDARD`).
@@ -411,12 +450,27 @@ class CODObject:
         # single overall sync message
         logger.info(f"GRADIENT_STATE_LOGS:SYNCED_SUCCESSFULLY:{self}")
 
+    @public_method(write_only=True)
+    def sync(self, tar_storage_class: str = STANDARD_STORAGE_CLASS):
+        """Deprecated. Sync is now called automatically on context exit for mode='w' or mode='a'.
+
+        Args:
+            tar_storage_class: str - Storage class to use for the tar file (default: `STANDARD`).
+        """
+        warnings.warn(
+            "Explicit sync() calls are deprecated. sync() is now called automatically "
+            "on context exit for mode='w' or mode='a'.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self._sync(tar_storage_class=tar_storage_class)
+
     def _sync_thumbnail(self):
         """Sync the thumbnail to the datastore if it exists"""
         if self._thumbnail_synced:
             logger.info(f"Skipping thumbnail sync - thumbnail already synced: {self}")
             return
-        thumbnail_metadata = self.get_metadata_field("thumbnail")
+        thumbnail_metadata = self._get_metadata_field("thumbnail")
         if thumbnail_metadata is None:
             logger.info(f"Skipping thumbnail sync - thumbnail does not exist: {self}")
             return
@@ -434,7 +488,7 @@ class CODObject:
         # we just synced the thumbnail, so it is guaranteed to be in the same state as the datastore
         self._thumbnail_synced = True
 
-    @public_method
+    @public_method(write_only=True)
     def add_metadata_field(
         self,
         field_name: str,
@@ -442,30 +496,45 @@ class CODObject:
         overwrite_existing: bool = True,
         dirty: bool = False,
     ):
-        """Add a custom field to the metadata"""
-        self.get_metadata(dirty=dirty)._add_metadata_field(
+        """Add a custom field to the metadata.
+
+        Args:
+            field_name: str - The name of the field to add.
+            field_value: dict - The value of the field.
+            overwrite_existing: bool - If True, overwrite existing field.
+            dirty: bool - DEPRECATED. Use mode='r' or mode='w' at initialization.
+        """
+        self._get_metadata()._add_metadata_field(
             field_name, field_value, overwrite_existing
         )
         # modifying metadata means it is not synced to the datastore
         self._metadata_synced = False
 
-    @public_method
+    @public_method()
     def get_metadata_field(
         self, field_name: str, dirty: bool = False
     ) -> Optional[dict]:
-        """Get a custom field from the metadata. Returns `None` if the field does not exist."""
-        return self.get_metadata(dirty=dirty).metadata_fields.get(field_name, None)
+        """Get a custom field from the metadata. Returns `None` if the field does not exist.
 
-    @public_method
+        Args:
+            field_name: str - The name of the field to get.
+            dirty: bool - DEPRECATED. Use mode='r' or mode='w' at initialization.
+        """
+        return self._get_metadata_field(field_name)
+
+    @public_method(write_only=True)
     def remove_metadata_field(self, field_name: str, dirty: bool = False):
-        """Remove a custom field from the metadata"""
-        field_was_present = self.get_metadata(dirty=dirty)._remove_metadata_field(
-            field_name
-        )
+        """Remove a custom field from the metadata.
+
+        Args:
+            field_name: str - The name of the field to remove.
+            dirty: bool - DEPRECATED. Use mode='r' or mode='w' at initialization.
+        """
+        field_was_present = self._get_metadata()._remove_metadata_field(field_name)
         # if the field was present, and we removed it, the metadata is now desynced
         self._metadata_synced = not field_was_present
 
-    @public_method
+    @public_method()
     def get_thumbnail(
         self,
         generate_if_missing: bool = True,
@@ -478,37 +547,45 @@ class CODObject:
         Args:
             generate_if_missing: Whether to generate a thumbnail if it does not exist, or is stale.
             instance_uid: If provided, only return the slice of the thumbnail corresponding to the given instance UID.
-            dirty: Whether the operation is dirty.
+            dirty: bool - DEPRECATED. Use mode='r' or mode='w' at initialization.
             thumbnail_size: The size of the thumbnail to generate (default: 128px).
 
         Returns:
             The thumbnail as a numpy array.
 
         Raises:
+            WriteOperationInReadModeError: If `generate_if_missing=True` and mode is 'r'.
             ValueError: If the thumbnail does not exist and `generate_if_missing=False`, or if opening the thumbnail fails for any reason.
             SeriesMissingPixelDataError: If thumbnail generation was attempted but none of the instances in the series have pixel data.
         """
-        thumbnail_metadata = self.get_metadata_field("thumbnail", dirty=dirty)
+        thumbnail_metadata = self._get_metadata_field("thumbnail")
         # Cases where we need to generate a new thumbnail:
         # 1. The thumbnail metadata does not exist (i.e. the thumbnail has never been generated)
         # 2. The thumbnail metadata exists but the number of instances it contains does not match the cod object (i.e. the thumbnail is stale)
         # 3. The thumbnail metadata exists but the thumbnail does not exist in GCS (i.e. the thumbnail is missing)
-        if (
+        needs_generation = (
             thumbnail_metadata is None
             or len(thumbnail_metadata["instances"])
-            != len(self.get_instances(strict_sorting=False, dirty=dirty))
+            != len(self._get_instances(strict_sorting=False))
             or not storage.Blob.from_string(
                 thumbnail_metadata["uri"], client=self.client
             ).exists()
-        ):
+        )
+        if needs_generation:
             if not generate_if_missing:
                 raise ValueError(
                     f"Thumbnail either stale or not found for {self} (and generate_if_missing=False)"
                 )
+            # Generating thumbnails is a write operation - require write mode
+            if self.mode == "r":
+                raise WriteOperationInReadModeError(
+                    "Cannot generate thumbnail in read mode. Use mode='w' or mode='a', "
+                    "or set generate_if_missing=False to only fetch existing thumbnails."
+                )
             generate_thumbnail(
                 cod_obj=self, overwrite_existing=True, thumbnail_size=thumbnail_size
             )
-            thumbnail_metadata = self.get_metadata_field("thumbnail", dirty=dirty)
+            thumbnail_metadata = self._get_metadata_field("thumbnail")
         # thumbnail metadata guaranteed to be populated at this point
         thumbnail_file_name = os.path.basename(thumbnail_metadata["uri"])
         thumbnail_local_path = os.path.join(self.get_temp_dir(), thumbnail_file_name)
@@ -527,7 +604,7 @@ class CODObject:
             instance_uid=instance_uid,
         )
 
-    @public_method
+    @public_method(write_only=True)
     def upload_error_log(self, message: str):
         """To be used by caller in except block to upload an error.log to the datastore explaining what's wrong with this cod object"""
         error_blob = storage.Blob.from_string(self.error_log_uri, client=self.client)
@@ -540,7 +617,7 @@ class CODObject:
         logger.warning(f"GRADIENT_STATE_LOGS:UPLOADING_ERROR_LOG:{self}:{message}")
         error_blob.upload_from_string(message)
 
-    @public_method
+    @public_method()
     def integrity_check(self):
         """
         Check the integrity of the CODObject by verifying that the tar and metadata are consistent.
@@ -575,17 +652,20 @@ class CODObject:
                 f"Different number of instances found in tar vs. metadata: {len(tar_instances)} != {len(self._metadata.instances)}"
             )
 
-    @public_method
+    @public_method(write_only=True)
     def delete_dependencies(
         self, dryrun=False, dirty=False, validate_blob_hash=False
     ) -> list[str]:
-        """Run an integrity check, loop over all instances, delete their dependencies. Lock is REQUIRED (`dirty=False` always).
+        """Run an integrity check, loop over all instances, delete their dependencies.
+
+        Args:
+            dryrun: bool - If True, log what would be deleted but don't actually delete.
+            dirty: bool - DEPRECATED. Use mode='r' or mode='w' at initialization.
+            validate_blob_hash: bool - If True, validate blob hash before deletion.
 
         Raises an error if validation fails (to be try/caught by the caller);
         the idea being that such a failure will leave a hanging lock, effectively bricking the CODObject until a developer
         goes in manually and figures out what went wrong.
-
-        If `validate_blob_hash=False`, blobs to delete will NOT have their crc32c checked prior to deletion (save $$$).
 
         Returns:
             The list of URIs that got deleted
@@ -609,26 +689,36 @@ class CODObject:
             logger.info(f"GRADIENT_STATE_LOGS:DELETED:{deleted_dependencies}")
         return deleted_dependencies
 
-    @public_method
+    @public_method()
     def extract_locally(self, dirty: bool = False):
         """
         Extract the tar and index to the local temp dir, and set the dicom_uri of each instance to the local path.
+
+        Args:
+            dirty: bool - DEPRECATED. Use mode='r' or mode='w' at initialization.
         """
-        self.pull_tar(dirty=dirty)
-        for instance_uid, instance in self.get_instances(dirty=dirty).items():
+        self._pull_tar()
+        for instance_uid, instance in self._get_instances().items():
             instance._extract_from_local_tar()
 
-    @public_method
+    def _pull_tar(self):
+        """Private: Pull tar and index from GCS to local temp dir (bypasses public_method decorator)."""
+        self._force_fetch_tar(fetch_index=True)
+        for instance_uid, instance in self._get_metadata(
+            create_if_missing=False
+        ).instances.items():
+            instance.dicom_uri = f"{self.tar_file_path}://instances/{instance_uid}.dcm"
+
+    @public_method()
     def pull_tar(self, dirty: bool = False):
         """Pull tar and index from GCS to local temp dir,
         modify local origin path of instances to point to local tar.
         Ensure multiple instance.open within the series won't result in multiple GCS GET operations.
+
+        Args:
+            dirty: bool - DEPRECATED. Use mode='r' or mode='w' at initialization.
         """
-        self._force_fetch_tar(fetch_index=True)
-        for instance_uid, instance in self.get_metadata(
-            create_if_missing=False, dirty=dirty
-        ).instances.items():
-            instance.dicom_uri = f"{self.tar_file_path}://instances/{instance_uid}.dcm"
+        self._pull_tar()
 
     # Internal operations
     def _force_fetch_tar(self, fetch_index: bool = True):
@@ -767,9 +857,12 @@ class CODObject:
         uid_hash_func: Optional[Callable] = None,
     ) -> "CODObject":
         metadata_dict = serialized_obj.pop("_metadata")
-        # if lock_generation is not None, the serialized object had a lock
-        lock = True if serialized_obj["lock_generation"] is not None else False
-        cod_object = CODObject(**serialized_obj, client=client, lock=lock)
+        # Extract mode and sync_on_exit from serialized state
+        mode = serialized_obj.pop("_mode")
+        sync_on_exit = serialized_obj.pop("_sync_on_exit", True)
+        cod_object = CODObject(
+            **serialized_obj, client=client, mode=mode, sync_on_exit=sync_on_exit
+        )
         cod_object._metadata = SeriesMetadata.from_dict(
             metadata_dict, uid_hash_func=uid_hash_func
         )
@@ -794,16 +887,19 @@ class CODObject:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit point - release the lock, clean up temp dir"""
-        if self.lock:
-            # If no exception occurred, release the lock
+        """Context manager exit point - sync (if applicable), release the lock, clean up temp dir"""
+        # Only handle lock release if we have a locker (mode="w" or "a" with sync_on_exit=True)
+        if self._locker:
+            # If no exception occurred, sync and release the lock
             if exc_type is None:
+                self._sync()
                 self._locker.release()
             # If an exception occurred, log it and leave the lock hanging
             else:
                 logger.warning(
                     f"GRADIENT_STATE_LOGS:LOCK:LEFT_HANGING_DUE_TO_EXCEPTION:{str(self)}:{exc_type} {exc_val}"
                 )
+        # mode="w" or "a" with sync_on_exit=False or mode="r" - nothing to do
         # Regardless of exception(s), we still want to clean up the temp dir
         # self.cleanup_temp_dir() TODO reimplement
         return False  # Don't suppress any exceptions
@@ -813,23 +909,39 @@ class CODObject:
         cls,
         uri: str,
         client: storage.Client,
-        lock: bool,
+        mode: Literal["r", "w", "a"],
         hashed_uids: bool,
         create_if_missing: bool,
+        sync_on_exit: bool = True,
+        lock: bool = None,  # DEPRECATED
     ):
-        """Create a CODObject from a URI"""
+        """Create a CODObject from a URI.
+
+        Args:
+            uri: str - The URI of the CODObject.
+            client: storage.Client - The GCS client.
+            mode: str - Access mode: "r" for read-only, "w" for write (overwrite), "a" for append.
+            hashed_uids: bool - Whether UIDs are hashed.
+            create_if_missing: bool - Whether to create if missing.
+            sync_on_exit: bool - Whether to sync on context exit (for mode="w" or "a").
+            lock: bool - DEPRECATED. Use mode="r", mode="w", or mode="a" instead.
+        """
         if not is_remote(uri) or "/studies/" not in uri or "/series/" not in uri:
             raise ValueError(f"Invalid COD URI: {uri}")
         datastore_uri, overflow = uri.split("/studies/", 1)
         study_uid, series_and_overflow = overflow.split("/series/", 1)
         # remove all possible overflow from the series uid: subfile names, tar extension
         series_uid = series_and_overflow.split("/", 1)[0].rstrip(".tar")
-        return cls(
+        kwargs = dict(
             datastore_path=datastore_uri,
             client=client,
             study_uid=study_uid,
             series_uid=series_uid,
-            lock=lock,
+            mode=mode,
+            sync_on_exit=sync_on_exit,
             hashed_uids=hashed_uids,
             create_if_missing=create_if_missing,
         )
+        if lock is not None:
+            kwargs["lock"] = lock  # Only pass deprecated param if explicitly provided
+        return cls(**kwargs)

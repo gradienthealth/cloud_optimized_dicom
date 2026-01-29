@@ -8,6 +8,7 @@ UID_TAGS = {
 
 import collections
 import io
+import warnings
 from base64 import b64encode
 from typing import Optional
 
@@ -20,7 +21,7 @@ from google.cloud.storage.retry import DEFAULT_RETRY
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.config import logger
-from cloud_optimized_dicom.errors import CleanOpOnUnlockedCODObjectError
+from cloud_optimized_dicom.errors import WriteOperationInReadModeError
 
 
 def find_pattern(f: io.BufferedReader, pattern: bytes, buffer_size=8192):
@@ -190,22 +191,35 @@ def read_thumbnail_into_array(thumbnail_path: str) -> np.ndarray:
         raise ValueError(f"Unsupported thumbnail format: {thumbnail_path}")
 
 
-def public_method(func):
+def public_method(write_only: bool = False):
     """Decorator for public CODObject methods.
-    Enforces that clean operations require a lock, and warns about dirty operations on locked objects.
+
+    Args:
+        write_only: If True, raises WriteOperationInReadModeError when called
+                    on a CODObject in read mode (mode='r').
+
+    Handles deprecated 'dirty' parameter with warnings for all public methods.
     """
 
-    def wrapper(self, *args, **kwargs):
-        dirty = kwargs.get("dirty", False)
-        if not dirty:
-            if not self.lock:
-                raise CleanOpOnUnlockedCODObjectError(
-                    "Cannot perform clean operation on unlocked CODObject"
+    def decorator(func):
+        def wrapper(self, *args, **kwargs):
+            # Handle deprecated 'dirty' parameter
+            dirty = kwargs.pop("dirty", None)
+            if dirty is not None:
+                warnings.warn(
+                    "The 'dirty' parameter is deprecated. Use mode='r' or mode='w' at "
+                    "CODObject initialization instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
                 )
-        elif self.lock:
-            logger.warning(
-                f"Performing dirty operation '{func.__name__}' on locked CODObject: {self}"
-            )
-        return func(self, *args, **kwargs)
+            # Check write mode if required
+            if write_only and self.mode == "r":
+                raise WriteOperationInReadModeError(
+                    f"Cannot call {func.__name__}() in read mode. "
+                    f"Use mode='w' or mode='a' to perform write operations."
+                )
+            return func(self, *args, **kwargs)
 
-    return wrapper
+        return wrapper
+
+    return decorator

@@ -283,8 +283,10 @@ def _calculate_state_change(
         return state_change, append_result
 
     # we will need to fetch the remote tar in order to compute pixeldata hash
+    # Skip tar fetch for write mode - it starts fresh
     if (
-        treat_metadata_diffs_as_same
+        cod_object.mode != "w"
+        and treat_metadata_diffs_as_same
         and len(cod_object._metadata.instances) > 0
         and any(
             new_inst.get_instance_uid(
@@ -296,7 +298,7 @@ def _calculate_state_change(
         )
     ):
         logger.info("PULLING_TAR:DUPE_UID_FOUND_SO_PIXELDATA_HASH_MUST_BE_COMPUTED")
-        cod_object.pull_tar(dirty=not cod_object.lock)
+        cod_object._pull_tar()
 
     # Calculate state change for each file in the new series
     for new_instance in instances:
@@ -488,8 +490,9 @@ def _handle_create_tar(
         errors (list): list of instance, error tuples that occurred during the tar creation process
     """
     # If a tarball already exists (and this is a clean append), download it (no need to get index, will be recalculated anyways)
-    if len(cod_object._metadata.instances) > 0:
-        cod_object.pull_tar(dirty=not cod_object.lock)
+    # Skip tar fetch for write mode - it starts fresh
+    if cod_object.mode == "a" and len(cod_object._metadata.instances) > 0:
+        cod_object._pull_tar()
 
     instances_added_to_tar, errors = _create_or_append_tar(cod_object, instances_to_add)
     _create_sqlite_index(cod_object)

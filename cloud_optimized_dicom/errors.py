@@ -14,8 +14,12 @@ class CODObjectNotFoundError(CODError):
     """Error raised when a COD object is not found and `create_if_missing=False`."""
 
 
-class CleanOpOnUnlockedCODObjectError(CODError):
-    """Error raised when a clean operation is attempted on an unlocked CODObject."""
+class WriteOperationInReadModeError(CODError):
+    """Error raised when a write operation is attempted on a read-mode CODObject."""
+
+
+# Backward compatibility alias
+CleanOpOnUnlockedCODObjectError = WriteOperationInReadModeError
 
 
 class ErrorLogExistsError(CODError):

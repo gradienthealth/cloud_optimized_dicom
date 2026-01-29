@@ -18,14 +18,14 @@ def query_result_to_codobjects(
     query_result: dict,
     datastore_path: str,
     validate_datastore_path: bool = True,
-    lock: bool = True,
+    mode: str = "a",
 ) -> list[tuple[CODObject, list[Instance]]]:
     """Helper that calls query_result_to_instances and instances_to_codobj_tuples in sequence"""
     instances = query_result_to_instances(query_result)
     logger.info(f"Found {len(instances)} instances")
     return list(
         instances_to_codobj_tuples(
-            client, instances, datastore_path, validate_datastore_path, lock
+            client, instances, datastore_path, validate_datastore_path, mode
         )
     )
 
@@ -119,7 +119,7 @@ def instances_to_codobj_tuples(
     instances: list[Instance],
     datastore_path: str,
     empty_lock_override_age: float = None,
-    lock: bool = True,
+    mode: str = "a",
 ) -> Iterator[tuple[CODObject, list[Instance]]]:
     """Group instances by study/series, make codobjects, and yield (codobj, instances) pairs"""
     # need to set client on instances before sorting (may have to fetch them)
@@ -156,7 +156,7 @@ def instances_to_codobj_tuples(
                 client=client,
                 study_uid=study_uid,
                 series_uid=series_uid,
-                lock=lock,
+                mode=mode,
                 hashed_uids=hashed_uids,
                 empty_lock_override_age=empty_lock_override_age,
             )

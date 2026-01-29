@@ -469,32 +469,28 @@ def generate_thumbnail(
         SeriesMissingPixelDataError: If none of the instances have pixel data.
     """
     try:
-        # can infer whether the operation is dirty by checking if the cod object is locked
-        dirty = not cod_obj.lock
         if (
-            cod_obj.get_metadata_field("thumbnail", dirty=dirty) is not None
+            cod_obj._get_metadata_field("thumbnail") is not None
             and not overwrite_existing
         ):
             logger.info(f"Skipping thumbnail generation for {cod_obj} (already exists)")
             return
         # fetch the tar, if it's not already fetched
         if cod_obj.tar_is_empty:
-            cod_obj.pull_tar(dirty=dirty)
+            cod_obj._pull_tar()
 
-        # cod_obj.get_instances() sorts instances by instance number or slice location, if possible
-        uid_to_instance = cod_obj.get_instances(strict_sorting=False, dirty=dirty)
+        # cod_obj._get_instances() sorts instances by instance number or slice location, if possible
+        uid_to_instance = cod_obj._get_instances(strict_sorting=False)
         assert len(uid_to_instance) > 0, "COD object has no instances"
         uid_to_instance = _remove_instances_without_pixeldata(cod_obj, uid_to_instance)
         all_frames, thumbnail_metadata = _generate_thumbnail_frames(
             cod_obj, uid_to_instance, thumbnail_size
         )
         thumbnail_path = _save_thumbnail_to_disk(cod_obj, all_frames)
-        cod_obj.add_metadata_field(
-            field_name="thumbnail",
-            field_value=thumbnail_metadata,
-            overwrite_existing=True,
-            dirty=dirty,
+        cod_obj._get_metadata()._add_metadata_field(
+            "thumbnail", thumbnail_metadata, overwrite_existing=True
         )
+        cod_obj._metadata_synced = False
         # we just generated the thumbnail, so it is not synced to the datastore
         cod_obj._thumbnail_synced = False
         metrics.THUMBNAIL_SUCCESSES.inc()
@@ -523,7 +519,7 @@ def fetch_thumbnail(cod_obj: "CODObject") -> str:
         ValueError: if the cod object has no thumbnail metadata
         NotFound: if the thumbnail blob does not exist in GCS
     """
-    thumbnail_metadata = cod_obj.get_metadata_field("thumbnail", dirty=not cod_obj.lock)
+    thumbnail_metadata = cod_obj._get_metadata_field("thumbnail")
     if thumbnail_metadata is None:
         raise ValueError(f"Thumbnail metadata not found for {cod_obj}")
     thumbnail_uri = thumbnail_metadata["uri"]
@@ -553,7 +549,7 @@ def get_instance_thumbnail_slice(
     Returns:
         thumbnail_slice: a numpy array of the thumbnail slice
     """
-    thumbnail_metadata = cod_obj.get_metadata_field("thumbnail", dirty=not cod_obj.lock)
+    thumbnail_metadata = cod_obj._get_metadata_field("thumbnail")
     # if thumbnail only contains one instance, assert that is the instance requested and return the full array
     if len(thumbnail_metadata["instances"]) == 1:
         assert (
@@ -585,7 +581,7 @@ def get_instance_by_thumbnail_index(
     Raises:
         ValueError: if the cod object has no thumbnail metadata, or `thumbnail_index` is out of bounds
     """
-    thumbnail_metadata = cod_obj.get_metadata_field("thumbnail", dirty=not cod_obj.lock)
+    thumbnail_metadata = cod_obj._get_metadata_field("thumbnail")
     if not thumbnail_metadata:
         raise ValueError(f"Thumbnail metadata not found for {cod_obj}")
     thumbnail_index_to_instance_frame = thumbnail_metadata[
@@ -596,7 +592,7 @@ def get_instance_by_thumbnail_index(
             f"Thumbnail index {thumbnail_index} is out of bounds for {cod_obj} (has {num_frames} frames)"
         )
     instance_uid, _ = thumbnail_index_to_instance_frame[thumbnail_index]
-    return cod_obj.get_instance(instance_uid=instance_uid, dirty=not cod_obj.lock)
+    return cod_obj._get_instance(instance_uid)
 
 
 @dataclasses.dataclass

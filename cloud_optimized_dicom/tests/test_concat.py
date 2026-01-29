@@ -145,7 +145,7 @@ class TestConcat(unittest.TestCase):
         self.assertEqual(len(codobj_instance_pairs), 1)
         cod_obj, instances = codobj_instance_pairs[0]
         new, same, conflict, errors = cod_obj.append(instances)
-        cod_obj.sync()
+        cod_obj._sync()
         self.assertEqual(len(errors), 0)
         tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=self.client)
         metadata_blob = storage.Blob.from_string(
@@ -279,7 +279,7 @@ class TestConcat(unittest.TestCase):
             series_uid=series_uid,
             datastore_path=OUTPUT_URI,
             client=self.client,
-            lock=True,
+            mode="w",
         ) as cod_obj:
             instance_v1 = Instance(
                 dicom_uri=v1_uri,
@@ -291,7 +291,7 @@ class TestConcat(unittest.TestCase):
             )
             # append v1 and sync
             cod_obj.append([instance_v1])
-            cod_obj.sync()
+            cod_obj._sync()
             metadata_blob = storage.Blob.from_string(
                 cod_obj.metadata_uri, client=self.client
             )
@@ -301,7 +301,7 @@ class TestConcat(unittest.TestCase):
             # metadata should be desynced (diff hash dupe found), but tar should be synced
             self.assertFalse(cod_obj._metadata_synced)
             self.assertTrue(cod_obj._tar_synced)
-            cod_obj.sync()
+            cod_obj._sync()
             # file should still exist; deletion should be skipped due to same instance diff hash
             self.assertTrue(v2_blob.exists())
             # download the metadata and confirm diff hash duplicate was logged
@@ -351,19 +351,19 @@ class TestConcat(unittest.TestCase):
             client=self.client,
             study_uid=study_uid,
             series_uid=series_uid,
-            lock=True,
+            mode="w",
         ) as cod_obj:
             instance_v1 = Instance(v1_uri)
             instance_v2 = Instance(v2_uri)
             # append v1 and sync
             cod_obj.append([instance_v1])
-            cod_obj.sync()
+            cod_obj._sync()
             # append v2 and sync
             cod_obj.append([instance_v2], treat_metadata_diffs_as_same=True)
             # metadata should be desynced (diff hash dupe found), but tar should be synced
             self.assertFalse(cod_obj._metadata_synced)
             self.assertTrue(cod_obj._tar_synced)
-            cod_obj.sync()
+            cod_obj._sync()
             # file should still exist; deletion should be skipped due to same instance diff hash
             self.assertTrue(v2_blob.exists())
             # download the metadata and confirm diff hash duplicate was logged
