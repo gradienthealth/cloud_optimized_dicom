@@ -48,8 +48,9 @@ class TestErrorLog(unittest.TestCase):
         self.assertTrue(error_blob.exists())
         # error log should contain the error message
         self.assertIn("test error", error_blob.download_as_bytes().decode("utf-8"))
-        # lock should have been left hanging
-        self.assertTrue(cod_obj._locker.get_lock_blob().exists())
+        # lock should have been released (non-sync exception doesn't leave hanging lock)
+        # the error log alone is sufficient to brick the COD
+        self.assertFalse(cod_obj._locker.get_lock_blob().exists())
 
     def test_error_existence_bricks_cod_object_initialization(self):
         """Test that the error log bricks CODObject initialization"""
