@@ -887,22 +887,29 @@ class CODObject:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit point - sync (if applicable), release the lock, clean up temp dir"""
-        # Only handle lock release if we have a locker (mode="w" or "a" with sync_on_exit=True)
-        if self._locker:
-            # If no exception occurred, sync and release the lock
-            if exc_type is None:
+        """Context manager exit point - sync (if applicable), release the lock"""
+        # Early exit conditions: read mode and/or sync_on_exit=False
+        if self.mode == "r" or not self._sync_on_exit:
+            return False
+        # Sanity check: locker should always be set in write/append mode with sync_on_exit=True
+        assert (
+            self._locker is not None
+        ), "Locker should be set in write/append mode with sync_on_exit=True"
+        # If no exception occurred, execute sync & release lock
+        if exc_type is None:
+            try:
                 self._sync()
-                self._locker.release()
-            # If an exception occurred, log it and leave the lock hanging
-            else:
-                logger.warning(
-                    f"GRADIENT_STATE_LOGS:LOCK:LEFT_HANGING_DUE_TO_EXCEPTION:{str(self)}:{exc_type} {exc_val}"
-                )
-        # mode="w" or "a" with sync_on_exit=False or mode="r" - nothing to do
-        # Regardless of exception(s), we still want to clean up the temp dir
-        # self.cleanup_temp_dir() TODO reimplement
-        return False  # Don't suppress any exceptions
+            except Exception:
+                # leave lock hanging on sync failure - remote may be corrupt
+                logger.exception(f"COD:LOCK:LEFT_HANGING_DUE_TO_SYNC_FAILURE:{self}")
+                raise
+        # Release lock even in the event of non-sync exception (only local state is corrupt)
+        try:
+            self._locker.release()
+        except:
+            # Catch errors during lock release so original error (if any) propagates
+            logger.exception(f"COD:LOCK:RELEASE_FAILED_DURING_CLEANUP:{self}")
+        return False
 
     @classmethod
     def from_uri(
