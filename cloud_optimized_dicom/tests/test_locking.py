@@ -1,4 +1,3 @@
-import logging
 import os
 import unittest
 
@@ -15,8 +14,9 @@ from cloud_optimized_dicom.utils import delete_uploaded_blobs
 class TestLocking(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        logging.basicConfig(level=logging.INFO)
-        logging.getLogger().setLevel(logging.INFO)
+        # Uncomment if needed to help debug tests
+        # logging.basicConfig(level=logging.INFO)
+        # logging.getLogger().setLevel(logging.INFO)
         cls.client = storage.Client(
             project="gradient-pacs-siskin-172863",
             client_options=ClientOptions(
@@ -224,8 +224,8 @@ class TestLocking(unittest.TestCase):
             # Clean up any locks that might have been created
             delete_uploaded_blobs(self.client, [self.datastore_path])
 
-    def test_lock_persists_after_exception(self):
-        """Test that the lock persists after an exception is raised"""
+    def test_lock_released_after_non_sync_exception(self):
+        """Test that the lock is released after a non-sync exception (only local state is corrupt)"""
         with self.assertRaises(ValueError):
             with CODObject(
                 client=self.client,
@@ -235,15 +235,35 @@ class TestLocking(unittest.TestCase):
                 mode="w",
             ) as cod:
                 raise ValueError("test")
-        # The lock should still exist
-        self.assertTrue(cod._locker.get_lock_blob().exists())
-        # Clean up any locks that might have been created
+        # Sync should NOT have been called -> tracker vars should be False
+        self.assertFalse(cod._tar_synced)
+        self.assertFalse(cod._metadata_synced)
+        # The lock should have been released (only sync failures leave hanging locks)
+        self.assertFalse(cod._locker.get_lock_blob().exists())
+
+    def test_release_failure_preserves_original_exception(self):
+        """Test that if release fails during cleanup of a non-sync exception, the original exception propagates"""
+        with self.assertRaises(ValueError):
+            with CODObject(
+                client=self.client,
+                datastore_path=self.datastore_path,
+                study_uid=self.study_uid,
+                series_uid=self.series_uid,
+                mode="w",
+            ) as cod:
+                # tamper with the lock so release() will fail
+                cod._locker.get_lock_blob().upload_from_string(
+                    "", content_type="application/octet-stream"
+                )
+                raise ValueError("original error")
+        # caller should see ValueError, not LockVerificationError
+        # lock is left hanging (tampered), clean up
         delete_uploaded_blobs(self.client, [self.datastore_path])
 
     def test_override_stale_lock(self):
         """Test that we can override a stale lock"""
-        # leave a hanging lock
-        with self.assertRaises(ValueError):
+        # leave a hanging lock by causing a sync failure (tamper with lock generation)
+        with self.assertRaises(LockVerificationError):
             with CODObject(
                 client=self.client,
                 datastore_path=self.datastore_path,
@@ -251,7 +271,13 @@ class TestLocking(unittest.TestCase):
                 series_uid=self.series_uid,
                 mode="w",
             ) as cod:
-                raise ValueError("test")
+                # re-upload lock with same metadata but new generation → verify fails on exit
+                lock_blob = cod._locker.get_lock_blob()
+                lock_blob.content_encoding = "gzip"
+                lock_blob.upload_from_string(
+                    cod._metadata.to_gzipped_json(),
+                    content_type="application/json",
+                )
         # because there's a hanging lock, we should get an error
         with self.assertRaises(LockAcquisitionError):
             with CODObject(
@@ -273,7 +299,7 @@ class TestLocking(unittest.TestCase):
             empty_lock_override_age=0.00000001,
         ) as cod:
             pass
-        # The lock should have been overridden
+        # The lock should have been overridden and released
         self.assertFalse(cod._locker.get_lock_blob().exists())
         # clean up any locks that might have been created
         delete_uploaded_blobs(self.client, [self.datastore_path])
@@ -281,7 +307,7 @@ class TestLocking(unittest.TestCase):
     def test_cannot_override_non_empty_lock(self):
         """Test that we cannot override a non-empty lock"""
         instance = Instance(dicom_uri=self.local_instance_path)
-        # append an instance to the cod object
+        # append an instance to the cod object so it exists in the datastore
         with CODObject(
             client=self.client,
             datastore_path=self.datastore_path,
@@ -290,18 +316,24 @@ class TestLocking(unittest.TestCase):
             mode="w",
         ) as cod:
             cod.append([instance])
-            cod._sync()
 
-        # simulate non empty hanging lock
-        with self.assertRaises(ValueError):
+        # create a non-empty hanging lock by causing a sync failure
+        # use mode="a" so the lock snapshot includes the existing instances
+        with self.assertRaises(LockVerificationError):
             with CODObject(
                 client=self.client,
                 datastore_path=self.datastore_path,
                 study_uid=instance.study_uid(),
                 series_uid=instance.series_uid(),
-                mode="w",
+                mode="a",
             ) as cod:
-                raise ValueError("simulated error causing lock to hang")
+                # re-upload lock with current metadata (has instances) but new generation
+                lock_blob = cod._locker.get_lock_blob()
+                lock_blob.content_encoding = "gzip"
+                lock_blob.upload_from_string(
+                    cod._metadata.to_gzipped_json(),
+                    content_type="application/json",
+                )
         # assert lock exists
         self.assertTrue(cod._locker.get_lock_blob().exists())
         # assert lock is non empty
