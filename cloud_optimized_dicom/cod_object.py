@@ -902,9 +902,13 @@ class CODObject:
             except Exception:
                 # leave lock hanging on sync failure - remote may be corrupt
                 logger.exception(f"COD:LOCK:LEFT_HANGING_DUE_TO_SYNC_FAILURE:{self}")
-                return False
+                raise
         # Release lock even in the event of non-sync exception (only local state is corrupt)
-        self._locker.release()
+        try:
+            self._locker.release()
+        except:
+            # Catch errors during lock release so original error (if any) propagates
+            logger.exception(f"COD:LOCK:RELEASE_FAILED_DURING_CLEANUP:{self}")
         return False
 
     @classmethod
