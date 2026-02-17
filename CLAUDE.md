@@ -132,10 +132,12 @@ cloud_optimized_dicom/
 **Core:**
 - `pydicom3`: Custom fork with namespace isolation (published package)
 - `google-cloud-storage`: GCS operations
-- `apache-beam[gcp]`: Data processing (CODObject serialization compatible)
 - `ratarmountcore`: Efficient tar file access
 - `zstandard`: Metadata compression (v2.0)
 - `smart-open`: Unified remote file access
+
+**Optional:**
+- `apache-beam[gcp]`: Data processing (CODObject serialization compatible); install with `pip install cloud-optimized-dicom[beam]`. Without Beam, metric counters silently no-op.
 
 **Test:**
 - `pydicom==2.3.0`: Original pydicom for validation
