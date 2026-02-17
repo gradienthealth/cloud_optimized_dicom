@@ -124,13 +124,14 @@ with CODObject(client=..., datastore_path=..., mode="w") as cod:
     cod.append(instances)
 # sync() called automatically, lock released
 ```
-In the case of an error, locks are deliberately left **hanging** to indicate that the series is corrupt in some way and needs user attention.
-
+If an exception occurs in user code (before sync), the lock is **released** — only local state was affected, so the remote datastore is not corrupt:
 ```python
 with CODObject(client=..., datastore_path=..., mode="w") as cod:
     raise ValueError("test")
-# lock file persists to signal corruption
+# lock is released; sync was skipped since no work reached the remote datastore
 ```
+
+However, if the sync itself fails (meaning remote state may be partially written), the lock is deliberately left **hanging** to signal that the series may be corrupt and needs attention.
 
 Locks are NOT automatically released when a `CODObject` goes out of scope. Always use a context manager (`with` statement) to ensure proper cleanup:
 ```python
