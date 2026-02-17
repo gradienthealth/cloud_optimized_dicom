@@ -137,24 +137,6 @@ class TestCODObject(unittest.TestCase):
             self.assertEqual(ds.SeriesInstanceUID, self.test_series_uid)
             self.assertEqual(ds.SOPInstanceUID, self.test_instance_uid)
 
-    def test_serialize_deserialize(self):
-        """Test serialization and deserialization"""
-        with CODObject(
-            client=self.client,
-            datastore_path=self.datastore_path,
-            study_uid="1.2.3.4.5.6.7.8.9.0",
-            series_uid="1.2.3.4.5.6.7.8.9.0",
-            mode="w",
-            sync_on_exit=False,
-        ) as cod_obj:
-            serialized = cod_obj.serialize()
-        with CODObject.deserialize(serialized, self.client) as deserialized:
-            reserialized = deserialized.serialize()
-        # Assert all public fields are equal
-        for field in serialized:
-            if not field.startswith("_"):
-                self.assertEqual(serialized[field], reserialized[field])
-
     def test_instance_read_after_sync(self):
         """Test that an instance can be read after a sync"""
         delete_uploaded_blobs(self.client, [self.datastore_path])

@@ -44,7 +44,7 @@ Pre-commit hooks automatically run:
 **CODObject** (`cod_object.py`)
 - Primary interface for interacting with cloud-optimized DICOM series
 - Manages series-level tar archives and metadata in GCS
-- Handles access modes, serialization/deserialization, and state synchronization
+- Handles access modes and state synchronization
 - Key URI pattern: `<datastore_path>/studies/<study_uid>/series/<series_uid>.tar`
 - Must be used as context manager for `mode="w"` to ensure proper lock release and sync
 
@@ -74,7 +74,6 @@ Pre-commit hooks automatically run:
 - `mode="a"`: Append access; acquires exclusive lock automatically (raises `LockAcquisitionError` if exists); fetches remote tar if it exists; appends to existing tar/metadata on sync
 - `sync_on_exit=True` (default): Auto-syncs and releases lock on context exit for `mode="w"` or `mode="a"`
 - `sync_on_exit=False`: No lock acquired, no auto-sync; useful for local testing/debugging
-- Locks persist through serialization/deserialization (for Apache Beam workflows)
 - Locks deliberately "hang" on errors to indicate series corruption
 - User must use context manager for proper lock release
 
@@ -97,12 +96,6 @@ Pre-commit hooks automatically run:
 **Metadata Versions**
 - v1.0: Uncompressed DICOM JSON dict, UIDs parsed from metadata
 - v2.0: Zstandard-compressed metadata, explicit UID/pixeldata indexing, ~5-10x size reduction
-
-**Serialization/Deserialization**
-- CODObject designed for Apache Beam workflows
-- `.serialize()` returns dict for passing between DoFns
-- `.deserialize()` reconstructs object, can re-acquire persistent lock
-- Pattern: Acquire lock in first DoFn, pass serialized object through pipeline, release in last DoFn
 
 ### Project Structure
 
@@ -137,7 +130,7 @@ cloud_optimized_dicom/
 - `smart-open`: Unified remote file access
 
 **Optional:**
-- `apache-beam[gcp]`: Data processing (CODObject serialization compatible); install with `pip install cloud-optimized-dicom[beam]`. Without Beam, metric counters silently no-op.
+- `apache-beam[gcp]`: Data processing; install with `pip install cloud-optimized-dicom[beam]`. Without Beam, metric counters silently no-op.
 
 **Test:**
 - `pydicom==2.3.0`: Original pydicom for validation
@@ -176,18 +169,6 @@ with CODObject(client=..., datastore_path=..., mode="a", sync_on_exit=False) as 
 # Incorrect: Lock persists indefinitely
 cod = CODObject(client=..., datastore_path=..., mode="w")
 del cod  # Lock still exists remotely!
-```
-
-**Apache Beam Pattern:**
-```python
-def first_dofn():
-    cod = CODObject(..., mode="w")  # No context manager
-    yield cod.serialize()  # Lock persists
-
-def last_dofn(serialized_cod):
-    with CODObject.deserialize(**serialized_cod) as cod:  # Reacquires lock
-        pass  # Work happens here
-    # sync() called automatically, lock released
 ```
 
 ### Testing Notes
