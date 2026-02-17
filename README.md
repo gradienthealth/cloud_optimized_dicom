@@ -98,64 +98,45 @@ In either case, what happens if they both attempt to modify the same `CODObject`
 To avoid the "first process gets overwritten by second process" outcome, we introduce the concept of "locking".
 
 ### Terminology & Concepts
-A **lock** is just a file with a specific name (by default, `.cod.lock`).
+A **lock** is just a file with a specific name (`.gradient.lock`).
 
 **Acquiring a lock** means that the `CODObject` will upload a lock blob to the datastore and store its generation number. If the lock already exists, the `CODObject` will raise a `LockAcquisitionError`.
 
-**State change operations** are any operations that constitute a change to the datastore (namely, appending to it).
+### Access Modes
+`CODObject`s take a `mode` argument that controls locking and sync behavior:
 
-By default, state change operations are **clean**, but they can also be **dirty**, meaning they are confined to the user's local environment and will not alter the remote datastore
+- `mode="r"` -> Read-only. No lock is acquired. Write operations will raise a `WriteOperationInReadModeError`.
+- `mode="w"` -> Write (overwrite). A lock is acquired automatically. Starts fresh with empty metadata/tar locally. Overwrites remote tar/metadata on sync.
+- `mode="a"` -> Append. A lock is acquired automatically. Fetches remote tar if it exists. Appends to existing tar/metadata on sync.
 
-### The `CODObject(lock=?)` argument
-`CODObject`s take a `lock` argument which defaults to `None`. Instantiation behavior depends on this flag:
-
-- `lock=None` -> error is raised (user is required to acknowledge their lock choice by setting this flag).
-- `lock=True` -> `CODObject` will attempt to acquire a lock, and will raise an error if it cannot.
-- `lock=False` -> `CODObject` will not attempt to acquire a lock. Any regular state change operations that are attempted will raise an error. dirty state change operations will be permitted, but the user will again be required to acknowledge the dirtiness of the operation by setting dirty=True in the operation call. See the state change operations section below for more info.
-
-Because `CODObject(lock=True)` instantiation raises an error if the lock cannot be acquired (already exists), it is guaranteed that no other writing-enabled `CODObject(lock=True)` will be created on the same series while one already exists, thus avoiding the race condition where two workers attempt to create CODObjects with the same study/series UIDs.
+Because `mode="w"` and `mode="a"` raise an error if the lock cannot be acquired (already exists), it is guaranteed that no other writing-enabled `CODObject` will be created on the same series while one already exists, thus avoiding the race condition where two workers attempt to create CODObjects with the same study/series UIDs.
 
 ### When is a lock necessary?
-When the operation you are attempting involves actually modifying the COD datastore itself (example: ingesting new files), a lock is required
+When the operation you are attempting involves actually modifying the COD datastore itself (example: ingesting new files), use `mode="w"` or `mode="a"`.
 
-### Why would I ever set `lock=False`?
-In some cases, like exporting or otherwise just reading data from COD but not altering it, you may not want your operation to be blocked if another process is interacting with the datastore.
+For read-only operations like exporting or reading data from COD, use `mode="r"` so your operation is not blocked if another process is writing to the datastore.
 
 ### Lock Release & Management
 `CODObject` is designed to be used as a context manager.
-When you enter a `with` statement using a `CODObject(lock=True)`, the lock will persist for the duration of the statement, and will be released when the statement ends.
-This way, all cleanup (including lock release) is handled for you.
+When you enter a `with` statement, the lock will persist for the duration of the statement. On successful exit, changes are automatically synced and the lock is released.
 ```python
-with CODObject(client=..., datastore_path=..., lock=True) as cod:
+with CODObject(client=..., datastore_path=..., mode="w") as cod:
     cod.append(instances)
-    cod.sync()
-    # lock exists within context
-    assert cod._locker.get_lock_blob().exists() is True
-# lock is released when context is exited
-assert cod._locker.get_lock_blob().exists() is False
+# sync() called automatically, lock released
 ```
 In the case of an error, locks are deliberately left **hanging** to indicate that the series is corrupt in some way and needs user attention.
 
 ```python
-with CODObject(client=..., datastore_path=..., lock=True) as cod:
+with CODObject(client=..., datastore_path=..., mode="w") as cod:
     raise ValueError("test")
-# assertion will pass; lock file persists
-assert cod._locker.get_lock_blob().exists() is True
+# lock file persists to signal corruption
 ```
 
-Locks are NOT automatically released when a `CODObject` goes out of scope,
-which is an explicit design choice to allow for lock persistence across serialization/deserialization (see below).
-
-The tradeoff, however, is that it is possible to accidentally create hanging locks:
+Locks are NOT automatically released when a `CODObject` goes out of scope. Always use a context manager (`with` statement) to ensure proper cleanup:
 ```python
-cod_a = CODObject(client=..., datastore_path=..., lock=True)
-# do some stuff
-cod_a.append(instances)
-cod_a.sync()
-del cod_a
-# cod_a is now out of scope, but lock still exists in the remote datastore
-cod_b = CODObject(client=..., datastore_path=..., lock=True)
-# the above will raise a LockAcquisitionError because the lock persists
+# Incorrect: Lock persists indefinitely
+cod = CODObject(client=..., datastore_path=..., mode="w")
+del cod  # Lock still exists remotely!
 ```
 **It is YOUR responsibility as the user of this class to make sure your locks are released.**
 
