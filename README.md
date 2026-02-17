@@ -1,5 +1,10 @@
 # Cloud Optimized DICOM
 
+[![PyPI version](https://img.shields.io/pypi/v/cloud-optimized-dicom)](https://pypi.org/project/cloud-optimized-dicom/)
+[![Python versions](https://img.shields.io/pypi/pyversions/cloud-optimized-dicom)](https://pypi.org/project/cloud-optimized-dicom/)
+[![License](https://img.shields.io/pypi/l/cloud-optimized-dicom)](https://pypi.org/project/cloud-optimized-dicom/)
+[![Tests](https://github.com/gradienthealth/cloud_optimized_dicom/actions/workflows/test.yml/badge.svg)](https://github.com/gradienthealth/cloud_optimized_dicom/actions/workflows/test.yml)
+
 A library for efficiently storing and interacting with DICOM files in the cloud.
 
 # Development Setup
