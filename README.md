@@ -159,32 +159,6 @@ cod_b = CODObject(client=..., datastore_path=..., lock=True)
 ```
 **It is YOUR responsibility as the user of this class to make sure your locks are released.**
 
-## Serialization/Deserialization
-COD was designed with apache beam workflows in mind. For this reason, `CODObject`s can be serialized into a dictionary, so that they can be conveniently shuffled or otherwise passed between `DoFn`s. 
-
-Furthermore, because CODObjects store lock generation numbers, they can actually re-acquire an existing lock if they had it previously and were serialized/deserialized. Consider the following recommended workflow:
-```python
-def dofn_first():
-    # note the LACK of "with" context manager here
-    cod_obj = CODObject(client=..., datastore_path=..., lock=True)
-    # do some stuff
-    yield cod_obj.serialize() # lock persists
-
-# ... (other dofns here, also without context managers)
-
-def dofn_last(serialized_cod):
-    # persistent lock reacquired during deserialization
-    with CODObject.deserialize(**serialized_cod, client=...) as cod_obj:
-        # do some stuff
-        cod_obj.append(instances)
-        cod_obj.sync()
-    # lock released when "with" block exited
-```
-
-It would of course work perfectly well to use a `with` statement in each `DoFn`, 
-but it would be unnecessarily inefficient as a unique lock would be acquired and released in each `DoFn`.
-
-
 ## Instance URI management: `dicom_uri` vs `_original_path` vs `dependencies`
 Two main principles govern how the `Instance` class manages URIs:
 1. It should be as simple and straightforward as possible to instantiate an `Instance`

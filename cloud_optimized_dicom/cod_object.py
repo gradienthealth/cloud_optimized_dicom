@@ -3,7 +3,7 @@ import shutil
 import tarfile
 import warnings
 from tempfile import mkdtemp
-from typing import Callable, Literal, Optional, Union
+from typing import Literal, Optional, Union
 
 import numpy as np
 from google.api_core.exceptions import NotFound
@@ -66,7 +66,6 @@ class CODObject:
         temp_dir: str - If a temp_dir with data pertaining to this series already exists, provide it here.
         override_errors: bool - If `True`, delete any existing error.log and upload a new one.
         empty_lock_override_age: float - If `None`, do not override a stale lock if it exists. If `float`, override a stale lock if it exists and is older than the given age (in hours).
-        lock_generation: int - The generation of the lock file. Should only be set if instantiation from serialized cod object.
         lock: bool - DEPRECATED. Use mode="r", mode="w", or mode="a" instead.
     """
 
@@ -86,12 +85,6 @@ class CODObject:
         temp_dir: str = None,
         override_errors: bool = False,
         empty_lock_override_age: float = None,
-        # fields user should not set
-        lock_generation: int = None,
-        metadata: SeriesMetadata = None,
-        _tar_synced: bool = False,
-        _metadata_synced: bool = True,
-        _thumbnail_synced: bool = False,
         # deprecated
         lock: bool = None,
     ):
@@ -120,9 +113,8 @@ class CODObject:
         self.series_uid = series_uid
         self._validate_uids()
         self.hashed_uids = hashed_uids
-        self._metadata = metadata
         self.override_errors = override_errors
-        self.lock_generation = lock_generation
+        self.lock_generation = None
         # check for error.log existence - if it exists, fail initialization
         if (
             error_log_blob := storage.Blob.from_string(
@@ -158,8 +150,8 @@ class CODObject:
         elif mode in ("r", "a"):
             # Read and append modes fetch existing metadata
             self._get_metadata(create_if_missing=create_if_missing)
-            self._tar_synced = _tar_synced
-            self._metadata_synced = _metadata_synced
+            self._tar_synced = False
+            self._metadata_synced = True
         else:
             raise ValueError(f"Unexpected mode: {mode!r}")
         # if the thumbnail exists, it is not synced (we did not fetch it)
@@ -836,37 +828,6 @@ class CODObject:
                 f"Instance {instance} does not belong to COD object {self}"
             )
         return True
-
-    # Serialization methods
-    def serialize(self) -> dict:
-        """Serialize the object into a dict"""
-        state = self.__dict__.copy()
-        # remove client (cannot pickle)
-        del state["client"]
-        # remove locker (will be recreated on deserialization)
-        del state["_locker"]
-        # use metadata's to_dict() method to serialize
-        state["_metadata"] = self._metadata.to_dict()
-        return state
-
-    @classmethod
-    def deserialize(
-        cls,
-        serialized_obj: dict,
-        client: storage.Client,
-        uid_hash_func: Optional[Callable] = None,
-    ) -> "CODObject":
-        metadata_dict = serialized_obj.pop("_metadata")
-        # Extract mode and sync_on_exit from serialized state
-        mode = serialized_obj.pop("_mode")
-        sync_on_exit = serialized_obj.pop("_sync_on_exit", True)
-        cod_object = CODObject(
-            **serialized_obj, client=client, mode=mode, sync_on_exit=sync_on_exit
-        )
-        cod_object._metadata = SeriesMetadata.from_dict(
-            metadata_dict, uid_hash_func=uid_hash_func
-        )
-        return cod_object
 
     def cleanup_temp_dir(self):
         """Clean temp dir (if not done already)"""

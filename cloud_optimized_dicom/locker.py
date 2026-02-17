@@ -20,7 +20,6 @@ class CODLocker:
 
     Args:
         cod_object (CODObject): The COD object to lock.
-        lock_generation (int): (optional) The generation of the lock file to re-acquire if the lock was already known.
     """
 
     def __init__(self, cod_object: "CODObject"):
@@ -35,16 +34,9 @@ class CODLocker:
             create_if_missing (bool): Passthrough for CODObject.get_metadata (see documentation there)
             empty_lock_override_age (float): The age (in hours) of a lock file to consider "stale" and override (if it is empty)
         """
-        # if the lock already exists, assert generation matches (re-acquisition case)
         if (lock_blob := self.get_lock_blob()).exists():
             lock_blob.reload()
             lock_uri = f"gs://{lock_blob.bucket.name}/{lock_blob.name}"
-            # Reacquire case
-            if lock_blob.generation == self.cod_object.lock_generation:
-                logger.info(
-                    f"COD:LOCK:REACQUIRED:{lock_uri} (generation: {self.cod_object.lock_generation})"
-                )
-                return
             # No override case
             if not empty_lock_override_age:
                 raise LockAcquisitionError(
