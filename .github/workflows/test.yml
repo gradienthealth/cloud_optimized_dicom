@@ -32,8 +32,21 @@ jobs:
       with:
         credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+    # Tests hit real GCS buckets and occasionally get transient 429 rate-limit errors.
+    # Retry up to 3 times with a 30s backoff, but only when the failure is a 429.
     - name: Run tests
       env:
         SISKIN_ENV_ENABLED: 1
       run: |
-        python -m unittest discover -v cloud_optimized_dicom.tests
+        for attempt in 1 2 3; do
+          python -m unittest discover -v cloud_optimized_dicom.tests 2>&1 | tee test_output.txt && exit 0
+          if grep -q "429" test_output.txt; then
+            echo "Attempt $attempt failed with 429 rate-limit error, retrying in 30s..."
+            sleep 30
+          else
+            echo "Tests failed for non-rate-limit reasons."
+            exit 1
+          fi
+        done
+        echo "Tests failed after 3 attempts due to 429 errors."
+        exit 1
