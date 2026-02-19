@@ -38,6 +38,7 @@ jobs:
       env:
         SISKIN_ENV_ENABLED: 1
       run: |
+        set -o pipefail
         for attempt in 1 2 3; do
           python -m unittest discover -v cloud_optimized_dicom.tests 2>&1 | tee test_output.txt && exit 0
           if grep -q "429" test_output.txt; then
