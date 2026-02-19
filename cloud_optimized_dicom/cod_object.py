@@ -128,6 +128,8 @@ class CODObject:
                 raise ErrorLogExistsError(
                     f"Cannot initialize; error log exists: {self.error_log_uri}"
                 )
+        # Initialize _metadata before locker, since acquire() calls get_metadata()
+        self._metadata = None
         # Only acquire lock for write/append mode WITH sync_on_exit=True
         # sync_on_exit=False means no lock (efficient for testing)
         self._locker = None
