@@ -441,8 +441,21 @@ class Instance:
                         bulk_data_element_handler=bulk_data_handler
                     )
                 )
+                self._backfill_missing_uids(ds_dict)
                 # populate self._dicom_metadata with uncompressed metadata
                 self._dicom_metadata = DicomMetadata(ds_dict)
+
+    def _backfill_missing_uids(self, ds_dict: dict) -> None:
+        """Reinsert critical UID tags dropped by `to_json_dict(suppress_invalid_tags=True)`
+        when values are non-conformant (e.g. leading-zero components, >64 chars)."""
+        uid_sources = {
+            "0020000D": self._study_uid,
+            "0020000E": self._series_uid,
+            "00080018": self._instance_uid,
+        }
+        for tag, cached_value in uid_sources.items():
+            if tag not in ds_dict and cached_value is not None:
+                ds_dict[tag] = {"vr": "UI", "Value": [cached_value]}
 
     def get_pixeldata_hash(self) -> str:
         """Compute the crc32c hash of just the pixeldata"""

@@ -91,6 +91,39 @@ class TestInstance(unittest.TestCase):
         )
         self.assertEqual(instance._custom_offset_tables, {})
 
+    def test_extract_metadata_backfills_invalid_uid(self):
+        """Non-conformant UIDs (e.g. leading-zero components, >64 chars) are
+        dropped by pydicom3 when `to_json_dict(suppress_invalid_tags=True)`
+        serializes under strict_reading. _backfill_missing_uids must reinsert
+        them from the cached Instance fields populated by validate()."""
+        bad_study_uid = "1.2.840.01.2.3"  # leading zero component
+        bad_series_uid = "1.2.840.10008.5.1.4.1.2.A"  # non-digit component
+        bad_sop_uid = "1." + "2" * 70  # >64 chars
+
+        with tempfile.NamedTemporaryFile(suffix=".dcm") as tmp:
+            ds = pydicom3.dcmread(self.local_instance_path)
+            ds.StudyInstanceUID = bad_study_uid
+            ds.SeriesInstanceUID = bad_series_uid
+            ds.SOPInstanceUID = bad_sop_uid
+            ds.file_meta.MediaStorageSOPInstanceUID = bad_sop_uid
+            ds.save_as(tmp.name, write_like_original=False)
+
+            instance = Instance(tmp.name)
+            instance.validate()
+            self.assertEqual(instance._study_uid, bad_study_uid)
+            self.assertEqual(instance._series_uid, bad_series_uid)
+            self.assertEqual(instance._instance_uid, bad_sop_uid)
+
+            instance.extract_metadata(
+                output_uri="gs://some_series.tar://instances/some_instance.dcm"
+            )
+
+            # Without the backfill, these tags would be missing from the JSON
+            # dict because to_json_dict(suppress_invalid_tags=True) drops them.
+            self.assertEqual(instance.metadata["0020000D"]["Value"][0], bad_study_uid)
+            self.assertEqual(instance.metadata["0020000E"]["Value"][0], bad_series_uid)
+            self.assertEqual(instance.metadata["00080018"]["Value"][0], bad_sop_uid)
+
     def test_delete_local_dependencies(self):
         temp_file = tempfile.NamedTemporaryFile(delete=False)
         self.assertTrue(os.path.exists(temp_file.name))
