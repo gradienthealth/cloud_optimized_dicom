@@ -6,8 +6,7 @@
   "bump-patch-for-minor-pre-major": false,
   "packages": {
     ".": {
-      "package-name": "cloud-optimized-dicom",
-      "release-as": "1.0.0"
+      "package-name": "cloud-optimized-dicom"
     }
   }
 }
