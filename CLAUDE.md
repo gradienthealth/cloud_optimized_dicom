@@ -37,6 +37,27 @@ Pre-commit hooks automatically run:
 - `isort --profile=black` - Sort imports
 - `black` - Format code
 
+## Pull Requests & Releases
+
+### PR title format
+`<type>(PROC-XXXX): subject` — e.g. `feat(PROC-1502): backfill dropped UID tags`. Use `NO-ISSUE` in place of the Linear ID only when there is no associated ticket.
+
+Allowed types and their effect on the next release:
+- `feat` → minor bump (1.0.0 → 1.1.0)
+- `fix` → patch bump (1.0.0 → 1.0.1)
+- `feat!` (or `BREAKING CHANGE:` footer) → major bump (1.0.0 → 2.0.0)
+- `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf`, `revert` → no release
+
+Squash-merge is the norm, so the PR title becomes the commit on `main` that release-please reads.
+
+### Releases are automated
+Do **not** edit the `version` field in `pyproject.toml` directly. [release-please](https://github.com/googleapis/release-please) watches `main` and continuously updates a "chore(main): release X.Y.Z" PR. Merging that Release PR:
+1. Bumps the version in `pyproject.toml` and updates `CHANGELOG.md`
+2. Tags `vX.Y.Z`
+3. The tag fires `.github/workflows/publish.yml` → publishes to PyPI
+
+Config lives in `release-please-config.json` and `.release-please-manifest.json`.
+
 ## Architecture Overview
 
 ### Core Classes

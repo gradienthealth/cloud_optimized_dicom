@@ -62,6 +62,18 @@ The project uses `pyproject.toml` for package configuration and dependency manag
 - `zstandard`: For metadata compression (v2.0)
 - `apache-beam[gcp]` (optional): For data processing pipelines — install with `pip install cloud-optimized-dicom[beam]`
 
+## Contributing
+
+PR titles must follow the format `<type>(PROC-XXXX): subject` (e.g. `feat(PROC-1502): backfill dropped UID tags`). Use `NO-ISSUE` instead of the Linear ID when no ticket exists.
+
+Allowed types and their effect on the next release:
+- `feat` → minor version bump
+- `fix` → patch bump
+- `feat!` (or a `BREAKING CHANGE:` footer) → major bump
+- `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf`, `revert` → no release
+
+Releases are fully automated by [release-please](https://github.com/googleapis/release-please): merging PRs to `main` updates a "chore(main): release X.Y.Z" PR; merging that bumps the version, tags `vX.Y.Z`, and publishes to PyPI. **Do not edit the `version` field in `pyproject.toml` directly.**
+
 # Concepts & Design Philosophy
 
 ## Hashed vs. regular study/series/instance UIDs
