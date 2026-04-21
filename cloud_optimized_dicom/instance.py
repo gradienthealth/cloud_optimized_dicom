@@ -7,6 +7,7 @@ from typing import Callable, Optional
 
 import pydicom3
 import pydicom3.uid
+from pydicom3.datadict import tag_for_keyword
 from ratarmountcore import open as rmc_open
 from smart_open import open as smart_open
 
@@ -28,6 +29,10 @@ from cloud_optimized_dicom.virtual_file import VirtualFile
 
 TAR_IDENTIFIER = ".tar://"
 ZIP_IDENTIFIER = ".zip://"
+
+_STUDY_INSTANCE_UID_TAG = f"{tag_for_keyword('StudyInstanceUID'):08X}"
+_SERIES_INSTANCE_UID_TAG = f"{tag_for_keyword('SeriesInstanceUID'):08X}"
+_SOP_INSTANCE_UID_TAG = f"{tag_for_keyword('SOPInstanceUID'):08X}"
 
 
 @dataclass
@@ -441,8 +446,21 @@ class Instance:
                         bulk_data_element_handler=bulk_data_handler
                     )
                 )
+                self._backfill_missing_uids(ds_dict)
                 # populate self._dicom_metadata with uncompressed metadata
                 self._dicom_metadata = DicomMetadata(ds_dict)
+
+    def _backfill_missing_uids(self, ds_dict: dict) -> None:
+        """Reinsert critical UID tags dropped by `to_json_dict(suppress_invalid_tags=True)`
+        when values are non-conformant (e.g. leading-zero components, >64 chars)."""
+        uid_sources = {
+            _STUDY_INSTANCE_UID_TAG: self._study_uid,
+            _SERIES_INSTANCE_UID_TAG: self._series_uid,
+            _SOP_INSTANCE_UID_TAG: self._instance_uid,
+        }
+        for tag, cached_value in uid_sources.items():
+            if tag not in ds_dict and cached_value is not None:
+                ds_dict[tag] = {"vr": "UI", "Value": [cached_value]}
 
     def get_pixeldata_hash(self) -> str:
         """Compute the crc32c hash of just the pixeldata"""
