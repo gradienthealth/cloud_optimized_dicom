@@ -51,12 +51,12 @@ Allowed types and their effect on the next release:
 Squash-merge is the norm, so the PR title becomes the commit on `main` that release-please reads.
 
 ### Releases are automated
-Do **not** edit the `version` field in `pyproject.toml` directly. [release-please](https://github.com/googleapis/release-please) watches `main` and continuously updates a "chore(main): release X.Y.Z" PR. Merging that Release PR:
+Do **not** edit the `version` field in `pyproject.toml` directly. [release-please](https://github.com/googleapis/release-please) runs from `.github/workflows/release.yml` on every push to `main`, continuously updating a "chore(main): release X.Y.Z" PR. Merging that Release PR:
 1. Bumps the version in `pyproject.toml` and updates `CHANGELOG.md`
-2. Tags `vX.Y.Z`
-3. The tag fires `.github/workflows/publish.yml` → publishes to PyPI
+2. Tags `vX.Y.Z` and creates a GitHub release
+3. The same workflow run then builds the wheel and publishes to PyPI via trusted publishing (no cross-workflow cascade, so `GITHUB_TOKEN` is sufficient — no PAT/App needed)
 
-Config lives in `release-please-config.json` and `.release-please-manifest.json`.
+Config lives in `release-please-config.json` and `.release-please-manifest.json`. Manual re-publish fallback: `gh workflow run release.yml -f environment=pypi` (or `testpypi`).
 
 ## Architecture Overview
 
