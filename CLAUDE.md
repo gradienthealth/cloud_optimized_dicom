@@ -93,7 +93,8 @@ Config lives in `release-please-config.json` and `.release-please-manifest.json`
 - `mode="r"`: Read-only access; no lock acquired; allows all read operations
 - `mode="w"`: Write access (overwrite); acquires exclusive lock automatically (raises `LockAcquisitionError` if exists); starts fresh with empty metadata/tar locally; overwrites remote tar/metadata on sync; never fetches remote tar
 - `mode="a"`: Append access; acquires exclusive lock automatically (raises `LockAcquisitionError` if exists); fetches remote tar if it exists; appends to existing tar/metadata on sync
-- `sync_on_exit=True` (default): Auto-syncs and releases lock on context exit for `mode="w"` or `mode="a"`
+- `mode="e"`: Edit access; acquires exclusive lock automatically; requires the series to already exist (raises `CODObjectNotFoundError` if metadata or tar is missing); on context enter, fetches + extracts the tar so each `instance.dicom_uri` points at a local temp `.dcm` the caller can rewrite in place; on context exit, validates the instance UID set is unchanged, repacks the tar, rebuilds the sqlite index + series metadata, and uploads. Cannot add or remove instances — `append()` is blocked in this mode. Optional `regen_thumbnail_on_pd_change: bool = True` kwarg controls whether an existing thumbnail is regenerated when pixel data changes.
+- `sync_on_exit=True` (default): Auto-syncs and releases lock on context exit for `mode="w"`, `mode="a"`, or `mode="e"`
 - `sync_on_exit=False`: No lock acquired, no auto-sync; useful for local testing/debugging
 - Locks deliberately "hang" on errors to indicate series corruption
 - User must use context manager for proper lock release
@@ -127,6 +128,7 @@ cloud_optimized_dicom/
 ├── instance_metadata.py   # Instance-level metadata handling
 ├── series_metadata.py     # Series-level metadata handling
 ├── append.py              # Instance appending logic
+├── edit.py                # Edit-mode (mode="e") repack + validation
 ├── locker.py              # CODLocker for lock management
 ├── hints.py               # Hints dataclass
 ├── errors.py              # Custom exception hierarchy
@@ -181,6 +183,16 @@ with CODObject(client=..., datastore_path=..., mode="w") as cod:
 with CODObject(client=..., datastore_path=..., mode="a") as cod:
     cod.append(instances)
 # sync() called automatically, lock released, appends to remote tar/metadata
+
+# Edit access - edit mode (lock acquired, fetches + extracts existing tar, repacks on sync)
+# Requires the series to already exist. Cannot add/remove instances.
+with CODObject(client=..., datastore_path=..., mode="e") as cod:
+    for instance in cod.get_instances().values():
+        # instance.dicom_uri now points at a local .dcm the caller can rewrite
+        ds = pydicom3.dcmread(instance.dicom_uri)
+        ds.PatientName = "REDACTED"
+        ds.save_as(instance.dicom_uri)
+# sync() called automatically: tar repacked, metadata rebuilt, thumbnail regenerated if pixel data changed
 
 # Local testing (no lock, no sync - efficient for debugging)
 with CODObject(client=..., datastore_path=..., mode="a", sync_on_exit=False) as cod:

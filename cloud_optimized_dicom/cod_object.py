@@ -55,17 +55,28 @@ class CODObject:
         client: storage.Client - The client to use to interact with the datastore.
         study_uid: str - The study_uid of the series.
         series_uid: str - The series_uid of the series.
-        mode: str - Access mode: "r" for read-only, "w" for write (overwrite), "a" for append.
+        mode: str - Access mode: "r" for read-only, "w" for write (overwrite), "a" for append, "e" for edit.
             - "r": Read-only, no lock acquired, no sync on exit.
             - "w": Write mode, acquires lock, starts fresh (no remote tar fetch), overwrites on sync.
             - "a": Append mode, acquires lock, fetches remote tar if exists, appends on sync.
-        sync_on_exit: bool - If True (default), sync changes on context exit for mode="w" or "a". If False, no lock is
+            - "e": Edit mode, acquires lock, fetches and extracts remote tar on context enter, lets caller
+              modify individual DICOM files in-place via `instance.dicom_uri`, then on context exit
+              re-validates the instance set, repacks the tar + index, rebuilds series metadata, and
+              uploads. Requires the series to already exist (`create_if_missing` is ignored / forced False).
+              Cannot add or remove instances (use mode="a" / mode="w" for that).
+        sync_on_exit: bool - If True (default), sync changes on context exit for mode="w"/"a"/"e". If False, no lock is
             acquired and no sync occurs (useful for testing).
         hashed_uids: bool - Flag whether UIDs are hashed. If `True`, Instances appended to this CODObject must have a `uid_hash_func`.
         create_if_missing: bool - If `False`, raise an error if series does not yet exist in the datastore.
+            Forced to False when `mode="e"` (edit mode cannot create a series).
         temp_dir: str - If a temp_dir with data pertaining to this series already exists, provide it here.
         override_errors: bool - If `True`, delete any existing error.log and upload a new one.
         empty_lock_override_age: float - If `None`, do not override a stale lock if it exists. If `float`, override a stale lock if it exists and is older than the given age (in hours).
+        regen_thumbnail_on_pd_change: bool - Only meaningful when `mode="e"`. If `True` (default), and the series
+            has a thumbnail, and any pixeldata-containing instance's file-level crc32c changed during the edit,
+            regenerate the thumbnail on context exit. If `False`, the stale thumbnail is left alone. Note: this
+            uses file-level crc32c, so a non-pixel tag edit on a DICOM that contains PixelData will also trigger
+            regen (conservative default — we'd rather over-regenerate than leave a stale thumbnail).
         lock: bool - DEPRECATED. Use mode="r", mode="w", or mode="a" instead.
     """
 
@@ -77,7 +88,7 @@ class CODObject:
         client: storage.Client,
         study_uid: str,
         series_uid: str,
-        mode: Literal["r", "w", "a"] = None,
+        mode: Literal["r", "w", "a", "e"] = None,
         # fields user can set but does not have to
         sync_on_exit: bool = True,
         hashed_uids: bool = False,
@@ -85,6 +96,7 @@ class CODObject:
         temp_dir: str = None,
         override_errors: bool = False,
         empty_lock_override_age: float = None,
+        regen_thumbnail_on_pd_change: bool = True,
         # deprecated
         lock: bool = None,
     ):
@@ -102,11 +114,20 @@ class CODObject:
                 mode = "w" if lock else "r"
 
         # Validate mode
-        if mode not in ("r", "w", "a"):
-            raise ValueError(f"mode must be 'r', 'w', or 'a', got: {mode!r}")
+        if mode not in ("r", "w", "a", "e"):
+            raise ValueError(f"mode must be 'r', 'w', 'a', or 'e', got: {mode!r}")
+
+        # regen_thumbnail_on_pd_change is only meaningful in mode='e'
+        if mode != "e" and regen_thumbnail_on_pd_change is not True:
+            warnings.warn(
+                "regen_thumbnail_on_pd_change is only meaningful when mode='e'; "
+                "passing it in another mode has no effect.",
+                stacklevel=2,
+            )
 
         self._mode = mode
         self._sync_on_exit = sync_on_exit
+        self._regen_thumbnail_on_pd_change = regen_thumbnail_on_pd_change
         self.datastore_path = datastore_path
         self.client = client
         self.study_uid = study_uid
@@ -115,6 +136,9 @@ class CODObject:
         self.hashed_uids = hashed_uids
         self.override_errors = override_errors
         self.lock_generation = None
+        # Edit-mode state (populated in __enter__, consumed in __exit__ via edit.py)
+        self._edit_original_state: Optional[dict] = None
+        self._edit_pixeldata_changed: bool = False
         # check for error.log existence - if it exists, fail initialization
         if (
             error_log_blob := storage.Blob.from_string(
@@ -130,13 +154,28 @@ class CODObject:
                 )
         # Initialize _metadata before locker, since acquire() calls get_metadata()
         self._metadata = None
-        # Only acquire lock for write/append mode WITH sync_on_exit=True
+        # Edit mode requires both remote metadata and tar to already exist. Verify
+        # this BEFORE acquiring the lock so a missing series doesn't leave a lock hanging.
+        if mode == "e":
+            if not storage.Blob.from_string(
+                self.metadata_uri, client=self.client
+            ).exists():
+                raise CODObjectNotFoundError(
+                    f"COD:OBJECT_NOT_FOUND:{self.metadata_uri} (mode='e' requires existing series)"
+                )
+            if not storage.Blob.from_string(self.tar_uri, client=self.client).exists():
+                raise CODObjectNotFoundError(
+                    f"COD:OBJECT_NOT_FOUND:{self.tar_uri} (mode='e' requires existing tar)"
+                )
+        # Only acquire lock for write/append/edit mode WITH sync_on_exit=True
         # sync_on_exit=False means no lock (efficient for testing)
         self._locker = None
-        if mode in ("w", "a") and sync_on_exit:
+        if mode in ("w", "a", "e") and sync_on_exit:
             self._locker = CODLocker(self)
+            # Edit mode cannot create a series; force create_if_missing=False for lock acquire
+            locker_create_if_missing = False if mode == "e" else create_if_missing
             self._locker.acquire(
-                create_if_missing=create_if_missing,
+                create_if_missing=locker_create_if_missing,
                 empty_lock_override_age=empty_lock_override_age,
             )
         # Mode-specific initialization (independent of lock)
@@ -154,6 +193,12 @@ class CODObject:
             self._get_metadata(create_if_missing=create_if_missing)
             self._tar_synced = False
             self._metadata_synced = True
+        elif mode == "e":
+            # Metadata already fetched by locker.acquire() above; both local and remote
+            # are in sync at this point. Extraction happens in __enter__.
+            self._get_metadata(create_if_missing=False)
+            self._tar_synced = True
+            self._metadata_synced = True
         else:
             raise ValueError(f"Unexpected mode: {mode!r}")
         # if the thumbnail exists, it is not synced (we did not fetch it)
@@ -167,7 +212,7 @@ class CODObject:
     # Core properties and getters
     @property
     def mode(self) -> str:
-        """Read-only property for access mode ('r', 'w', or 'a')."""
+        """Read-only property for access mode ('r', 'w', 'a', or 'e')."""
         return self._mode
 
     @property
@@ -394,6 +439,12 @@ class CODObject:
             compress: bool - If `True`, transcodes instances to JPEG2000Lossless during append to save space.
             dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
         """
+        if self.mode == "e":
+            raise ValueError(
+                "append() is not supported in edit mode (mode='e'). "
+                "Edit mode is for modifying existing instances in place, not adding new ones. "
+                "Use mode='a' or mode='w' to add instances."
+            )
         return append(
             cod_object=self,
             instances=instances,
@@ -846,7 +897,23 @@ class CODObject:
         return f"CODObject({self.datastore_series_uri})"
 
     def __enter__(self):
-        """Context manager entry point"""
+        """Context manager entry point.
+
+        For mode='e' only: download + extract the tar so each `instance.dicom_uri` points at a
+        local temp file the caller can modify in place. Snapshots per-instance pre-edit state
+        (crc32c, has_pixeldata) so exit-time can detect pixel changes.
+        """
+        if self.mode == "e":
+            self._pull_tar()
+            self._edit_original_state = {
+                uid: {
+                    "crc32c": inst.crc32c(),
+                    "has_pixeldata": inst.has_pixeldata,
+                }
+                for uid, inst in self._get_instances(strict_sorting=False).items()
+            }
+            for instance in self._get_instances(strict_sorting=False).values():
+                instance._extract_from_local_tar()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -854,13 +921,21 @@ class CODObject:
         # Early exit conditions: read mode and/or sync_on_exit=False
         if self.mode == "r" or not self._sync_on_exit:
             return False
-        # Sanity check: locker should always be set in write/append mode with sync_on_exit=True
+        # Sanity check: locker should always be set in write/append/edit mode with sync_on_exit=True
         assert (
             self._locker is not None
-        ), "Locker should be set in write/append mode with sync_on_exit=True"
+        ), "Locker should be set in write/append/edit mode with sync_on_exit=True"
         # If no exception occurred, execute sync & release lock
         if exc_type is None:
             try:
+                # Edit mode: validate the instance set is unchanged and repack the tar+metadata
+                # BEFORE _sync() so there's something fresh to upload. Failures here leave the
+                # lock hanging (caught by the outer except below) — correct, since the series
+                # may now be in an undefined state locally.
+                if self.mode == "e":
+                    from cloud_optimized_dicom.edit import _validate_and_repack_for_edit
+
+                    _validate_and_repack_for_edit(self)
                 self._sync()
             except Exception:
                 # leave lock hanging on sync failure - remote may be corrupt
@@ -879,7 +954,7 @@ class CODObject:
         cls,
         uri: str,
         client: storage.Client,
-        mode: Literal["r", "w", "a"],
+        mode: Literal["r", "w", "a", "e"],
         hashed_uids: bool,
         create_if_missing: bool,
         sync_on_exit: bool = True,
@@ -890,10 +965,10 @@ class CODObject:
         Args:
             uri: str - The URI of the CODObject.
             client: storage.Client - The GCS client.
-            mode: str - Access mode: "r" for read-only, "w" for write (overwrite), "a" for append.
+            mode: str - Access mode: "r" for read-only, "w" for write (overwrite), "a" for append, "e" for edit.
             hashed_uids: bool - Whether UIDs are hashed.
             create_if_missing: bool - Whether to create if missing.
-            sync_on_exit: bool - Whether to sync on context exit (for mode="w" or "a").
+            sync_on_exit: bool - Whether to sync on context exit (for mode="w"/"a"/"e").
             lock: bool - DEPRECATED. Use mode="r", mode="w", or mode="a" instead.
         """
         if not is_remote(uri) or "/studies/" not in uri or "/series/" not in uri:
