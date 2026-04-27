@@ -3,7 +3,7 @@ import shutil
 import tarfile
 import warnings
 from tempfile import mkdtemp
-from typing import TYPE_CHECKING, Literal, Optional, Union
+from typing import Literal, Optional, Union
 
 import numpy as np
 from google.api_core.exceptions import NotFound
@@ -15,6 +15,7 @@ from ratarmountcore import open as rmc_open
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.append import append
 from cloud_optimized_dicom.config import logger
+from cloud_optimized_dicom.edit import EditState, _validate_and_repack_for_edit
 from cloud_optimized_dicom.errors import (
     CODObjectNotFoundError,
     ErrorLogExistsError,
@@ -41,9 +42,6 @@ from cloud_optimized_dicom.utils import (
     read_thumbnail_into_array,
     upload_and_count_file,
 )
-
-if TYPE_CHECKING:
-    from cloud_optimized_dicom.edit import EditState
 
 
 class CODObject:
@@ -126,7 +124,7 @@ class CODObject:
         self.lock_generation = None
         # Edit-mode state (populated in __enter__ when mode='e', consumed in __exit__
         # by edit._validate_and_repack_for_edit). None for any other mode.
-        self._edit_state: Optional["EditState"] = None
+        self._edit_state: Optional[EditState] = None
         # check for error.log existence - if it exists, fail initialization
         if (
             error_log_blob := storage.Blob.from_string(
@@ -892,8 +890,6 @@ class CODObject:
         (crc32c, has_pixeldata) so exit-time can detect pixel changes.
         """
         if self.mode == "e":
-            from cloud_optimized_dicom.edit import EditState
-
             self._pull_tar()
             self._edit_state = EditState.snapshot(
                 self._get_instances(strict_sorting=False)
@@ -919,8 +915,6 @@ class CODObject:
                 # lock hanging (caught by the outer except below) — correct, since the series
                 # may now be in an undefined state locally.
                 if self.mode == "e":
-                    from cloud_optimized_dicom.edit import _validate_and_repack_for_edit
-
                     _validate_and_repack_for_edit(self)
                 self._sync()
             except Exception:
