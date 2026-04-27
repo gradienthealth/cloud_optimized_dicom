@@ -3,7 +3,7 @@ import shutil
 import tarfile
 import warnings
 from tempfile import mkdtemp
-from typing import Literal, Optional, Union
+from typing import TYPE_CHECKING, Literal, Optional, Union
 
 import numpy as np
 from google.api_core.exceptions import NotFound
@@ -41,6 +41,9 @@ from cloud_optimized_dicom.utils import (
     read_thumbnail_into_array,
     upload_and_count_file,
 )
+
+if TYPE_CHECKING:
+    from cloud_optimized_dicom.edit import EditState
 
 
 class CODObject:
@@ -121,9 +124,9 @@ class CODObject:
         self.hashed_uids = hashed_uids
         self.override_errors = override_errors
         self.lock_generation = None
-        # Edit-mode state (populated in __enter__, consumed in __exit__ via edit.py)
-        self._edit_original_state: Optional[dict] = None
-        self._edit_pixeldata_changed: bool = False
+        # Edit-mode state (populated in __enter__ when mode='e', consumed in __exit__
+        # by edit._validate_and_repack_for_edit). None for any other mode.
+        self._edit_state: Optional["EditState"] = None
         # check for error.log existence - if it exists, fail initialization
         if (
             error_log_blob := storage.Blob.from_string(
@@ -889,14 +892,12 @@ class CODObject:
         (crc32c, has_pixeldata) so exit-time can detect pixel changes.
         """
         if self.mode == "e":
+            from cloud_optimized_dicom.edit import EditState
+
             self._pull_tar()
-            self._edit_original_state = {
-                uid: {
-                    "crc32c": inst.crc32c(),
-                    "has_pixeldata": inst.has_pixeldata,
-                }
-                for uid, inst in self._get_instances(strict_sorting=False).items()
-            }
+            self._edit_state = EditState.snapshot(
+                self._get_instances(strict_sorting=False)
+            )
             for instance in self._get_instances(strict_sorting=False).values():
                 instance._extract_from_local_tar()
         return self

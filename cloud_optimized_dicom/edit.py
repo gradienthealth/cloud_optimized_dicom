@@ -7,6 +7,7 @@ in-memory. Actual upload is handled by the caller via CODObject._sync().
 
 import os
 import tarfile
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from cloud_optimized_dicom.append import _create_sqlite_index
@@ -16,6 +17,41 @@ from cloud_optimized_dicom.thumbnail import DEFAULT_SIZE, generate_thumbnail
 
 if TYPE_CHECKING:
     from cloud_optimized_dicom.cod_object import CODObject
+    from cloud_optimized_dicom.instance import Instance
+
+
+@dataclass(frozen=True)
+class _InstanceSnapshot:
+    """Per-instance state captured on edit-mode context enter, used on exit
+    to detect what changed during the edit."""
+
+    crc32c: str
+    has_pixeldata: bool
+
+
+@dataclass
+class EditState:
+    """State maintained for the duration of a `mode='e'` context.
+
+    Populated in `CODObject.__enter__` (snapshots taken from each instance
+    immediately after the tar is fetched, before extraction to local temp
+    files) and consumed in `_validate_and_repack_for_edit` on exit.
+    """
+
+    snapshots: dict[str, _InstanceSnapshot] = field(default_factory=dict)
+    pixeldata_changed: bool = False
+
+    @classmethod
+    def snapshot(cls, instances: dict[str, "Instance"]) -> "EditState":
+        """Capture pre-edit state from each instance."""
+        return cls(
+            snapshots={
+                uid: _InstanceSnapshot(
+                    crc32c=inst.crc32c(), has_pixeldata=inst.has_pixeldata
+                )
+                for uid, inst in instances.items()
+            }
+        )
 
 
 def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
@@ -30,8 +66,8 @@ def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
             instance UID set (or study/series UID) on disk no longer matches what was
             loaded from metadata on context enter.
     """
-    original_state = cod_object._edit_original_state
-    assert original_state is not None, (
+    edit_state = cod_object._edit_state
+    assert edit_state is not None, (
         "Edit-mode exit called without __enter__ having been called. "
         "CODObject instances in mode='e' must be used as a context manager."
     )
@@ -71,7 +107,7 @@ def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
             instance, trust_hints_if_available=False
         )
 
-    original_uids = set(original_state.keys())
+    original_uids = set(edit_state.snapshots.keys())
     current_uids = set(instances.keys())
     if original_uids != current_uids:
         # Can only happen if someone reached into _metadata.instances directly — mode='e'
@@ -82,9 +118,9 @@ def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
         )
 
     # 4) detect pixeldata change (file-level crc32c delta on any instance with pixeldata)
-    cod_object._edit_pixeldata_changed = any(
-        instance.crc32c() != original_state[uid]["crc32c"]
-        and original_state[uid]["has_pixeldata"]
+    edit_state.pixeldata_changed = any(
+        instance.crc32c() != edit_state.snapshots[uid].crc32c
+        and edit_state.snapshots[uid].has_pixeldata
         for uid, instance in instances.items()
     )
 
@@ -121,7 +157,7 @@ def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
 
     # 7) regenerate the thumbnail if one exists and pixeldata changed.
     thumb_meta = cod_object._get_metadata_field("thumbnail")
-    if thumb_meta is not None and cod_object._edit_pixeldata_changed:
+    if thumb_meta is not None and edit_state.pixeldata_changed:
         thumbnail_size = thumb_meta.get("size", DEFAULT_SIZE)
         generate_thumbnail(
             cod_obj=cod_object,
