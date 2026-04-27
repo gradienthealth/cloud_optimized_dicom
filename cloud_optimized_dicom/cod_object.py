@@ -72,11 +72,6 @@ class CODObject:
         temp_dir: str - If a temp_dir with data pertaining to this series already exists, provide it here.
         override_errors: bool - If `True`, delete any existing error.log and upload a new one.
         empty_lock_override_age: float - If `None`, do not override a stale lock if it exists. If `float`, override a stale lock if it exists and is older than the given age (in hours).
-        regen_thumbnail_on_pd_change: bool - Only meaningful when `mode="e"`. If `True` (default), and the series
-            has a thumbnail, and any pixeldata-containing instance's file-level crc32c changed during the edit,
-            regenerate the thumbnail on context exit. If `False`, the stale thumbnail is left alone. Note: this
-            uses file-level crc32c, so a non-pixel tag edit on a DICOM that contains PixelData will also trigger
-            regen (conservative default — we'd rather over-regenerate than leave a stale thumbnail).
         lock: bool - DEPRECATED. Use mode="r", mode="w", or mode="a" instead.
     """
 
@@ -96,7 +91,6 @@ class CODObject:
         temp_dir: str = None,
         override_errors: bool = False,
         empty_lock_override_age: float = None,
-        regen_thumbnail_on_pd_change: bool = True,
         # deprecated
         lock: bool = None,
     ):
@@ -117,17 +111,8 @@ class CODObject:
         if mode not in ("r", "w", "a", "e"):
             raise ValueError(f"mode must be 'r', 'w', 'a', or 'e', got: {mode!r}")
 
-        # regen_thumbnail_on_pd_change is only meaningful in mode='e'
-        if mode != "e" and regen_thumbnail_on_pd_change is not True:
-            warnings.warn(
-                "regen_thumbnail_on_pd_change is only meaningful when mode='e'; "
-                "passing it in another mode has no effect.",
-                stacklevel=2,
-            )
-
         self._mode = mode
         self._sync_on_exit = sync_on_exit
-        self._regen_thumbnail_on_pd_change = regen_thumbnail_on_pd_change
         self.datastore_path = datastore_path
         self.client = client
         self.study_uid = study_uid

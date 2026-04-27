@@ -119,14 +119,9 @@ def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
         instance.extract_metadata(output_uri=output_uri)
         instance._dicom_metadata.compress()
 
-    # 7) thumbnail handling — only regenerate if caller opted in AND a thumbnail
-    #    currently exists AND pixeldata actually changed.
+    # 7) regenerate the thumbnail if one exists and pixeldata changed.
     thumb_meta = cod_object._get_metadata_field("thumbnail")
-    if (
-        thumb_meta is not None
-        and cod_object._regen_thumbnail_on_pd_change
-        and cod_object._edit_pixeldata_changed
-    ):
+    if thumb_meta is not None and cod_object._edit_pixeldata_changed:
         thumbnail_size = thumb_meta.get("size", DEFAULT_SIZE)
         generate_thumbnail(
             cod_obj=cod_object,

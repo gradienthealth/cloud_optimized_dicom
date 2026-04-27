@@ -196,11 +196,11 @@ class TestEditMode(unittest.TestCase):
         thumb_blob.reload()
         return thumb_uri, thumb_blob.generation
 
-    def test_edit_mode_thumbnail_regen_default(self):
-        """Editing an instance with pixeldata (default regen_thumbnail_on_pd_change) regenerates thumbnail.
+    def test_edit_mode_thumbnail_regen_on_pd_change(self):
+        """Editing an instance with pixeldata regenerates the thumbnail.
 
-        Detection is via file-level crc32c on instances with has_pixeldata=True, so any
-        edit (even a tag-only edit) to such an instance triggers regen.
+        Detection is via file-level crc32c on instances with has_pixeldata=True, so
+        any edit (even a tag-only edit) to such an instance triggers regen.
         """
         thumb_uri, thumb_gen_before = self._seed_and_generate_thumbnail()
         with CODObject(
@@ -231,30 +231,6 @@ class TestEditMode(unittest.TestCase):
             mode="r",
         ) as cod:
             self.assertIsNotNone(cod._get_metadata_field("thumbnail"))
-
-    def test_edit_mode_thumbnail_regen_opt_out(self):
-        """regen_thumbnail_on_pd_change=False leaves the remote thumbnail untouched."""
-        thumb_uri, thumb_gen_before = self._seed_and_generate_thumbnail()
-        with CODObject(
-            client=self.client,
-            datastore_path=self.datastore_path,
-            study_uid=self.study_uid,
-            series_uid=self.series_uid,
-            mode="e",
-            regen_thumbnail_on_pd_change=False,
-        ) as cod:
-            target = next(iter(cod._get_instances(strict_sorting=False).values()))
-            ds = pydicom3.dcmread(target.dicom_uri)
-            ds.PatientName = "REDACTED^OPT^OUT"
-            ds.save_as(target.dicom_uri)
-
-        thumb_blob = storage.Blob.from_string(thumb_uri, client=self.client)
-        thumb_blob.reload()
-        self.assertEqual(
-            thumb_blob.generation,
-            thumb_gen_before,
-            "thumbnail blob should NOT have been rewritten",
-        )
 
 
 if __name__ == "__main__":
