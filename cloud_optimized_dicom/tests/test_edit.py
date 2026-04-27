@@ -146,9 +146,9 @@ class TestEditMode(unittest.TestCase):
                 os.remove(first.dicom_uri)
 
     def test_edit_mode_corrupted_uid_raises(self):
-        """Mutating an instance's SOPInstanceUID raises on exit (UID set changed)."""
+        """Mutating an instance's SOPInstanceUID raises EditSetChangedError on exit."""
         self._seed_series()
-        with self.assertRaises((EditSetChangedError, Exception)):
+        with self.assertRaises(EditSetChangedError):
             with CODObject(
                 client=self.client,
                 datastore_path=self.datastore_path,

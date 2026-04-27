@@ -109,11 +109,15 @@ def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
 
     # 6) rebuild per-instance DICOM metadata from the freshly-repacked tar. After
     #    append_to_series_tar, each instance's dicom_uri has been updated to point at
-    #    the tar, and _byte_offsets reflect the new layout — so extract_metadata reads
-    #    from the correct place.
-    for instance in instances.values():
+    #    the local tar, and _byte_offsets reflect the new layout — so extract_metadata
+    #    reads from the correct place. Bulk-data refs in the metadata must use the
+    #    REMOTE per-instance URI, not the local tar path, so we pass output_uri
+    #    explicitly (mirroring append._handle_create_metadata).
+    for uid, instance in instances.items():
+        output_uri = f"{cod_object.tar_uri}://instances/{uid}.dcm"
         instance._dicom_metadata = None
-        instance.extract_metadata()
+        instance.extract_metadata(output_uri=output_uri)
+        instance._dicom_metadata.compress()
 
     # 7) thumbnail handling — only regenerate if caller opted in AND a thumbnail
     #    currently exists AND pixeldata actually changed.
