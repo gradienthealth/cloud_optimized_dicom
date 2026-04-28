@@ -6,11 +6,10 @@ in-memory. Actual upload is handled by the caller via CODObject._sync().
 """
 
 import os
-import tarfile
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from cloud_optimized_dicom.append import _create_sqlite_index
+from cloud_optimized_dicom.append import _pack_and_index, _refresh_per_instance_metadata
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import EditSetChangedError
 from cloud_optimized_dicom.thumbnail import DEFAULT_SIZE, generate_thumbnail
@@ -125,35 +124,26 @@ def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
     )
 
     # 5) repack the tar from scratch (can't just overwrite entries — file sizes differ).
-    #    Open in "a" (append) mode rather than "w", since Instance.append_to_series_tar
-    #    reads back from the tar fileobj to locate the DICOM preamble — a write-only
-    #    handle raises io.UnsupportedOperation. Removing the file first and relying on
-    #    the tar_file_path property to recreate an empty tar gives us the same fresh
-    #    state as "w" while remaining readable.
+    #    Delete the existing tar+index first so _pack_and_index starts fresh; the
+    #    tar_file_path property auto-recreates an empty tar on next access. Pass
+    #    tolerate_per_instance_errors=False — instances are already validated against
+    #    disk above, so any failure here is a real desync that should hang the lock.
     if os.path.exists(cod_object.tar_file_path):
         os.remove(cod_object.tar_file_path)
     if os.path.exists(cod_object.index_file_path):
         os.remove(cod_object.index_file_path)
-    with tarfile.open(cod_object.tar_file_path, "a") as tar:
-        for instance in instances.values():
-            instance.append_to_series_tar(tar)
-    _create_sqlite_index(cod_object)
+    _pack_and_index(cod_object, instances.values(), tolerate_per_instance_errors=False)
     logger.info(
         f"GRADIENT_STATE_LOGS:EDIT_MODE_REPACKED_TAR:{cod_object.tar_file_path} "
         f"({os.path.getsize(cod_object.tar_file_path)} bytes)"
     )
 
     # 6) rebuild per-instance DICOM metadata from the freshly-repacked tar. After
-    #    append_to_series_tar, each instance's dicom_uri has been updated to point at
-    #    the local tar, and _byte_offsets reflect the new layout — so extract_metadata
-    #    reads from the correct place. Bulk-data refs in the metadata must use the
-    #    REMOTE per-instance URI, not the local tar path, so we pass output_uri
-    #    explicitly (mirroring append._handle_create_metadata).
-    for uid, instance in instances.items():
-        output_uri = f"{cod_object.tar_uri}://instances/{uid}.dcm"
-        instance._dicom_metadata = None
-        instance.extract_metadata(output_uri=output_uri)
-        instance._dicom_metadata.compress()
+    #    _pack_and_index, each instance's dicom_uri points at the local tar and
+    #    _byte_offsets reflect the new layout, so extract_metadata reads from the
+    #    correct place. Bulk-data refs must use the REMOTE per-instance URI, not the
+    #    local tar path — _refresh_per_instance_metadata handles that.
+    _refresh_per_instance_metadata(cod_object, instances.values())
 
     # 7) regenerate the thumbnail if one exists and pixeldata changed.
     thumb_meta = cod_object._get_metadata_field("thumbnail")
