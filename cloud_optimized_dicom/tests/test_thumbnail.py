@@ -1,16 +1,13 @@
 import logging
 import os
 import tempfile
-import unittest
 
-import cv2
 import numpy as np
 import pydicom3
 import pydicom3.encaps
-from google.api_core.client_options import ClientOptions
+import pytest
 from google.cloud import storage
 
-from cloud_optimized_dicom import config
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
@@ -23,6 +20,20 @@ from cloud_optimized_dicom.thumbnail import (
     _convert_frames_to_mp4,
 )
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
+
+THUMBNAIL_DATASTORE_PATH = "gs://siskin-172863-temp/cod_thumbnail_tests/dicomweb"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _enable_logging():
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger().setLevel(logging.INFO)
+
+
+@pytest.fixture
+def thumbnail_datastore_path(gcs_client: storage.Client) -> str:
+    delete_uploaded_blobs(gcs_client, [THUMBNAIL_DATASTORE_PATH])
+    return THUMBNAIL_DATASTORE_PATH
 
 
 def ingest_and_generate_thumbnail(
@@ -45,38 +56,33 @@ def ingest_and_generate_thumbnail(
 
 
 def validate_thumbnail(
-    testcls: unittest.TestCase,
     thumbnail: np.ndarray,
     cod_obj: CODObject,
     expected_frame_count: int,
     expected_frame_size: tuple[int, int] = (DEFAULT_SIZE, DEFAULT_SIZE),
     save_thumbnail: bool = False,
+    test_data_dir: str = None,
 ):
-    testcls.assertTrue(
-        len(thumbnail.shape) == 3 or len(thumbnail.shape) == 4,
-        "Thumbnail must be a 3D or 4D array",
-    )
+    assert (
+        len(thumbnail.shape) == 3 or len(thumbnail.shape) == 4
+    ), "Thumbnail must be a 3D or 4D array"
     # 3D array -> jpg -> (H, W, 3); 4D array -> mp4 -> (N, H, W, 3)
     num_frames = thumbnail.shape[0] if len(thumbnail.shape) > 3 else 1
     frame_size = (
         thumbnail.shape[1:3] if len(thumbnail.shape) > 3 else thumbnail.shape[0:2]
     )
-    testcls.assertEqual(
-        num_frames,
-        expected_frame_count,
-        f"Expected {expected_frame_count} frames, got {num_frames}",
-    )
-    testcls.assertEqual(
-        frame_size,
-        expected_frame_size,
-        f"Expected frame size {expected_frame_size}, got {frame_size}",
-    )
+    assert (
+        num_frames == expected_frame_count
+    ), f"Expected {expected_frame_count} frames, got {num_frames}"
+    assert (
+        frame_size == expected_frame_size
+    ), f"Expected frame size {expected_frame_size}, got {frame_size}"
 
     # make sure the thumbnail is not blank (all pixels are same value)
     some_pixel_value = (
         thumbnail[50, 50] if len(thumbnail.shape) == 3 else thumbnail[0, 50, 50]
     )
-    testcls.assertFalse(np.all(thumbnail == some_pixel_value), "Thumbnail is blank")
+    assert not np.all(thumbnail == some_pixel_value), "Thumbnail is blank"
 
     # test the thumbnail coord converter
     instance_uid = list(cod_obj.get_metadata_field("thumbnail")["instances"].keys())[0]
@@ -87,316 +93,342 @@ def validate_thumbnail(
         thumbnail_frame_metadata["anchors"]
     )
     # bigger dimension should be expected_frame_size
-    testcls.assertEqual(max(converter.thmb_w, converter.thmb_h), expected_frame_size[0])
+    assert max(converter.thmb_w, converter.thmb_h) == expected_frame_size[0]
     # aspect ratio should be the same as the original image
-    testcls.assertAlmostEqual(
-        converter.thmb_w / converter.thmb_h,
-        converter.orig_w / converter.orig_h,
-        places=2,
+    assert converter.thmb_w / converter.thmb_h == pytest.approx(
+        converter.orig_w / converter.orig_h, abs=0.005
     )
     # convert point on original image to thumbnail and back
     test_point = (10, 10)
     recovered_point = converter.thumbnail_to_original(
         converter.original_to_thumbnail(test_point)
     )
-    testcls.assertAlmostEqual(recovered_point[0], test_point[0])
-    testcls.assertAlmostEqual(recovered_point[1], test_point[1])
+    assert recovered_point[0] == pytest.approx(test_point[0])
+    assert recovered_point[1] == pytest.approx(test_point[1])
     # save the thumbnail if requested
-    if save_thumbnail:
+    if save_thumbnail and test_data_dir is not None:
         if num_frames == 1:
             _convert_frame_to_jpg(
-                thumbnail, os.path.join(testcls.test_data_dir, f"thumbnail.jpg")
+                thumbnail, os.path.join(test_data_dir, f"thumbnail.jpg")
             )
         else:
             _convert_frames_to_mp4(
-                thumbnail, os.path.join(testcls.test_data_dir, f"thumbnail.mp4")
+                thumbnail, os.path.join(test_data_dir, f"thumbnail.mp4")
             )
 
 
-class TestThumbnail(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        logging.basicConfig(level=logging.INFO)
-        logging.getLogger().setLevel(logging.INFO)
-        cls.test_data_dir = os.path.join(os.path.dirname(__file__), "test_data")
-        cls.project = "gradient-pacs-siskin-172863"
-        cls.client = storage.Client(
-            project=cls.project,
-            client_options=ClientOptions(quota_project_id=cls.project),
-        )
-        cls.datastore_path = "gs://siskin-172863-temp/cod_thumbnail_tests/dicomweb"
+def test_gen_monochrome1(
+    gcs_client: storage.Client,
+    thumbnail_datastore_path: str,
+    test_data_dir: str,
+):
+    """Test thumbnail generation for a single frame DICOM file (MONOCHROME1)"""
+    dicom_path = os.path.join(test_data_dir, "monochrome1.dcm")
+    cod_obj, thumbnail = ingest_and_generate_thumbnail(
+        [dicom_path], thumbnail_datastore_path, gcs_client
+    )
+    validate_thumbnail(thumbnail, cod_obj, expected_frame_count=1)
+    reloaded_metadata = SeriesMetadata.from_bytes(cod_obj._metadata.to_bytes())
+    assert reloaded_metadata.metadata_fields["thumbnail"] is not None
+    assert (
+        reloaded_metadata.metadata_fields["thumbnail"]
+        == cod_obj._metadata.metadata_fields["thumbnail"]
+    )
 
-    def setUp(self):
-        delete_uploaded_blobs(self.client, [self.datastore_path])
 
-    def test_gen_monochrome1(self):
-        """Test thumbnail generation for a single frame DICOM file (MONOCHROME1)"""
-        dicom_path = os.path.join(self.test_data_dir, "monochrome1.dcm")
-        cod_obj, thumbnail = ingest_and_generate_thumbnail(
-            [dicom_path], self.datastore_path, self.client
-        )
-        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=1)
-        reloaded_metadata = SeriesMetadata.from_bytes(cod_obj._metadata.to_bytes())
-        self.assertIsNotNone(reloaded_metadata.metadata_fields["thumbnail"])
-        self.assertDictEqual(
-            reloaded_metadata.metadata_fields["thumbnail"],
-            cod_obj._metadata.metadata_fields["thumbnail"],
-        )
+def test_gen_monochrome2(
+    gcs_client: storage.Client,
+    thumbnail_datastore_path: str,
+    test_data_dir: str,
+):
+    """Test thumbnail generation for a single frame DICOM file (MONOCHROME2)"""
+    dicom_path = os.path.join(test_data_dir, "monochrome2.dcm")
+    cod_obj, thumbnail = ingest_and_generate_thumbnail(
+        [dicom_path], thumbnail_datastore_path, gcs_client
+    )
+    validate_thumbnail(thumbnail, cod_obj, expected_frame_count=1)
 
-    def test_gen_monochrome2(self):
-        """Test thumbnail generation for a single frame DICOM file (MONOCHROME2)"""
-        dicom_path = os.path.join(self.test_data_dir, "monochrome2.dcm")
-        cod_obj, thumbnail = ingest_and_generate_thumbnail(
-            [dicom_path], self.datastore_path, self.client
-        )
-        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=1)
 
-    def test_gen_mp4_mixed_phot_interp(self):
-        """Test thumbnail generation for a series of DICOM files with different photometric interpretations (YBR_RCT and MONOCHROME2)"""
-        series_folder = os.path.join(self.test_data_dir, "series")
-        dicom_paths = [
-            os.path.join(series_folder, f)
-            for f in os.listdir(series_folder)
-            if f.endswith(".dcm")
-        ]
-        cod_obj, thumbnail = ingest_and_generate_thumbnail(
-            dicom_paths, self.datastore_path, self.client
-        )
-        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=10)
+def test_gen_mp4_mixed_phot_interp(
+    gcs_client: storage.Client,
+    thumbnail_datastore_path: str,
+    test_data_dir: str,
+):
+    """Test thumbnail generation for a series of DICOM files with different photometric interpretations (YBR_RCT and MONOCHROME2)"""
+    series_folder = os.path.join(test_data_dir, "series")
+    dicom_paths = [
+        os.path.join(series_folder, f)
+        for f in os.listdir(series_folder)
+        if f.endswith(".dcm")
+    ]
+    cod_obj, thumbnail = ingest_and_generate_thumbnail(
+        dicom_paths, thumbnail_datastore_path, gcs_client
+    )
+    validate_thumbnail(thumbnail, cod_obj, expected_frame_count=10)
 
-    def test_gen_mp4_ybr_rct_multiframe(self):
-        """Test thumbnail generation for a multiframe DICOM file (YBR_RCT)"""
-        multiframe_path = os.path.join(self.test_data_dir, "ybr_rct_multiframe.dcm")
-        cod_obj, thumbnail = ingest_and_generate_thumbnail(
-            [multiframe_path], self.datastore_path, self.client
-        )
-        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=78)
-        reloaded_metadata = SeriesMetadata.from_bytes(cod_obj._metadata.to_bytes())
-        self.assertIsNotNone(reloaded_metadata.metadata_fields["thumbnail"])
-        self.assertDictEqual(
-            reloaded_metadata.metadata_fields["thumbnail"],
-            cod_obj._metadata.metadata_fields["thumbnail"],
-        )
 
-    def test_custom_thumbnail_size(self):
-        """Test thumbnail generation for a single frame DICOM file (MONOCHROME1) with a non-default thumbnail size"""
-        # single frame
-        dicom_path = os.path.join(self.test_data_dir, "monochrome1.dcm")
-        cod_obj, thumbnail = ingest_and_generate_thumbnail(
-            [dicom_path], self.datastore_path, self.client, thumbnail_size=256
-        )
-        validate_thumbnail(
-            self,
-            thumbnail,
-            cod_obj,
-            expected_frame_count=1,
-            expected_frame_size=(256, 256),
-        )
-        # multiframe
-        multiframe_path = os.path.join(self.test_data_dir, "ybr_rct_multiframe.dcm")
-        cod_obj, thumbnail = ingest_and_generate_thumbnail(
-            [multiframe_path], self.datastore_path, self.client, thumbnail_size=256
-        )
-        validate_thumbnail(
-            self,
-            thumbnail,
-            cod_obj,
-            expected_frame_count=78,
-            expected_frame_size=(256, 256),
-        )
+def test_gen_mp4_ybr_rct_multiframe(
+    gcs_client: storage.Client,
+    thumbnail_datastore_path: str,
+    test_data_dir: str,
+):
+    """Test thumbnail generation for a multiframe DICOM file (YBR_RCT)"""
+    multiframe_path = os.path.join(test_data_dir, "ybr_rct_multiframe.dcm")
+    cod_obj, thumbnail = ingest_and_generate_thumbnail(
+        [multiframe_path], thumbnail_datastore_path, gcs_client
+    )
+    validate_thumbnail(thumbnail, cod_obj, expected_frame_count=78)
+    reloaded_metadata = SeriesMetadata.from_bytes(cod_obj._metadata.to_bytes())
+    assert reloaded_metadata.metadata_fields["thumbnail"] is not None
+    assert (
+        reloaded_metadata.metadata_fields["thumbnail"]
+        == cod_obj._metadata.metadata_fields["thumbnail"]
+    )
 
-    def test_sync_and_fetch(self):
-        """Test thumbnail generation and sync"""
-        # create and sync thumbnail
-        instance = Instance(
-            dicom_uri=os.path.join(self.test_data_dir, "monochrome1.dcm")
-        )
+
+def test_custom_thumbnail_size(
+    gcs_client: storage.Client,
+    thumbnail_datastore_path: str,
+    test_data_dir: str,
+):
+    """Test thumbnail generation for a single frame DICOM file (MONOCHROME1) with a non-default thumbnail size"""
+    # single frame
+    dicom_path = os.path.join(test_data_dir, "monochrome1.dcm")
+    cod_obj, thumbnail = ingest_and_generate_thumbnail(
+        [dicom_path], thumbnail_datastore_path, gcs_client, thumbnail_size=256
+    )
+    validate_thumbnail(
+        thumbnail,
+        cod_obj,
+        expected_frame_count=1,
+        expected_frame_size=(256, 256),
+    )
+    # multiframe
+    multiframe_path = os.path.join(test_data_dir, "ybr_rct_multiframe.dcm")
+    cod_obj, thumbnail = ingest_and_generate_thumbnail(
+        [multiframe_path], thumbnail_datastore_path, gcs_client, thumbnail_size=256
+    )
+    validate_thumbnail(
+        thumbnail,
+        cod_obj,
+        expected_frame_count=78,
+        expected_frame_size=(256, 256),
+    )
+
+
+def test_sync_and_fetch(
+    gcs_client: storage.Client,
+    thumbnail_datastore_path: str,
+    test_data_dir: str,
+):
+    """Test thumbnail generation and sync"""
+    # create and sync thumbnail
+    instance = Instance(dicom_uri=os.path.join(test_data_dir, "monochrome1.dcm"))
+    with CODObject(
+        datastore_path=thumbnail_datastore_path,
+        client=gcs_client,
+        study_uid=instance.study_uid(),
+        series_uid=instance.series_uid(),
+        mode="w",
+    ) as cod_obj:
+        cod_obj.append([instance])
+        cod_obj.get_thumbnail()
+        # sync happens automatically on context exit
+    # with a new cod object, fetch and validate thumbnail
+    with CODObject(
+        datastore_path=thumbnail_datastore_path,
+        client=gcs_client,
+        study_uid=instance.study_uid(),
+        series_uid=instance.series_uid(),
+        mode="r",
+    ) as cod_obj:
+        # thumbnail is not synced - it exists in datastore, but we haven't pulled it
+        assert not cod_obj._thumbnail_synced
+        thumbnail = cod_obj.get_thumbnail()
+        # thumbnail is now synced
+        assert cod_obj._thumbnail_synced
+        validate_thumbnail(thumbnail, cod_obj, expected_frame_count=1)
+
+
+def test_update_existing_thumbnail(
+    gcs_client: storage.Client,
+    thumbnail_datastore_path: str,
+    test_data_dir: str,
+):
+    """Test that updating an existing thumbnail works"""
+    instance_a = Instance(
+        dicom_uri=os.path.join(
+            test_data_dir,
+            "series",
+            "1.2.826.0.1.3680043.8.498.22997958494980951977704130269567444795.dcm",
+        ),
+        uid_hash_func=example_hash_function,
+    )
+    with CODObject(
+        datastore_path=thumbnail_datastore_path,
+        client=gcs_client,
+        study_uid=instance_a.hashed_study_uid(),
+        series_uid=instance_a.hashed_series_uid(),
+        hashed_uids=True,
+        mode="w",
+    ) as cod_obj:
+        cod_obj.append([instance_a])
+        thumbnail = cod_obj.get_thumbnail()
+        validate_thumbnail(thumbnail, cod_obj, expected_frame_count=1)
+        # sync happens automatically on context exit
+    instance_b = Instance(
+        dicom_uri=os.path.join(
+            test_data_dir,
+            "series",
+            "1.2.826.0.1.3680043.8.498.28109707839310833322020505651875585013.dcm",
+        ),
+        uid_hash_func=example_hash_function,
+    )
+    with CODObject(
+        datastore_path=thumbnail_datastore_path,
+        client=gcs_client,
+        study_uid=instance_b.hashed_study_uid(),
+        series_uid=instance_b.hashed_series_uid(),
+        hashed_uids=True,
+        mode="a",
+    ) as cod_obj:
+        cod_obj.append([instance_b])
+        thumbnail = cod_obj.get_thumbnail()
+        validate_thumbnail(thumbnail, cod_obj, expected_frame_count=2)
+
+
+def test_regen_missing_thumbnail(
+    gcs_client: storage.Client,
+    thumbnail_datastore_path: str,
+    test_data_dir: str,
+):
+    """Test that we can regenerate a missing thumbnail"""
+    instance = Instance(dicom_uri=os.path.join(test_data_dir, "monochrome1.dcm"))
+    with CODObject(
+        datastore_path=thumbnail_datastore_path,
+        client=gcs_client,
+        study_uid=instance.study_uid(),
+        series_uid=instance.series_uid(),
+        mode="w",
+    ) as cod_obj:
+        cod_obj.append([instance])
+        cod_obj.get_thumbnail()
+        cod_obj._sync()
+        thumbnail_uri = cod_obj.get_metadata_field("thumbnail")["uri"]
+    # delete the thumbnail
+    thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=gcs_client)
+    thumbnail_blob.delete()
+    assert not thumbnail_blob.exists()
+    with CODObject(
+        datastore_path=thumbnail_datastore_path,
+        client=gcs_client,
+        study_uid=instance.study_uid(),
+        series_uid=instance.series_uid(),
+        mode="a",
+        sync_on_exit=False,
+    ) as cod_obj:
+        # should get ValueError if we try to get the missing thumbnail without generating
+        with pytest.raises(ValueError):
+            cod_obj.get_thumbnail(generate_if_missing=False)
+        # should get the thumbnail if we generate it
+        thumbnail = cod_obj.get_thumbnail(generate_if_missing=True)
+        validate_thumbnail(thumbnail, cod_obj, expected_frame_count=1)
+
+
+def test_get_instance_slice(
+    gcs_client: storage.Client,
+    thumbnail_datastore_path: str,
+    test_data_dir: str,
+):
+    """Test that we can get a slice of the thumbnail for a given instance"""
+    # make sure we can get a single img slice from a series thumbnail
+    series_folder = os.path.join(test_data_dir, "series")
+    dicom_paths = [
+        os.path.join(series_folder, f)
+        for f in os.listdir(series_folder)
+        if f.endswith(".dcm")
+    ]
+    cod_obj, thumbnail = ingest_and_generate_thumbnail(
+        dicom_paths, thumbnail_datastore_path, gcs_client
+    )
+    validate_thumbnail(thumbnail, cod_obj, expected_frame_count=10)
+    some_instance_uid = cod_obj.get_instance_by_index(5).instance_uid()
+    thumbnail_slice = cod_obj.get_thumbnail(instance_uid=some_instance_uid)
+    validate_thumbnail(thumbnail_slice, cod_obj, expected_frame_count=1)
+
+    # make sure that getting a slice of a series with a single multiframe returns the same as the overall thumbnail
+    multiframe_path = os.path.join(test_data_dir, "ybr_rct_multiframe.dcm")
+    cod_obj, thumbnail = ingest_and_generate_thumbnail(
+        [multiframe_path], thumbnail_datastore_path, gcs_client
+    )
+    validate_thumbnail(thumbnail, cod_obj, expected_frame_count=78)
+    some_instance_uid = cod_obj.get_instance_by_index(0).instance_uid()
+    thumbnail_slice = cod_obj.get_thumbnail(instance_uid=some_instance_uid)
+    assert np.all(thumbnail_slice == thumbnail)
+
+
+def test_get_instance_by_thumbnail_index(
+    gcs_client: storage.Client,
+    thumbnail_datastore_path: str,
+    test_data_dir: str,
+):
+    """Test that we can get an instance by thumbnail index"""
+    # make sure we can get a single img slice from a series thumbnail
+    series_folder = os.path.join(test_data_dir, "series")
+    dicom_paths = [
+        os.path.join(series_folder, f)
+        for f in os.listdir(series_folder)
+        if f.endswith(".dcm")
+    ]
+    cod_obj, thumbnail = ingest_and_generate_thumbnail(
+        dicom_paths, thumbnail_datastore_path, gcs_client
+    )
+    validate_thumbnail(thumbnail, cod_obj, expected_frame_count=10)
+    # because this series is 10 single frame instances, we expect the check below to pass
+    instance_retrieved_by_index = cod_obj.get_instance_by_index(5)
+    instance_retrieved_by_thumbnail_index = cod_obj.get_instance_by_thumbnail_index(5)
+    assert instance_retrieved_by_index == instance_retrieved_by_thumbnail_index
+
+
+def test_series_missing_pixel_data_error(
+    gcs_client: storage.Client,
+    thumbnail_datastore_path: str,
+    test_data_dir: str,
+):
+    """Test that SeriesMissingPixelDataError is raised when series has no pixel data"""
+    # Create a DICOM file without pixel data by reading an existing file
+    # and removing the pixel data
+    dicom_path = os.path.join(test_data_dir, "monochrome1.dcm")
+    ds = pydicom3.dcmread(dicom_path)
+
+    # Remove pixel data
+    if hasattr(ds, "PixelData"):
+        delattr(ds, "PixelData")
+
+    # Save the modified DICOM to a temporary file
+    with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as tmp_file:
+        temp_dicom_path = tmp_file.name
+        ds.save_as(temp_dicom_path)
+
+    try:
+        # Create instance and COD object
+        instance = Instance(dicom_uri=temp_dicom_path)
         with CODObject(
-            datastore_path=self.datastore_path,
-            client=self.client,
+            datastore_path=thumbnail_datastore_path,
+            client=gcs_client,
             study_uid=instance.study_uid(),
             series_uid=instance.series_uid(),
             mode="w",
-        ) as cod_obj:
-            cod_obj.append([instance])
-            cod_obj.get_thumbnail()
-            # sync happens automatically on context exit
-        # with a new cod object, fetch and validate thumbnail
-        with CODObject(
-            datastore_path=self.datastore_path,
-            client=self.client,
-            study_uid=instance.study_uid(),
-            series_uid=instance.series_uid(),
-            mode="r",
-        ) as cod_obj:
-            # thumbnail is not synced - it exists in datastore, but we haven't pulled it
-            self.assertFalse(cod_obj._thumbnail_synced)
-            thumbnail = cod_obj.get_thumbnail()
-            # thumbnail is now synced
-            self.assertTrue(cod_obj._thumbnail_synced)
-            validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=1)
-
-    def test_update_existing_thumbnail(self):
-        """Test that updating an existing thumbnail works"""
-        instance_a = Instance(
-            dicom_uri=os.path.join(
-                self.test_data_dir,
-                "series",
-                "1.2.826.0.1.3680043.8.498.22997958494980951977704130269567444795.dcm",
-            ),
-            uid_hash_func=example_hash_function,
-        )
-        with CODObject(
-            datastore_path=self.datastore_path,
-            client=self.client,
-            study_uid=instance_a.hashed_study_uid(),
-            series_uid=instance_a.hashed_series_uid(),
-            hashed_uids=True,
-            mode="w",
-        ) as cod_obj:
-            cod_obj.append([instance_a])
-            thumbnail = cod_obj.get_thumbnail()
-            validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=1)
-            # sync happens automatically on context exit
-        instance_b = Instance(
-            dicom_uri=os.path.join(
-                self.test_data_dir,
-                "series",
-                "1.2.826.0.1.3680043.8.498.28109707839310833322020505651875585013.dcm",
-            ),
-            uid_hash_func=example_hash_function,
-        )
-        with CODObject(
-            datastore_path=self.datastore_path,
-            client=self.client,
-            study_uid=instance_b.hashed_study_uid(),
-            series_uid=instance_b.hashed_series_uid(),
-            hashed_uids=True,
-            mode="a",
-        ) as cod_obj:
-            cod_obj.append([instance_b])
-            thumbnail = cod_obj.get_thumbnail()
-            validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=2)
-
-    def test_regen_missing_thumbnail(self):
-        """Test that we can regenerate a missing thumbnail"""
-        instance = Instance(
-            dicom_uri=os.path.join(self.test_data_dir, "monochrome1.dcm")
-        )
-        with CODObject(
-            datastore_path=self.datastore_path,
-            client=self.client,
-            study_uid=instance.study_uid(),
-            series_uid=instance.series_uid(),
-            mode="w",
-        ) as cod_obj:
-            cod_obj.append([instance])
-            cod_obj.get_thumbnail()
-            cod_obj._sync()
-            thumbnail_uri = cod_obj.get_metadata_field("thumbnail")["uri"]
-        # delete the thumbnail
-        thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=self.client)
-        thumbnail_blob.delete()
-        self.assertFalse(thumbnail_blob.exists())
-        with CODObject(
-            datastore_path=self.datastore_path,
-            client=self.client,
-            study_uid=instance.study_uid(),
-            series_uid=instance.series_uid(),
-            mode="a",
             sync_on_exit=False,
         ) as cod_obj:
-            # should get ValueError if we try to get the missing thumbnail without generating
-            with self.assertRaises(ValueError):
-                cod_obj.get_thumbnail(generate_if_missing=False)
-            # should get the thumbnail if we generate it
-            thumbnail = cod_obj.get_thumbnail(generate_if_missing=True)
-            validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=1)
+            cod_obj.append([instance])
+            # Attempting to get thumbnail should raise SeriesMissingPixelDataError
+            with pytest.raises(SeriesMissingPixelDataError) as exc_info:
+                cod_obj.get_thumbnail()
 
-    def test_get_instance_slice(self):
-        """Test that we can get a slice of the thumbnail for a given instance"""
-        # make sure we can get a single img slice from a series thumbnail
-        series_folder = os.path.join(self.test_data_dir, "series")
-        dicom_paths = [
-            os.path.join(series_folder, f)
-            for f in os.listdir(series_folder)
-            if f.endswith(".dcm")
-        ]
-        cod_obj, thumbnail = ingest_and_generate_thumbnail(
-            dicom_paths, self.datastore_path, self.client
-        )
-        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=10)
-        some_instance_uid = cod_obj.get_instance_by_index(5).instance_uid()
-        thumbnail_slice = cod_obj.get_thumbnail(instance_uid=some_instance_uid)
-        validate_thumbnail(self, thumbnail_slice, cod_obj, expected_frame_count=1)
-
-        # make sure that getting a slice of a series with a single multiframe returns the same as the overall thumbnail
-        multiframe_path = os.path.join(self.test_data_dir, "ybr_rct_multiframe.dcm")
-        cod_obj, thumbnail = ingest_and_generate_thumbnail(
-            [multiframe_path], self.datastore_path, self.client
-        )
-        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=78)
-        some_instance_uid = cod_obj.get_instance_by_index(0).instance_uid()
-        thumbnail_slice = cod_obj.get_thumbnail(instance_uid=some_instance_uid)
-        self.assertTrue(np.all(thumbnail_slice == thumbnail))
-
-    def test_get_instance_by_thumbnail_index(self):
-        """Test that we can get an instance by thumbnail index"""
-        # make sure we can get a single img slice from a series thumbnail
-        series_folder = os.path.join(self.test_data_dir, "series")
-        dicom_paths = [
-            os.path.join(series_folder, f)
-            for f in os.listdir(series_folder)
-            if f.endswith(".dcm")
-        ]
-        cod_obj, thumbnail = ingest_and_generate_thumbnail(
-            dicom_paths, self.datastore_path, self.client
-        )
-        validate_thumbnail(self, thumbnail, cod_obj, expected_frame_count=10)
-        # because this series is 10 single frame instances, we expect the check below to pass
-        instance_retrieved_by_index = cod_obj.get_instance_by_index(5)
-        instance_retrieved_by_thumbnail_index = cod_obj.get_instance_by_thumbnail_index(
-            5
-        )
-        self.assertEqual(
-            instance_retrieved_by_index, instance_retrieved_by_thumbnail_index
-        )
-
-    def test_series_missing_pixel_data_error(self):
-        """Test that SeriesMissingPixelDataError is raised when series has no pixel data"""
-        # Create a DICOM file without pixel data by reading an existing file
-        # and removing the pixel data
-        dicom_path = os.path.join(self.test_data_dir, "monochrome1.dcm")
-        ds = pydicom3.dcmread(dicom_path)
-
-        # Remove pixel data
-        if hasattr(ds, "PixelData"):
-            delattr(ds, "PixelData")
-
-        # Save the modified DICOM to a temporary file
-        with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as tmp_file:
-            temp_dicom_path = tmp_file.name
-            ds.save_as(temp_dicom_path)
-
-        try:
-            # Create instance and COD object
-            instance = Instance(dicom_uri=temp_dicom_path)
-            with CODObject(
-                datastore_path=self.datastore_path,
-                client=self.client,
-                study_uid=instance.study_uid(),
-                series_uid=instance.series_uid(),
-                mode="w",
-                sync_on_exit=False,
-            ) as cod_obj:
-                cod_obj.append([instance])
-                # Attempting to get thumbnail should raise SeriesMissingPixelDataError
-                with self.assertRaises(SeriesMissingPixelDataError) as context:
-                    cod_obj.get_thumbnail()
-
-                # Verify the error message contains helpful info
-                self.assertIn("pixel data", str(context.exception))
-        finally:
-            # Clean up temporary file
-            if os.path.exists(temp_dicom_path):
-                os.remove(temp_dicom_path)
+            # Verify the error message contains helpful info
+            assert "pixel data" in str(exc_info.value)
+    finally:
+        # Clean up temporary file
+        if os.path.exists(temp_dicom_path):
+            os.remove(temp_dicom_path)

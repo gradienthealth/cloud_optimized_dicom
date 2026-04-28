@@ -1,12 +1,11 @@
 import random
-import unittest
 from io import BytesIO
-from unittest.mock import patch
 
 import numpy as np
 import pydicom3
 import pydicom3.encaps
 import pydicom3.errors
+from pytest_mock import MockerFixture
 
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 
@@ -84,159 +83,152 @@ def create_sample_dataset(
     return ds
 
 
-class TestMultiframeOffsetTable(unittest.TestCase):
-    def test_multiframe_with_basic_offset_table(self):
-        custom_offset_table = [[512, 720, 928, 1136, 1344], [200, 200, 200, 200, 200]]
-        dataset = create_sample_dataset(
-            number_of_frames=5,
-            is_pixeldata_encapsulated=True,
-            include_eot=False,
-            include_bot=True,
-        )
+def test_multiframe_with_basic_offset_table():
+    custom_offset_table = [[512, 720, 928, 1136, 1344], [200, 200, 200, 200, 200]]
+    dataset = create_sample_dataset(
+        number_of_frames=5,
+        is_pixeldata_encapsulated=True,
+        include_eot=False,
+        include_bot=True,
+    )
 
-        result = get_multiframe_offset_tables(dataset)
+    result = get_multiframe_offset_tables(dataset)
 
-        assert result.get("CustomOffsetTable") == custom_offset_table[0]
-        assert result.get("CustomOffsetTableLengths") == custom_offset_table[1]
+    assert result.get("CustomOffsetTable") == custom_offset_table[0]
+    assert result.get("CustomOffsetTableLengths") == custom_offset_table[1]
 
-    def test_multiframe_with_extended_offset_table(self):
-        custom_offset_table = [[492, 700, 908, 1116, 1324], [200, 200, 200, 200, 200]]
-        dataset = create_sample_dataset(
-            number_of_frames=5,
-            is_pixeldata_encapsulated=True,
-            include_eot=True,
-            include_bot=False,
-        )
 
-        result = get_multiframe_offset_tables(dataset)
+def test_multiframe_with_extended_offset_table():
+    custom_offset_table = [[492, 700, 908, 1116, 1324], [200, 200, 200, 200, 200]]
+    dataset = create_sample_dataset(
+        number_of_frames=5,
+        is_pixeldata_encapsulated=True,
+        include_eot=True,
+        include_bot=False,
+    )
 
-        assert result.get("CustomOffsetTable") == custom_offset_table[0]
-        assert result.get("CustomOffsetTableLengths") == custom_offset_table[1]
+    result = get_multiframe_offset_tables(dataset)
 
-    def test_multiframe_without_offset_table(self):
-        custom_offset_table = [[492, 700, 908, 1116, 1324], [200, 200, 200, 200, 200]]
-        dataset = create_sample_dataset(
-            number_of_frames=5,
-            is_pixeldata_encapsulated=True,
-            include_eot=False,
-            include_bot=False,
-        )
+    assert result.get("CustomOffsetTable") == custom_offset_table[0]
+    assert result.get("CustomOffsetTableLengths") == custom_offset_table[1]
 
-        result = get_multiframe_offset_tables(dataset)
 
-        assert result.get("CustomOffsetTable") == custom_offset_table[0]
-        assert result.get("CustomOffsetTableLengths") == custom_offset_table[1]
+def test_multiframe_without_offset_table():
+    custom_offset_table = [[492, 700, 908, 1116, 1324], [200, 200, 200, 200, 200]]
+    dataset = create_sample_dataset(
+        number_of_frames=5,
+        is_pixeldata_encapsulated=True,
+        include_eot=False,
+        include_bot=False,
+    )
 
-    def test_multiframe_with_uncompressed_pixeldata(self):
-        custom_offset_table = [[484, 684, 884, 1084, 1284], [200, 200, 200, 200, 200]]
-        dataset = create_sample_dataset(
-            number_of_frames=5,
-            is_pixeldata_encapsulated=False,
-            include_eot=False,
-            include_bot=False,
-        )
+    result = get_multiframe_offset_tables(dataset)
 
-        result = get_multiframe_offset_tables(dataset)
+    assert result.get("CustomOffsetTable") == custom_offset_table[0]
+    assert result.get("CustomOffsetTableLengths") == custom_offset_table[1]
 
-        assert result.get("CustomOffsetTable") == custom_offset_table[0]
-        assert result.get("CustomOffsetTableLengths") == custom_offset_table[1]
 
-    def test_singleframe_uncompressed_pixeldata(self):
-        dataset = create_sample_dataset(
-            number_of_frames=1,
-            is_pixeldata_encapsulated=False,
-            include_eot=False,
-            include_bot=False,
-        )
+def test_multiframe_with_uncompressed_pixeldata():
+    custom_offset_table = [[484, 684, 884, 1084, 1284], [200, 200, 200, 200, 200]]
+    dataset = create_sample_dataset(
+        number_of_frames=5,
+        is_pixeldata_encapsulated=False,
+        include_eot=False,
+        include_bot=False,
+    )
 
-        result = get_multiframe_offset_tables(dataset)
+    result = get_multiframe_offset_tables(dataset)
 
-        assert "CustomOffsetTable" not in result
-        assert "CustomOffsetTableLengths" not in result
+    assert result.get("CustomOffsetTable") == custom_offset_table[0]
+    assert result.get("CustomOffsetTableLengths") == custom_offset_table[1]
 
-    def test_singleframe_encapsulated_pixeldata(self):
-        dataset = create_sample_dataset(
-            number_of_frames=1,
-            is_pixeldata_encapsulated=True,
-            include_eot=False,
-            include_bot=False,
-        )
 
-        result = get_multiframe_offset_tables(dataset)
+def test_singleframe_uncompressed_pixeldata():
+    dataset = create_sample_dataset(
+        number_of_frames=1,
+        is_pixeldata_encapsulated=False,
+        include_eot=False,
+        include_bot=False,
+    )
 
-        assert "CustomOffsetTable" not in result
-        assert "CustomOffsetTableLengths" not in result
+    result = get_multiframe_offset_tables(dataset)
 
-    @patch("cloud_optimized_dicom.custom_offset_tables.logger.warning")
-    @patch(
+    assert "CustomOffsetTable" not in result
+    assert "CustomOffsetTableLengths" not in result
+
+
+def test_singleframe_encapsulated_pixeldata():
+    dataset = create_sample_dataset(
+        number_of_frames=1,
+        is_pixeldata_encapsulated=True,
+        include_eot=False,
+        include_bot=False,
+    )
+
+    result = get_multiframe_offset_tables(dataset)
+
+    assert "CustomOffsetTable" not in result
+    assert "CustomOffsetTableLengths" not in result
+
+
+def test_multiframe_raise_value_error(mocker: MockerFixture):
+    mock_generate = mocker.patch(
         "cloud_optimized_dicom.custom_offset_tables._generate_pixel_data_fragment_offsets"
     )
-    def test_multiframe_raise_value_error(
-        self,
-        mock_generate_pixel_data_fragment_offsets,
-        mock_logging_warning,
-    ):
-        dataset = create_sample_dataset(
-            number_of_frames=5,
-            is_pixeldata_encapsulated=False,
-            include_eot=False,
-            include_bot=False,
-        )
-        mock_generate_pixel_data_fragment_offsets.side_effect = ValueError("Test error")
+    mock_warning = mocker.patch(
+        "cloud_optimized_dicom.custom_offset_tables.logger.warning"
+    )
+    dataset = create_sample_dataset(
+        number_of_frames=5,
+        is_pixeldata_encapsulated=False,
+        include_eot=False,
+        include_bot=False,
+    )
+    mock_generate.side_effect = ValueError("Test error")
 
-        get_multiframe_offset_tables(dataset)
+    get_multiframe_offset_tables(dataset)
 
-        mock_logging_warning.assert_called_once_with(
-            "Some errors occured when creating Offset table"
-        )
+    mock_warning.assert_called_once_with(
+        "Some errors occured when creating Offset table"
+    )
 
-    @patch("cloud_optimized_dicom.custom_offset_tables.logger.warning")
-    @patch(
+
+def test_multiframe_raise_invalid_dicom_error(mocker: MockerFixture):
+    mock_generate = mocker.patch(
         "cloud_optimized_dicom.custom_offset_tables._generate_pixel_data_fragment_offsets"
     )
-    def test_multiframe_raise_invalid_dicom_error(
-        self,
-        mock_generate_pixel_data_fragment_offsets,
-        mock_logging_warning,
-    ):
-        dataset = create_sample_dataset(
-            number_of_frames=5,
-            is_pixeldata_encapsulated=False,
-            include_eot=False,
-            include_bot=False,
-        )
-        mock_generate_pixel_data_fragment_offsets.side_effect = (
-            pydicom3.errors.InvalidDicomError("Test error")
-        )
+    mock_warning = mocker.patch(
+        "cloud_optimized_dicom.custom_offset_tables.logger.warning"
+    )
+    dataset = create_sample_dataset(
+        number_of_frames=5,
+        is_pixeldata_encapsulated=False,
+        include_eot=False,
+        include_bot=False,
+    )
+    mock_generate.side_effect = pydicom3.errors.InvalidDicomError("Test error")
 
-        get_multiframe_offset_tables(dataset)
+    get_multiframe_offset_tables(dataset)
 
-        mock_logging_warning.assert_called_once_with("Test error")
-
-    def test_pixeldata_is_none(self):
-        """Edge case where the pixeldata attribute is present, but is None"""
-        dataset = create_sample_dataset(
-            number_of_frames=2, is_pixeldata_encapsulated=False
-        )
-        dataset.PixelData = None
-
-        result = get_multiframe_offset_tables(dataset)
-
-        assert result.get("CustomOffsetTable") is None
-        assert result.get("CustomOffsetTableLengths") is None
-
-    def test_no_pixeldata_attribute(self):
-        dataset = create_sample_dataset(
-            number_of_frames=2, is_pixeldata_encapsulated=False
-        )
-        del dataset.PixelData
-
-        result = get_multiframe_offset_tables(dataset)
-
-        assert result.get("CustomOffsetTable") is None
-        assert result.get("CustomOffsetTableLengths") is None
+    mock_warning.assert_called_once_with("Test error")
 
 
-if __name__ == "__main__":
-    # python3 -m unittest components.cloud_optimized_dicom.tests.test_multiframe_offset_table
-    unittest.main()
+def test_pixeldata_is_none():
+    """Edge case where the pixeldata attribute is present, but is None"""
+    dataset = create_sample_dataset(number_of_frames=2, is_pixeldata_encapsulated=False)
+    dataset.PixelData = None
+
+    result = get_multiframe_offset_tables(dataset)
+
+    assert result.get("CustomOffsetTable") is None
+    assert result.get("CustomOffsetTableLengths") is None
+
+
+def test_no_pixeldata_attribute():
+    dataset = create_sample_dataset(number_of_frames=2, is_pixeldata_encapsulated=False)
+    del dataset.PixelData
+
+    result = get_multiframe_offset_tables(dataset)
+
+    assert result.get("CustomOffsetTable") is None
+    assert result.get("CustomOffsetTableLengths") is None

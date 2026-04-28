@@ -1,107 +1,101 @@
 import os
 import traceback
-import unittest
 
-from google.api_core.client_options import ClientOptions
+import pytest
 from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.errors import ErrorLogExistsError
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
+ERROR_LOG_DATASTORE_PATH = "gs://siskin-172863-temp/cod_error_log_tests/dicomweb"
+ERROR_LOG_STUDY_UID = "1.2.3.4.5.6.7.8.9.10"
+ERROR_LOG_SERIES_UID = "1.2.3.4.5.6.7.8.9.10"
 
-@unittest.skipIf("SKIP_NETWORK_TESTS" in os.environ, reason="network tests disabled")
-class TestErrorLog(unittest.TestCase):
-    # python -m unittest components.cloud_optimized_dicom.tests.test_error_log.TestErrorLog
+pytestmark = pytest.mark.skipif(
+    "SKIP_NETWORK_TESTS" in os.environ, reason="network tests disabled"
+)
 
-    @classmethod
-    def setUpClass(cls):
-        cls.client = storage.Client(
-            project="gradient-pacs-siskin-172863",
-            client_options=ClientOptions(
-                quota_project_id="gradient-pacs-siskin-172863"
-            ),
-        )
-        cls.datastore_path = "gs://siskin-172863-temp/cod_error_log_tests/dicomweb"
-        cls.study_uid = "1.2.3.4.5.6.7.8.9.10"
-        cls.series_uid = "1.2.3.4.5.6.7.8.9.10"
 
-    def setUp(self):
-        delete_uploaded_blobs(self.client, [self.datastore_path])
+@pytest.fixture
+def error_log_datastore_path(gcs_client: storage.Client) -> str:
+    delete_uploaded_blobs(gcs_client, [ERROR_LOG_DATASTORE_PATH])
+    return ERROR_LOG_DATASTORE_PATH
 
-    def test_error_log_upload(self):
-        try:
-            with CODObject(
-                datastore_path=self.datastore_path,
-                client=self.client,
-                study_uid=self.study_uid,
-                series_uid=self.series_uid,
-                mode="w",
-            ) as cod_obj:
-                # simulate doing something with the CODObjet and causing an error
-                raise Exception("test error")
-        except Exception:
-            cod_obj.upload_error_log(traceback.format_exc())
 
-        # error log should exist
-        error_blob = storage.Blob.from_string(cod_obj.error_log_uri, client=self.client)
-        self.assertTrue(error_blob.exists())
-        # error log should contain the error message
-        self.assertIn("test error", error_blob.download_as_bytes().decode("utf-8"))
-        # lock should have been released (non-sync exception doesn't leave hanging lock)
-        # the error log alone is sufficient to brick the COD
-        self.assertFalse(cod_obj._locker.get_lock_blob().exists())
-
-    def test_error_existence_bricks_cod_object_initialization(self):
-        """Test that the error log bricks CODObject initialization"""
-        # Create the error log
+def test_error_log_upload(gcs_client: storage.Client, error_log_datastore_path: str):
+    try:
         with CODObject(
-            datastore_path=self.datastore_path,
-            client=self.client,
-            study_uid=self.study_uid,
-            series_uid=self.series_uid,
+            datastore_path=error_log_datastore_path,
+            client=gcs_client,
+            study_uid=ERROR_LOG_STUDY_UID,
+            series_uid=ERROR_LOG_SERIES_UID,
             mode="w",
         ) as cod_obj:
-            cod_obj.upload_error_log("test error")
+            # simulate doing something with the CODObjet and causing an error
+            raise Exception("test error")
+    except Exception:
+        cod_obj.upload_error_log(traceback.format_exc())
 
-        # Try to initialize the CODObject again and expect error
-        with self.assertRaises(ErrorLogExistsError):
-            with CODObject(
-                datastore_path=self.datastore_path,
-                client=self.client,
-                study_uid=self.study_uid,
-                series_uid=self.series_uid,
-                mode="w",
-            ) as cod_obj:
-                pass
+    # error log should exist
+    error_blob = storage.Blob.from_string(cod_obj.error_log_uri, client=gcs_client)
+    assert error_blob.exists()
+    # error log should contain the error message
+    assert "test error" in error_blob.download_as_bytes().decode("utf-8")
+    # lock should have been released (non-sync exception doesn't leave hanging lock)
+    # the error log alone is sufficient to brick the COD
+    assert not cod_obj._locker.get_lock_blob().exists()
 
-    def test_error_log_override(self):
-        """Test that the error log can be overridden"""
-        # Create the error log
+
+def test_error_existence_bricks_cod_object_initialization(
+    gcs_client: storage.Client, error_log_datastore_path: str
+):
+    """Test that the error log bricks CODObject initialization"""
+    # Create the error log
+    with CODObject(
+        datastore_path=error_log_datastore_path,
+        client=gcs_client,
+        study_uid=ERROR_LOG_STUDY_UID,
+        series_uid=ERROR_LOG_SERIES_UID,
+        mode="w",
+    ) as cod_obj:
+        cod_obj.upload_error_log("test error")
+
+    # Try to initialize the CODObject again and expect error
+    with pytest.raises(ErrorLogExistsError):
         with CODObject(
-            datastore_path=self.datastore_path,
-            client=self.client,
-            study_uid=self.study_uid,
-            series_uid=self.series_uid,
+            datastore_path=error_log_datastore_path,
+            client=gcs_client,
+            study_uid=ERROR_LOG_STUDY_UID,
+            series_uid=ERROR_LOG_SERIES_UID,
             mode="w",
-        ) as cod_obj:
-            cod_obj.upload_error_log("test error")
-
-        # override the error log
-        with CODObject(
-            datastore_path=self.datastore_path,
-            client=self.client,
-            study_uid=self.study_uid,
-            series_uid=self.series_uid,
-            mode="w",
-            override_errors=True,
         ) as cod_obj:
             pass
 
-        self.assertFalse(
-            storage.Blob.from_string(cod_obj.error_log_uri, client=self.client).exists()
-        )
 
+def test_error_log_override(gcs_client: storage.Client, error_log_datastore_path: str):
+    """Test that the error log can be overridden"""
+    # Create the error log
+    with CODObject(
+        datastore_path=error_log_datastore_path,
+        client=gcs_client,
+        study_uid=ERROR_LOG_STUDY_UID,
+        series_uid=ERROR_LOG_SERIES_UID,
+        mode="w",
+    ) as cod_obj:
+        cod_obj.upload_error_log("test error")
 
-if __name__ == "__main__":
-    unittest.main()
+    # override the error log
+    with CODObject(
+        datastore_path=error_log_datastore_path,
+        client=gcs_client,
+        study_uid=ERROR_LOG_STUDY_UID,
+        series_uid=ERROR_LOG_SERIES_UID,
+        mode="w",
+        override_errors=True,
+    ) as cod_obj:
+        pass
+
+    assert not storage.Blob.from_string(
+        cod_obj.error_log_uri, client=gcs_client
+    ).exists()

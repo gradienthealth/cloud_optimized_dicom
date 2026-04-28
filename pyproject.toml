@@ -41,14 +41,24 @@ beam = [
 test = [
     "pydicom==2.3.0",
     "matplotlib",
+    "pytest>=8.0.0",
+    "pytest-mock>=3.12.0",
 ]
 dev = [
     "pre-commit>=3.0.0",
     "pydicom==2.3.0",
     "matplotlib",
     "apache-beam[gcp]==2.63.0",
+    "pytest>=8.0.0",
+    "pytest-mock>=3.12.0",
 ]
 
 [tool.setuptools]
 packages = {find = {}}
 include-package-data = true
+
+[tool.pytest.ini_options]
+testpaths = ["cloud_optimized_dicom/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
