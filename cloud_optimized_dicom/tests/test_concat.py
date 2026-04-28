@@ -2,11 +2,10 @@ import io
 import logging
 import os
 import tempfile
-import unittest
 
 import pydicom3
 import pydicom3.tag
-from google.api_core.client_options import ClientOptions
+import pytest
 from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
 
@@ -74,6 +73,27 @@ GROUPING_INCLUDING_DUPE = {
     "files": [FILE1, FILE1_NEW_VERSION],
 }
 
+pytestmark = pytest.mark.skipif(
+    "SKIP_NETWORK_TESTS" in os.environ, reason="cloud storage"
+)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _enable_logging():
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger().setLevel(logging.INFO)
+
+
+@pytest.fixture(scope="module")
+def test_bucket(gcs_client: storage.Client) -> storage.Bucket:
+    return gcs_client.bucket(BUCKET_NAME)
+
+
+@pytest.fixture
+def clean_concat_paths(gcs_client: storage.Client):
+    delete_uploaded_blobs(gcs_client, [OUTPUT_URI, PLAYGROUND_URI_PREFIX])
+    yield
+
 
 def _copy_grouping_to_test_bucket(bucket: storage.Bucket, grouping: dict):
     for file in grouping["files"]:
@@ -88,346 +108,347 @@ def _copy_within_bucket(bucket: storage.Bucket, source_uri: str, dest_uri: str):
     bucket.copy_blob(source_blob, bucket, dest_blob_name, retry=DEFAULT_RETRY)
 
 
-@unittest.skipIf("SKIP_NETWORK_TESTS" in os.environ, reason="cloud storage")
-class TestConcat(unittest.TestCase):
+def _assert_metadata_equal(a: SeriesMetadata, b: SeriesMetadata):
+    # same series
+    assert a.study_uid == b.study_uid
+    assert a.series_uid == b.series_uid
+    # same number of instances
+    assert len(a.instances) == len(b.instances)
+    # every hash, uri, and size in a exists in b as well
+    # (actual byte ranges could differ)
+    b_data = {"hashes": [], "uris": [], "sizes": []}
+    for binstance_uid, binstance in b.instances.items():
+        b_data["hashes"].append(binstance.crc32c())
+        b_data["uris"].append(binstance.dicom_uri)
+        b_data["sizes"].append(binstance.size())
+    for ainstance_uid, ainstance in a.instances.items():
+        assert ainstance.crc32c() is not None
+        assert ainstance.dicom_uri is not None
+        assert ainstance.crc32c() in b_data["hashes"]
+        assert ainstance.dicom_uri in b_data["uris"]
+        assert ainstance.size() in b_data["sizes"]
 
-    @classmethod
-    def setUpClass(cls):
-        logging.basicConfig(level=logging.INFO)
-        logging.getLogger().setLevel(logging.INFO)
-        cls.client = storage.Client(
-            project="gradient-pacs-siskin-172863",
-            client_options=ClientOptions(
-                quota_project_id="gradient-pacs-siskin-172863"
-            ),
-        )
-        cls.bucket = cls.client.bucket(BUCKET_NAME)
 
-    def setUp(self):
-        # ensure clean test directory prior to test start
-        delete_uploaded_blobs(self.client, [OUTPUT_URI, PLAYGROUND_URI_PREFIX])
+def _assert_instances_dne(client: storage.Client, instances):
+    """assert the original uris of a group no longer exist"""
+    for instance in instances:
+        assert not storage.Blob.from_string(instance.dicom_uri, client=client).exists()
 
-    def _assert_metadata_equal(self, a: SeriesMetadata, b: SeriesMetadata):
-        # same series
-        self.assertEqual(a.study_uid, b.study_uid)
-        self.assertEqual(a.series_uid, b.series_uid)
-        # same number of instances
-        self.assertEqual(len(a.instances), len(b.instances))
-        # every hash, uri, and size in a exists in b as well
-        # (actual byte ranges could differ)
-        b_data = {"hashes": [], "uris": [], "sizes": []}
-        for binstance_uid, binstance in b.instances.items():
-            b_data["hashes"].append(binstance.crc32c())
-            b_data["uris"].append(binstance.dicom_uri)
-            b_data["sizes"].append(binstance.size())
-        for ainstance_uid, ainstance in a.instances.items():
-            self.assertIsNotNone(ainstance.crc32c())
-            self.assertIsNotNone(ainstance.dicom_uri)
-            self.assertIn(ainstance.crc32c(), b_data["hashes"])
-            self.assertIn(ainstance.dicom_uri, b_data["uris"])
-            self.assertIn(ainstance.size(), b_data["sizes"])
 
-    def _assert_instances_dne(self, instances: list[Instance]):
-        """assert the original uris of a group no longer exist"""
-        for instance in instances:
-            self.assertFalse(
-                storage.Blob.from_string(
-                    instance.dicom_uri, client=self.client
-                ).exists()
-            )
+def run_group(
+    gcs_client: storage.Client,
+    bucket: storage.Bucket,
+    grouping: dict,
+    dryrun: bool = False,
+) -> CODObject:
+    """Upload a series, confirm it uploaded, confirm it deleted original"""
+    _copy_grouping_to_test_bucket(bucket, grouping)
+    codobj_instance_pairs = query_result_to_codobjects(
+        gcs_client, grouping, OUTPUT_URI, validate_datastore_path=False
+    )
+    assert len(codobj_instance_pairs) == 1
+    cod_obj, instances = codobj_instance_pairs[0]
+    new, same, conflict, errors = cod_obj.append(instances)
+    cod_obj._sync()
+    assert len(errors) == 0
+    tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=gcs_client)
+    metadata_blob = storage.Blob.from_string(cod_obj.metadata_uri, client=gcs_client)
+    # confirm blobs that should exist, exist
+    assert tar_blob.exists(), f"{cod_obj.tar_uri} does not exist"
+    assert metadata_blob.exists(), f"{cod_obj.metadata_uri} does not exist"
+    metadata = SeriesMetadata.from_blob(metadata_blob)
+    if not dryrun:
+        for instance in new + same:
+            instance.delete_dependencies()
+        _assert_instances_dne(gcs_client, metadata.instances.values())
+    return cod_obj
 
-    def run_group(self, grouping: dict, dryrun=False):
-        """Upload a series, confirm it uploaded, confirm it deleted original"""
-        _copy_grouping_to_test_bucket(self.bucket, grouping)
-        codobj_instance_pairs = query_result_to_codobjects(
-            self.client, grouping, OUTPUT_URI, validate_datastore_path=False
-        )
-        self.assertEqual(len(codobj_instance_pairs), 1)
-        cod_obj, instances = codobj_instance_pairs[0]
-        new, same, conflict, errors = cod_obj.append(instances)
-        cod_obj._sync()
-        self.assertEqual(len(errors), 0)
-        tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=self.client)
+
+def test_single_instance(
+    gcs_client: storage.Client, test_bucket: storage.Bucket, clean_concat_paths
+):
+    """Upload single instance series, confirm it uploaded, confirm it deleted originals"""
+    config.debug()
+    with run_group(gcs_client, test_bucket, GROUPING_SINGLE) as cod_obj:
+        pass
+
+
+def test_pipeline_and_check_offsets(
+    gcs_client: storage.Client, test_bucket: storage.Bucket, clean_concat_paths
+):
+    """Upload a 3-instance series, confirm it uploaded, confirm you can read instance from tar using byte offsets"""
+    with run_group(gcs_client, test_bucket, GROUPING_FULL) as cod_obj:
+        with open(cod_obj.tar_file_path, "rb") as tar:
+            for instance in cod_obj._metadata.instances.values():
+                assert instance._byte_offsets is not None
+                tar.seek(instance._byte_offsets[0])
+                data = tar.read(instance._byte_offsets[1] - instance._byte_offsets[0])
+                with pydicom3.dcmread(io.BytesIO(data)) as ds:
+                    assert ds.SOPInstanceUID == instance.instance_uid()
+
+
+def test_dupe_instance(
+    gcs_client: storage.Client, test_bucket: storage.Bucket, clean_concat_paths
+):
+    """
+    Given instanceA, instanceB, and instanceC in a series,
+    upload all 3 in one run and confirm the result is the same as when they
+    are uploaded in 2 steps [instanceA, instanceB]; [instanceB, instanceC]
+    """
+    # get expected result of full upload
+    with run_group(gcs_client, test_bucket, GROUPING_FULL) as cod_obj:
+        # download normal bytes
+        tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=gcs_client)
+        tar_blob.download_as_bytes()
         metadata_blob = storage.Blob.from_string(
-            cod_obj.metadata_uri, client=self.client
-        )
-        # confirm blobs that should exist, exist
-        self.assertTrue(tar_blob.exists(), f"{cod_obj.tar_uri} does not exist")
-        self.assertTrue(
-            metadata_blob.exists(), f"{cod_obj.metadata_uri} does not exist"
+            cod_obj.metadata_uri, client=gcs_client
         )
         metadata = SeriesMetadata.from_blob(metadata_blob)
-        if not dryrun:
-            for instance in new + same:
-                instance.delete_dependencies()
-            self._assert_instances_dne(metadata.instances.values())
-        return cod_obj
+    # wipe GCS
+    delete_uploaded_blobs(gcs_client, [OUTPUT_URI, PLAYGROUND_URI_PREFIX])
+    # copy & upload first partial series
+    with run_group(gcs_client, test_bucket, GROUPING_FIRST_TWO) as cod_obj_first_two:
+        pass
+    # copy & upload second partial series
+    with run_group(gcs_client, test_bucket, GROUPING_LAST_TWO) as cod_obj_last_two:
+        # download duped bytes
+        # duped_content = tar_blob.download_as_bytes()
+        metadata_blob = storage.Blob.from_string(
+            cod_obj_last_two.metadata_uri, client=gcs_client
+        )
+        duped_metadata = SeriesMetadata.from_blob(metadata_blob)
+        # results are assumed to be identical if they are the same size and have equivalent metadata
+        # self.assertEqual(len(upload_content), len(duped_content))
+    _assert_metadata_equal(metadata, duped_metadata)
 
-    def test_single_instance(self):
-        """Upload single instance series, confirm it uploaded, confirm it deleted originals"""
-        config.debug()
-        with self.run_group(GROUPING_SINGLE) as cod_obj:
+
+def test_dupe_group(
+    gcs_client: storage.Client,
+    test_bucket: storage.Bucket,
+    clean_concat_paths,
+    caplog,
+):
+    """Upload the same group twice, confirm that instances were not fetched in second tar attempt"""
+    # Run a standard upload
+    with run_group(gcs_client, test_bucket, GROUPING_FULL) as cod_obj_full:
+        pass
+    # upload again, expecting 3 logs with "SKIP:DUPE_INSTANCE:SAME_HASH"
+    with caplog.at_level(logging.INFO):
+        with run_group(
+            gcs_client, test_bucket, GROUPING_FULL, dryrun=True
+        ) as cod_obj_full:
             pass
+    print("\n".join(caplog.messages))
+    # Filter logs that contain the same hash skip message
+    same_hash_skip_msg = "Skipping duplicate instance (same hash):"
+    same_hash_logs = [log for log in caplog.messages if same_hash_skip_msg in log]
+    # Assert that 3 logs with "SKIP:DUPE_INSTANCE:SAME_HASH" were logged
+    assert (
+        len(same_hash_logs) == 3
+    ), f"There should be 3 '{same_hash_skip_msg}' logs on second run"
+    # we also expect a "NO NEW INSTANCES" log
+    no_new_instances_msg = "No new instances:"
+    no_new_instances_logs = [
+        log for log in caplog.messages if no_new_instances_msg in log
+    ]
+    assert (
+        len(no_new_instances_logs) == 1
+    ), f"There should be exactly 1 '{no_new_instances_msg}' log on second run"
 
-    def test_pipeline_and_check_offsets(self):
-        """Upload a 3-instance series, confirm it uploaded, confirm you can read instance from tar using byte offsets"""
-        with self.run_group(GROUPING_FULL) as cod_obj:
-            with open(cod_obj.tar_file_path, "rb") as tar:
-                for instance in cod_obj._metadata.instances.values():
-                    self.assertIsNotNone(instance._byte_offsets)
-                    tar.seek(instance._byte_offsets[0])
-                    data = tar.read(
-                        instance._byte_offsets[1] - instance._byte_offsets[0]
-                    )
-                    with pydicom3.dcmread(io.BytesIO(data)) as ds:
-                        self.assertEqual(ds.SOPInstanceUID, instance.instance_uid())
 
-    def test_dupe_instance(self):
-        """
-        Given instanceA, instanceB, and instanceC in a series,
-        upload all 3 in one run and confirm the result is the same as when they
-        are uploaded in 2 steps [instanceA, instanceB]; [instanceB, instanceC]
-        """
-        # get expected result of full upload
-        with self.run_group(GROUPING_FULL) as cod_obj:
-            # download normal bytes
-            tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=self.client)
-            tar_blob.download_as_bytes()
-            metadata_blob = storage.Blob.from_string(
-                cod_obj.metadata_uri, client=self.client
-            )
-            metadata = SeriesMetadata.from_blob(metadata_blob)
-        # wipe GCS
-        delete_uploaded_blobs(self.client, [OUTPUT_URI, PLAYGROUND_URI_PREFIX])
-        # copy & upload first partial series
-        with self.run_group(GROUPING_FIRST_TWO) as cod_obj_first_two:
-            pass
-        # copy & upload second partial series
-        with self.run_group(GROUPING_LAST_TWO) as cod_obj_last_two:
-            # download duped bytes
-            # duped_content = tar_blob.download_as_bytes()
-            metadata_blob = storage.Blob.from_string(
-                cod_obj_last_two.metadata_uri, client=self.client
-            )
-            duped_metadata = SeriesMetadata.from_blob(metadata_blob)
-            # results are assumed to be identical if they are the same size and have equivalent metadata
-            # self.assertEqual(len(upload_content), len(duped_content))
-        self._assert_metadata_equal(metadata, duped_metadata)
+def test_diff_hash(
+    gcs_client: storage.Client,
+    test_bucket: storage.Bucket,
+    clean_concat_paths,
+    test_data_dir: str,
+):
+    """
+    Upload an instance and test what happens when a different version
+    of that same instance (same id, different hash) is uploaded subsequently.
+    We would expect to see this second version NOT DELETED (flagged for manual_review).
+    """
+    dcm_path = os.path.join(test_data_dir, "monochrome2.dcm")
+    # upload a version of the dicom
+    v1_uri = f"{PLAYGROUND_URI_PREFIX}/version1.dcm"
+    v2_uri = f"{PLAYGROUND_URI_PREFIX}/version2.dcm"
+    v1_blob = storage.Blob.from_string(v1_uri, client=gcs_client)
+    v2_blob = storage.Blob.from_string(v2_uri, client=gcs_client)
+    v1_blob.upload_from_filename(dcm_path)
+    # change something (cause hash mismatch)
+    ds = pydicom3.dcmread(dcm_path)
+    study_uid = getattr(ds, "StudyInstanceUID")
+    series_uid = getattr(ds, "SeriesInstanceUID")
+    instance_uid = getattr(ds, "SOPInstanceUID")
+    ds.add_new(pydicom3.tag.Tag(0x6001, 0x0010), "LO", "Gradient Health")
+    with tempfile.NamedTemporaryFile() as temp_file:
+        ds.save_as(temp_file.name)
+        v2_blob.upload_from_filename(temp_file.name)
 
-    def test_dupe_group(self):
-        """Upload the same group twice, confirm that instances were not fetched in second tar attempt"""
-        # Run a standard upload
-        with self.run_group(GROUPING_FULL) as cod_obj_full:
-            pass
-        # upload again, expecting 3 logs with "SKIP:DUPE_INSTANCE:SAME_HASH"
-        with self.assertLogs(level="INFO") as log_capture_second:
-            with self.run_group(GROUPING_FULL, dryrun=True) as cod_obj_full:
-                pass
-        print("\n".join(log_capture_second.output))
-        # Filter logs that contain the same hash skip message
-        same_hash_skip_msg = "Skipping duplicate instance (same hash):"
-        same_hash_logs = [
-            log for log in log_capture_second.output if same_hash_skip_msg in log
-        ]
-        # Assert that 3 logs with "SKIP:DUPE_INSTANCE:SAME_HASH" were logged
-        self.assertEqual(
-            len(same_hash_logs),
-            3,
-            f"There should be 3 '{same_hash_skip_msg}' logs on second run",
+    # blobs should have different hashes
+    assert v1_blob.crc32c != v2_blob.crc32c
+
+    with CODObject(
+        study_uid=study_uid,
+        series_uid=series_uid,
+        datastore_path=OUTPUT_URI,
+        client=gcs_client,
+        mode="w",
+    ) as cod_obj:
+        instance_v1 = Instance(
+            dicom_uri=v1_uri,
+            hints=Hints(instance_uid=instance_uid),
         )
-        # we also expect a "NO NEW INSTANCES" log
-        no_new_instances_msg = "No new instances:"
-        no_new_instances_logs = [
-            log for log in log_capture_second.output if no_new_instances_msg in log
-        ]
-        self.assertEqual(
-            len(no_new_instances_logs),
-            1,
-            f"There should be exactly 1 '{no_new_instances_msg}' log on second run",
+        instance_v2 = Instance(
+            dicom_uri=v2_uri,
+            hints=Hints(instance_uid=instance_uid),
         )
-
-    def test_diff_hash(self):
-        """
-        Upload an instance and test what happens when a different version
-        of that same instance (same id, different hash) is uploaded subsequently.
-        We would expect to see this second version NOT DELETED (flagged for manual_review).
-        """
-        dcm_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "test_data", "monochrome2.dcm"
+        # append v1 and sync
+        cod_obj.append([instance_v1])
+        cod_obj._sync()
+        metadata_blob = storage.Blob.from_string(
+            cod_obj.metadata_uri, client=gcs_client
         )
-        # upload a version of the dicom
-        v1_uri = f"{PLAYGROUND_URI_PREFIX}/version1.dcm"
-        v2_uri = f"{PLAYGROUND_URI_PREFIX}/version2.dcm"
-        v1_blob = storage.Blob.from_string(v1_uri, client=self.client)
-        v2_blob = storage.Blob.from_string(v2_uri, client=self.client)
-        v1_blob.upload_from_filename(dcm_path)
-        # change something (cause hash mismatch)
-        ds = pydicom3.dcmread(dcm_path)
-        study_uid = getattr(ds, "StudyInstanceUID")
-        series_uid = getattr(ds, "SeriesInstanceUID")
-        instance_uid = getattr(ds, "SOPInstanceUID")
-        ds.add_new(pydicom3.tag.Tag(0x6001, 0x0010), "LO", "Gradient Health")
-        with tempfile.NamedTemporaryFile() as temp_file:
-            ds.save_as(temp_file.name)
-            v2_blob.upload_from_filename(temp_file.name)
-
-        # blobs should have different hashes
-        self.assertNotEqual(v1_blob.crc32c, v2_blob.crc32c)
-
-        with CODObject(
-            study_uid=study_uid,
-            series_uid=series_uid,
-            datastore_path=OUTPUT_URI,
-            client=self.client,
-            mode="w",
-        ) as cod_obj:
-            instance_v1 = Instance(
-                dicom_uri=v1_uri,
-                hints=Hints(instance_uid=instance_uid),
-            )
-            instance_v2 = Instance(
-                dicom_uri=v2_uri,
-                hints=Hints(instance_uid=instance_uid),
-            )
-            # append v1 and sync
-            cod_obj.append([instance_v1])
-            cod_obj._sync()
-            metadata_blob = storage.Blob.from_string(
-                cod_obj.metadata_uri, client=self.client
-            )
-            self.assertTrue(metadata_blob.exists())
-            # append v2 and sync
-            cod_obj.append([instance_v2])
-            # metadata should be desynced (diff hash dupe found), but tar should be synced
-            self.assertFalse(cod_obj._metadata_synced)
-            self.assertTrue(cod_obj._tar_synced)
-            cod_obj._sync()
-            # file should still exist; deletion should be skipped due to same instance diff hash
-            self.assertTrue(v2_blob.exists())
-            # download the metadata and confirm diff hash duplicate was logged
-            metadata_blob = storage.Blob.from_string(
-                cod_obj.metadata_uri, client=self.client
-            )
-            duped_metadata = SeriesMetadata.from_blob(metadata_blob)
-            populated_dupe_list = duped_metadata.instances.get(
-                instance_v1.instance_uid(trust_hints_if_available=True)
-            )._diff_hash_dupe_paths
-            self.assertEqual(len(populated_dupe_list), 1)
-            self.assertEqual(populated_dupe_list[0], v2_uri)
-
-    def test_diff_hash_pixeldata(self):
-        """
-        Upload an instance and test what happens when a different version
-        of that same instance (same id, different hash - PIXELDATA) is uploaded subsequently.
-        We would expect to see this second version NOT DELETED (flagged for manual_review).
-        """
-        dcm_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "test_data", "monochrome1.dcm"
+        assert metadata_blob.exists()
+        # append v2 and sync
+        cod_obj.append([instance_v2])
+        # metadata should be desynced (diff hash dupe found), but tar should be synced
+        assert not cod_obj._metadata_synced
+        assert cod_obj._tar_synced
+        cod_obj._sync()
+        # file should still exist; deletion should be skipped due to same instance diff hash
+        assert v2_blob.exists()
+        # download the metadata and confirm diff hash duplicate was logged
+        metadata_blob = storage.Blob.from_string(
+            cod_obj.metadata_uri, client=gcs_client
         )
-        # upload a version of the dicom
-        v1_uri = f"{PLAYGROUND_URI_PREFIX}/version1.dcm"
-        v2_uri = f"{PLAYGROUND_URI_PREFIX}/version2.dcm"
-        v1_blob = storage.Blob.from_string(v1_uri, client=self.client)
-        v2_blob = storage.Blob.from_string(v2_uri, client=self.client)
-        v1_blob.upload_from_filename(dcm_path, retry=DEFAULT_RETRY)
-        # load ds & cause hash mismatch in pixel data
-        ds = pydicom3.dcmread(dcm_path)
-        study_uid = getattr(ds, "StudyInstanceUID")
-        series_uid = getattr(ds, "SeriesInstanceUID")
-        getattr(ds, "SOPInstanceUID")
-        # flip all bits in 1000th byte (to cause hash mismatch)
-        pixel_bytes = bytearray(ds.PixelData)
-        pixel_bytes[1000] ^= 0xFF
-        ds.PixelData = bytes(pixel_bytes)
-        with tempfile.NamedTemporaryFile() as temp_file:
-            ds.save_as(temp_file.name)
-            v2_blob.upload_from_filename(temp_file.name, retry=DEFAULT_RETRY)
+        duped_metadata = SeriesMetadata.from_blob(metadata_blob)
+        populated_dupe_list = duped_metadata.instances.get(
+            instance_v1.instance_uid(trust_hints_if_available=True)
+        )._diff_hash_dupe_paths
+        assert len(populated_dupe_list) == 1
+        assert populated_dupe_list[0] == v2_uri
 
-        # blobs should have different hashes
-        self.assertNotEqual(v1_blob.crc32c, v2_blob.crc32c)
 
-        with CODObject(
-            datastore_path=OUTPUT_URI,
-            client=self.client,
-            study_uid=study_uid,
-            series_uid=series_uid,
-            mode="w",
-        ) as cod_obj:
-            instance_v1 = Instance(v1_uri)
-            instance_v2 = Instance(v2_uri)
-            # append v1 and sync
-            cod_obj.append([instance_v1])
-            cod_obj._sync()
-            # append v2 and sync
-            cod_obj.append([instance_v2], treat_metadata_diffs_as_same=True)
-            # metadata should be desynced (diff hash dupe found), but tar should be synced
-            self.assertFalse(cod_obj._metadata_synced)
-            self.assertTrue(cod_obj._tar_synced)
-            cod_obj._sync()
-            # file should still exist; deletion should be skipped due to same instance diff hash
-            self.assertTrue(v2_blob.exists())
-            # download the metadata and confirm diff hash duplicate was logged
-            metadata_blob = storage.Blob.from_string(
-                cod_obj.metadata_uri, client=self.client
-            )
-            duped_metadata = SeriesMetadata.from_blob(metadata_blob)
-            populated_dupe_list = duped_metadata.instances.get(
-                instance_v1.instance_uid(trust_hints_if_available=True)
-            )._diff_hash_dupe_paths
-            self.assertEqual(len(populated_dupe_list), 1)
-            self.assertEqual(populated_dupe_list[0], v2_uri)
+def test_diff_hash_pixeldata(
+    gcs_client: storage.Client,
+    test_bucket: storage.Bucket,
+    clean_concat_paths,
+    test_data_dir: str,
+):
+    """
+    Upload an instance and test what happens when a different version
+    of that same instance (same id, different hash - PIXELDATA) is uploaded subsequently.
+    We would expect to see this second version NOT DELETED (flagged for manual_review).
+    """
+    dcm_path = os.path.join(test_data_dir, "monochrome1.dcm")
+    # upload a version of the dicom
+    v1_uri = f"{PLAYGROUND_URI_PREFIX}/version1.dcm"
+    v2_uri = f"{PLAYGROUND_URI_PREFIX}/version2.dcm"
+    v1_blob = storage.Blob.from_string(v1_uri, client=gcs_client)
+    v2_blob = storage.Blob.from_string(v2_uri, client=gcs_client)
+    v1_blob.upload_from_filename(dcm_path, retry=DEFAULT_RETRY)
+    # load ds & cause hash mismatch in pixel data
+    ds = pydicom3.dcmread(dcm_path)
+    study_uid = getattr(ds, "StudyInstanceUID")
+    series_uid = getattr(ds, "SeriesInstanceUID")
+    getattr(ds, "SOPInstanceUID")
+    # flip all bits in 1000th byte (to cause hash mismatch)
+    pixel_bytes = bytearray(ds.PixelData)
+    pixel_bytes[1000] ^= 0xFF
+    ds.PixelData = bytes(pixel_bytes)
+    with tempfile.NamedTemporaryFile() as temp_file:
+        ds.save_as(temp_file.name)
+        v2_blob.upload_from_filename(temp_file.name, retry=DEFAULT_RETRY)
 
-    def test_repeat_in_input(self):
-        """
-        Test behavior when the same instance is supplied multiple times.
-        We expect the duplicate(s) to get skipped.
-        Tests two scenarios:
-         - duplicates & singles: [instanceA, instanceB, instanceB]
-         - only duplicates: [instanceA, instanceA]
-        """
-        _copy_grouping_to_test_bucket(self.bucket, GROUPING_INCLUDING_DUPE)
-        codobj_instance_pairs = query_result_to_codobjects(
-            self.client,
-            GROUPING_INCLUDING_DUPE,
-            OUTPUT_URI,
-            validate_datastore_path=False,
+    # blobs should have different hashes
+    assert v1_blob.crc32c != v2_blob.crc32c
+
+    with CODObject(
+        datastore_path=OUTPUT_URI,
+        client=gcs_client,
+        study_uid=study_uid,
+        series_uid=series_uid,
+        mode="w",
+    ) as cod_obj:
+        instance_v1 = Instance(v1_uri)
+        instance_v2 = Instance(v2_uri)
+        # append v1 and sync
+        cod_obj.append([instance_v1])
+        cod_obj._sync()
+        # append v2 and sync
+        cod_obj.append([instance_v2], treat_metadata_diffs_as_same=True)
+        # metadata should be desynced (diff hash dupe found), but tar should be synced
+        assert not cod_obj._metadata_synced
+        assert cod_obj._tar_synced
+        cod_obj._sync()
+        # file should still exist; deletion should be skipped due to same instance diff hash
+        assert v2_blob.exists()
+        # download the metadata and confirm diff hash duplicate was logged
+        metadata_blob = storage.Blob.from_string(
+            cod_obj.metadata_uri, client=gcs_client
         )
-        cod_obj, instances = codobj_instance_pairs[0]
-        append_result = cod_obj.append(instances)
-        # expect 1 new, 1 same, 0 other
-        self.assertEqual(len(append_result.new), 1)
-        self.assertEqual(len(append_result.same), 1)
-        self.assertEqual(len(append_result.conflict), 0)
-        self.assertEqual(len(append_result.errors), 0)
-
-    def test_error_overlarge_instances(self):
-        """Expect instances to be skipped if they are too large"""
-        # set max size to 100 bytes; pipeline should raise ValueError
-        _copy_grouping_to_test_bucket(self.bucket, GROUPING_FULL)
-        codobj_instance_pairs = query_result_to_codobjects(
-            self.client, GROUPING_FULL, OUTPUT_URI, validate_datastore_path=False
-        )
-        cod_obj, instances = codobj_instance_pairs[0]
-        max_instance_size = 10000 / 1073741824
-        new, same, conflict, errors = cod_obj.append(
-            instances, max_instance_size=max_instance_size
-        )
-        self.assertEqual(len(new), 0)
-        self.assertEqual(len(same), 0)
-        self.assertEqual(len(conflict), 0)
-        self.assertEqual(len(errors), 3)
-
-    def test_error_overlarge_series(self):
-        """Expect a ValueError if series is too large"""
-        codobj_instance_pairs = query_result_to_codobjects(
-            self.client, GROUPING_FULL, OUTPUT_URI, validate_datastore_path=False
-        )
-        cod_obj, instances = codobj_instance_pairs[0]
-        max_series_size = 10000 / 1073741824
-        with self.assertRaises(ValueError):
-            cod_obj.append(instances, max_series_size=max_series_size)
+        duped_metadata = SeriesMetadata.from_blob(metadata_blob)
+        populated_dupe_list = duped_metadata.instances.get(
+            instance_v1.instance_uid(trust_hints_if_available=True)
+        )._diff_hash_dupe_paths
+        assert len(populated_dupe_list) == 1
+        assert populated_dupe_list[0] == v2_uri
 
 
-if __name__ == "__main__":
-    # SISKIN_ENV_ENABLED=1 python -m unittest components.cloud_optimized_dicom.tests.test_concat.TestPipelineFunctions.test_cod_obj
-    unittest.main()
+def test_repeat_in_input(
+    gcs_client: storage.Client, test_bucket: storage.Bucket, clean_concat_paths
+):
+    """
+    Test behavior when the same instance is supplied multiple times.
+    We expect the duplicate(s) to get skipped.
+    Tests two scenarios:
+     - duplicates & singles: [instanceA, instanceB, instanceB]
+     - only duplicates: [instanceA, instanceA]
+    """
+    _copy_grouping_to_test_bucket(test_bucket, GROUPING_INCLUDING_DUPE)
+    codobj_instance_pairs = query_result_to_codobjects(
+        gcs_client,
+        GROUPING_INCLUDING_DUPE,
+        OUTPUT_URI,
+        validate_datastore_path=False,
+    )
+    cod_obj, instances = codobj_instance_pairs[0]
+    append_result = cod_obj.append(instances)
+    # expect 1 new, 1 same, 0 other
+    assert len(append_result.new) == 1
+    assert len(append_result.same) == 1
+    assert len(append_result.conflict) == 0
+    assert len(append_result.errors) == 0
+
+
+def test_error_overlarge_instances(
+    gcs_client: storage.Client, test_bucket: storage.Bucket, clean_concat_paths
+):
+    """Expect instances to be skipped if they are too large"""
+    # set max size to 100 bytes; pipeline should raise ValueError
+    _copy_grouping_to_test_bucket(test_bucket, GROUPING_FULL)
+    codobj_instance_pairs = query_result_to_codobjects(
+        gcs_client, GROUPING_FULL, OUTPUT_URI, validate_datastore_path=False
+    )
+    cod_obj, instances = codobj_instance_pairs[0]
+    max_instance_size = 10000 / 1073741824
+    new, same, conflict, errors = cod_obj.append(
+        instances, max_instance_size=max_instance_size
+    )
+    assert len(new) == 0
+    assert len(same) == 0
+    assert len(conflict) == 0
+    assert len(errors) == 3
+
+
+def test_error_overlarge_series(
+    gcs_client: storage.Client, test_bucket: storage.Bucket, clean_concat_paths
+):
+    """Expect a ValueError if series is too large"""
+    codobj_instance_pairs = query_result_to_codobjects(
+        gcs_client, GROUPING_FULL, OUTPUT_URI, validate_datastore_path=False
+    )
+    cod_obj, instances = codobj_instance_pairs[0]
+    max_series_size = 10000 / 1073741824
+    with pytest.raises(ValueError):
+        cod_obj.append(instances, max_series_size=max_series_size)

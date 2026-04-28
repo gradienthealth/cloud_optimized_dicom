@@ -40,7 +40,7 @@ jobs:
       run: |
         set -o pipefail
         for attempt in 1 2 3; do
-          python -m unittest discover -v cloud_optimized_dicom.tests 2>&1 | tee test_output.txt && exit 0
+          python -m pytest -v cloud_optimized_dicom/tests 2>&1 | tee test_output.txt && exit 0
           if grep -q "429" test_output.txt; then
             echo "Attempt $attempt failed with 429 rate-limit error, retrying in 30s..."
             sleep 30

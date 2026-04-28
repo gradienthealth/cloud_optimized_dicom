@@ -20,13 +20,13 @@ pre-commit install
 ### Testing
 ```bash
 # Run all tests
-SISKIN_ENV_ENABLED=1 python -m unittest discover -v cloud_optimized_dicom.tests
+SISKIN_ENV_ENABLED=1 python -m pytest -v cloud_optimized_dicom/tests
 
 # Run specific test file
-SISKIN_ENV_ENABLED=1 python -m unittest cloud_optimized_dicom.tests.test_cod_object -v
+SISKIN_ENV_ENABLED=1 python -m pytest -v cloud_optimized_dicom/tests/test_cod_object.py
 
 # Run specific test
-python -m unittest cloud_optimized_dicom.tests.test_metadata_serialization.TestMetadataSerialization.test_v2_round_trip -v
+python -m pytest -v cloud_optimized_dicom/tests/test_metadata_serialization.py::test_v2_round_trip
 ```
 
 Note: `SISKIN_ENV_ENABLED=1` is required for tests that interact with GCP resources. Tests skip when this flag is absent.
