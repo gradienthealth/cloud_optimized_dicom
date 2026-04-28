@@ -1,11 +1,11 @@
 import random
 from io import BytesIO
-from unittest.mock import patch
 
 import numpy as np
 import pydicom3
 import pydicom3.encaps
 import pydicom3.errors
+from pytest_mock import MockerFixture
 
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 
@@ -171,50 +171,46 @@ def test_singleframe_encapsulated_pixeldata():
     assert "CustomOffsetTableLengths" not in result
 
 
-@patch("cloud_optimized_dicom.custom_offset_tables.logger.warning")
-@patch(
-    "cloud_optimized_dicom.custom_offset_tables._generate_pixel_data_fragment_offsets"
-)
-def test_multiframe_raise_value_error(
-    mock_generate_pixel_data_fragment_offsets,
-    mock_logging_warning,
-):
+def test_multiframe_raise_value_error(mocker: MockerFixture):
+    mock_generate = mocker.patch(
+        "cloud_optimized_dicom.custom_offset_tables._generate_pixel_data_fragment_offsets"
+    )
+    mock_warning = mocker.patch(
+        "cloud_optimized_dicom.custom_offset_tables.logger.warning"
+    )
     dataset = create_sample_dataset(
         number_of_frames=5,
         is_pixeldata_encapsulated=False,
         include_eot=False,
         include_bot=False,
     )
-    mock_generate_pixel_data_fragment_offsets.side_effect = ValueError("Test error")
+    mock_generate.side_effect = ValueError("Test error")
 
     get_multiframe_offset_tables(dataset)
 
-    mock_logging_warning.assert_called_once_with(
+    mock_warning.assert_called_once_with(
         "Some errors occured when creating Offset table"
     )
 
 
-@patch("cloud_optimized_dicom.custom_offset_tables.logger.warning")
-@patch(
-    "cloud_optimized_dicom.custom_offset_tables._generate_pixel_data_fragment_offsets"
-)
-def test_multiframe_raise_invalid_dicom_error(
-    mock_generate_pixel_data_fragment_offsets,
-    mock_logging_warning,
-):
+def test_multiframe_raise_invalid_dicom_error(mocker: MockerFixture):
+    mock_generate = mocker.patch(
+        "cloud_optimized_dicom.custom_offset_tables._generate_pixel_data_fragment_offsets"
+    )
+    mock_warning = mocker.patch(
+        "cloud_optimized_dicom.custom_offset_tables.logger.warning"
+    )
     dataset = create_sample_dataset(
         number_of_frames=5,
         is_pixeldata_encapsulated=False,
         include_eot=False,
         include_bot=False,
     )
-    mock_generate_pixel_data_fragment_offsets.side_effect = (
-        pydicom3.errors.InvalidDicomError("Test error")
-    )
+    mock_generate.side_effect = pydicom3.errors.InvalidDicomError("Test error")
 
     get_multiframe_offset_tables(dataset)
 
-    mock_logging_warning.assert_called_once_with("Test error")
+    mock_warning.assert_called_once_with("Test error")
 
 
 def test_pixeldata_is_none():

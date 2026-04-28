@@ -42,6 +42,7 @@ test = [
     "pydicom==2.3.0",
     "matplotlib",
     "pytest>=8.0.0",
+    "pytest-mock>=3.12.0",
 ]
 dev = [
     "pre-commit>=3.0.0",
@@ -49,6 +50,7 @@ dev = [
     "matplotlib",
     "apache-beam[gcp]==2.63.0",
     "pytest>=8.0.0",
+    "pytest-mock>=3.12.0",
 ]
 
 [tool.setuptools]
