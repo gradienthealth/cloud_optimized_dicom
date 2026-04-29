@@ -7,7 +7,7 @@ from google.cloud import storage
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 GCP_PROJECT = "gradient-pacs-siskin-172863"
-DEFAULT_DATASTORE_PATH = "gs://siskin-172863-temp/cod_tests/dicomweb"
+DATASTORE_BASE = "gs://siskin-172863-temp/cod_tests"
 
 TEST_INSTANCE_UID = "1.2.276.0.50.192168001092.11156604.14547392.313"
 TEST_SERIES_UID = "1.2.276.0.50.192168001092.11156604.14547392.303"
@@ -34,8 +34,11 @@ def gcs_client() -> storage.Client:
 
 @pytest.fixture()
 def datastore_path(gcs_client: storage.Client) -> str:
-    delete_uploaded_blobs(gcs_client, [DEFAULT_DATASTORE_PATH])
-    return DEFAULT_DATASTORE_PATH
+    # Namespace by xdist worker so parallel workers don't clobber each other.
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+    path = f"{DATASTORE_BASE}/{worker}/dicomweb"
+    delete_uploaded_blobs(gcs_client, [path])
+    return path
 
 
 @pytest.fixture(scope="session")

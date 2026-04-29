@@ -21,7 +21,7 @@ from cloud_optimized_dicom.thumbnail import (
 )
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
-THUMBNAIL_DATASTORE_PATH = "gs://siskin-172863-temp/cod_thumbnail_tests/dicomweb"
+THUMBNAIL_DATASTORE_BASE = "gs://siskin-172863-temp/cod_thumbnail_tests"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -32,8 +32,10 @@ def _enable_logging():
 
 @pytest.fixture
 def thumbnail_datastore_path(gcs_client: storage.Client) -> str:
-    delete_uploaded_blobs(gcs_client, [THUMBNAIL_DATASTORE_PATH])
-    return THUMBNAIL_DATASTORE_PATH
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+    path = f"{THUMBNAIL_DATASTORE_BASE}/{worker}/dicomweb"
+    delete_uploaded_blobs(gcs_client, [path])
+    return path
 
 
 def ingest_and_generate_thumbnail(
