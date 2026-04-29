@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.1](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v1.1.0...v1.1.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **NO-ISSUE:** migrate to ratarmountcore 0.10 mountsource API ([#123](https://github.com/gradienthealth/cloud_optimized_dicom/issues/123)) ([18a4224](https://github.com/gradienthealth/cloud_optimized_dicom/commit/18a422481e869e850a4876a49ba13e36511960e9))
+* **PROC-940:** unpin urllib3 now that google-resumable-media ships the fix ([#120](https://github.com/gradienthealth/cloud_optimized_dicom/issues/120)) ([3ba10c6](https://github.com/gradienthealth/cloud_optimized_dicom/commit/3ba10c6f7f05aee5ef152f33d57f91c6bc73f878))
+
+
+### Documentation
+
+* **NO-ISSUE:** document scoped SA permissions and dependabot secret ([#122](https://github.com/gradienthealth/cloud_optimized_dicom/issues/122)) ([6ca4721](https://github.com/gradienthealth/cloud_optimized_dicom/commit/6ca47215fa1201fee0f46dbe0c3f581d9d6bf4b5))
+
 ## [1.1.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v1.0.0...v1.1.0) (2026-04-29)
 
 
