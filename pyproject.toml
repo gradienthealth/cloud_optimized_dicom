@@ -30,8 +30,8 @@ dependencies = [
     "opencv-python-headless==4.11.0.86",
     "ffmpeg-python==0.2.0",
     "zstandard>=0.24.0",
-    # Pin urllib3 to avoid bug in 2.6.x where _GzipDecoder.decompress() doesn't accept max_length parameter
-    "urllib3>=2.0.0,<2.6.0",
+    # Floor ensures the urllib3 2.6+ Gzip/Brotli decoder fix from upstream PR #495 is installed.
+    "google-resumable-media>=2.8.1",
 ]
 
 [project.optional-dependencies]
