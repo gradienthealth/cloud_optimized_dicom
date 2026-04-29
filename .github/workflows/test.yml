@@ -35,8 +35,6 @@ jobs:
 
     # Tests hit real GCS buckets and occasionally get transient 429 rate-limit errors.
     # Retry up to 3 times with a 30s backoff, but only when the failure is a 429.
-    # `--dist=loadfile` keeps tests from the same file on the same worker so
-    # files with module-level shared paths (e.g. test_concat.py) stay safe.
     - name: Run tests
       env:
         SISKIN_ENV_ENABLED: 1
@@ -44,7 +42,7 @@ jobs:
       run: |
         set -o pipefail
         for attempt in 1 2 3; do
-          python -m pytest -v -n auto --dist=loadfile cloud_optimized_dicom/tests 2>&1 | tee test_output.txt && exit 0
+          python -m pytest -v -n auto cloud_optimized_dicom/tests 2>&1 | tee test_output.txt && exit 0
           if grep -q "429" test_output.txt; then
             echo "Attempt $attempt failed with 429 rate-limit error, retrying in 30s..."
             sleep 30
@@ -73,5 +71,6 @@ jobs:
             f"gs://siskin-172863-temp/cod_tests/{rid}",
             f"gs://siskin-172863-temp/cod_thumbnail_tests/{rid}",
             f"gs://siskin-172863-temp/cod_error_log_tests/{rid}",
+            f"gs://siskin-172863-test-data/{rid}",
         ])
         PY
