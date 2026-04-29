@@ -15,6 +15,10 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      # pydicom is pinned at 2.3.0 to validate output from the pydicom3 fork;
+      # bumping it would silently break that validation.
+      - dependency-name: pydicom
     groups:
       python-dependencies:
         update-types:
