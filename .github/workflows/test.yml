@@ -40,6 +40,7 @@ jobs:
     - name: Run tests
       env:
         SISKIN_ENV_ENABLED: 1
+        GITHUB_RUN_ID: ${{ github.run_id }}
       run: |
         set -o pipefail
         for attempt in 1 2 3; do
@@ -54,3 +55,23 @@ jobs:
         done
         echo "Tests failed after 3 attempts due to 429 errors."
         exit 1
+
+    # Sweep this run's GCS prefixes regardless of test outcome so failed
+    # runs don't leak orphan dirs forever.
+    - name: Clean up test namespace
+      if: always()
+      env:
+        GITHUB_RUN_ID: ${{ github.run_id }}
+      run: |
+        python - <<'PY'
+        import os
+        from google.cloud import storage
+        from cloud_optimized_dicom.utils import delete_uploaded_blobs
+        client = storage.Client(project="gradient-pacs-siskin-172863")
+        rid = os.environ["GITHUB_RUN_ID"]
+        delete_uploaded_blobs(client, [
+            f"gs://siskin-172863-temp/cod_tests/{rid}",
+            f"gs://siskin-172863-temp/cod_thumbnail_tests/{rid}",
+            f"gs://siskin-172863-temp/cod_error_log_tests/{rid}",
+        ])
+        PY

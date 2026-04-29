@@ -31,9 +31,8 @@ def _enable_logging():
 
 
 @pytest.fixture
-def thumbnail_datastore_path(gcs_client: storage.Client) -> str:
-    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
-    path = f"{THUMBNAIL_DATASTORE_BASE}/{worker}/dicomweb"
+def thumbnail_datastore_path(gcs_client: storage.Client, worker_namespace: str) -> str:
+    path = f"{THUMBNAIL_DATASTORE_BASE}/{worker_namespace}/dicomweb"
     delete_uploaded_blobs(gcs_client, [path])
     return path
 

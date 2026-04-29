@@ -32,11 +32,18 @@ def gcs_client() -> storage.Client:
     )
 
 
-@pytest.fixture()
-def datastore_path(gcs_client: storage.Client) -> str:
-    # Namespace by xdist worker so parallel workers don't clobber each other.
+@pytest.fixture(scope="session")
+def worker_namespace() -> str:
+    """Per-(run, worker) path segment so concurrent CI runs and parallel
+    xdist workers don't collide on the same GCS prefix."""
+    run_id = os.environ.get("GITHUB_RUN_ID", "local")
     worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
-    path = f"{DATASTORE_BASE}/{worker}/dicomweb"
+    return f"{run_id}/{worker}"
+
+
+@pytest.fixture()
+def datastore_path(gcs_client: storage.Client, worker_namespace: str) -> str:
+    path = f"{DATASTORE_BASE}/{worker_namespace}/dicomweb"
     delete_uploaded_blobs(gcs_client, [path])
     return path
 

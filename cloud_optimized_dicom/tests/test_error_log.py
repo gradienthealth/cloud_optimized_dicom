@@ -18,9 +18,8 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture
-def error_log_datastore_path(gcs_client: storage.Client) -> str:
-    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
-    path = f"{ERROR_LOG_DATASTORE_BASE}/{worker}/dicomweb"
+def error_log_datastore_path(gcs_client: storage.Client, worker_namespace: str) -> str:
+    path = f"{ERROR_LOG_DATASTORE_BASE}/{worker_namespace}/dicomweb"
     delete_uploaded_blobs(gcs_client, [path])
     return path
 
