@@ -10,7 +10,7 @@ from google.api_core.exceptions import NotFound
 from google.cloud import storage
 from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
 from google.cloud.storage.retry import DEFAULT_RETRY
-from ratarmountcore import open as rmc_open
+from ratarmountcore.mountsource.factory import open_mount_source as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.append import append
@@ -656,11 +656,13 @@ class CODObject:
         # fetch the tar and index
         self._force_fetch_tar(fetch_index=True)
         # Attempt to open the tar using the index file. If they do not match, this will raise an error and we will know there's a desync
-        with rmc_open(self.tar_file_path, indexFile=self.index_file_path) as archive:
+        with rmc_open(
+            self.tar_file_path, indexFilePath=self.index_file_path
+        ) as archive:
             # generate a dict of instance_uid -> crc32c for each instance in the tar
             tar_instances = {}
-            for instance in archive.listDir("instances"):
-                file_info = archive.getFileInfo(f"instances/{instance}")
+            for instance in archive.list("instances"):
+                file_info = archive.lookup(f"instances/{instance}")
                 with archive.open(file_info) as f:
                     tar_instances[os.path.splitext(instance)[0]] = generate_ptr_crc32c(
                         f
