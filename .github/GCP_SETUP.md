@@ -24,14 +24,28 @@ This guide explains how to set up Google Cloud Platform authentication for runni
 
 ### 2. Grant Required Permissions
 
-Grant the service account access to Google Cloud Storage and Service Usage:
+Grant the service account scoped, least-privilege access. The only project-level role is `Service Usage Consumer`; storage access is bucket-scoped so a leaked key can't reach the rest of the project.
 
-1. Click **Select a role**
-2. Add the following roles:
-   - **Storage Object Admin** - Allows creating, reading, and deleting objects in GCS
-   - **Storage Bucket Reader** - Allows listing buckets
-   - **Service Usage Consumer** - Required for quota_project_id usage (provides serviceusage.services.use permission)
-3. Click **Continue**, then **Done**
+```bash
+SA=github-actions-test-runner@gradient-pacs-siskin-172863.iam.gserviceaccount.com
+
+# Project-level: only what's needed for quota_project_id (serviceusage.services.use).
+gcloud projects add-iam-policy-binding gradient-pacs-siskin-172863 \
+  --member=serviceAccount:$SA \
+  --role=roles/serviceusage.serviceUsageConsumer
+
+# Bucket-level: read/write on the two test buckets.
+gcloud storage buckets add-iam-policy-binding gs://siskin-172863-test-data \
+  --member=serviceAccount:$SA --role=roles/storage.objectAdmin
+gcloud storage buckets add-iam-policy-binding gs://siskin-172863-temp \
+  --member=serviceAccount:$SA --role=roles/storage.objectAdmin
+
+# Bucket-level: read-only on the dicomweb fixtures bucket.
+gcloud storage buckets add-iam-policy-binding gs://siskin-172863-pacs \
+  --member=serviceAccount:$SA --role=roles/storage.objectViewer
+```
+
+Do **not** grant project-level `Storage Object Admin` or BigQuery roles. Tests don't need them, and the broader scope expands the blast radius if the key leaks.
 
 ### 3. Create and Download JSON Key
 
@@ -43,15 +57,19 @@ Grant the service account access to Google Cloud Storage and Service Usage:
 6. The JSON key file will be downloaded to your computer
 7. **Keep this file secure** - it provides full access to the service account's permissions
 
-### 4. Add GitHub Secret
+### 4. Add GitHub Secrets
 
-1. Go to your GitHub repository
-2. Navigate to **Settings** > **Secrets and variables** > **Actions**
-3. Click **New repository secret**
-4. Fill in the details:
-   - **Name**: `GCP_SA_KEY`
-   - **Value**: Paste the entire contents of the downloaded JSON key file
-5. Click **Add secret**
+The secret must be set in **both** the Actions and Dependabot scopes so that dependabot PRs can run tests too. (GitHub does not share Actions secrets with dependabot by default.)
+
+```bash
+gh secret set GCP_SA_KEY --app actions    --repo gradienthealth/cloud_optimized_dicom < /path/to/key.json
+gh secret set GCP_SA_KEY --app dependabot --repo gradienthealth/cloud_optimized_dicom < /path/to/key.json
+
+# Wipe the local copy
+rm -P /path/to/key.json   # or: shred -u /path/to/key.json on Linux
+```
+
+Equivalent UI path: **Settings** > **Secrets and variables** > **Actions** (and again under **Dependabot**), name `GCP_SA_KEY`.
 
 ### 5. Verify Setup
 
@@ -82,9 +100,9 @@ If you see `serviceusage.services.use access to the Google Cloud project` error:
 - Go to IAM & Admin > IAM, find the service account, and add this role
 
 For other permission errors:
-- Verify the service account has all three required roles (Storage Object Admin, Storage Bucket Reader, Service Usage Consumer)
-- Ensure the test buckets (`siskin-172863-test-data`, `siskin-172863-temp`) exist
-- Check that the service account has access to these specific buckets
+- Verify the bucket-level bindings from step 2: `objectAdmin` on `siskin-172863-test-data` and `siskin-172863-temp`, `objectViewer` on `siskin-172863-pacs`.
+- Ensure all three buckets exist.
+- If a new test reads from a bucket not listed above, add it to step 2 rather than re-granting project-level access.
 
 ### Tests are skipped
 
