@@ -21,7 +21,7 @@ dependencies = [
     "smart-open==7.0.4",
     "ratarmountcore==0.7.1",
     "numpy",
-    "google-cloud-storage==2.19.0",
+    "google-cloud-storage==3.10.1",
     "filetype==1.2.0",
     "pylibjpeg==2.0.1",
     "pylibjpeg-libjpeg==2.3.0",
