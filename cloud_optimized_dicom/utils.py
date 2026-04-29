@@ -216,7 +216,7 @@ def public_method(write_only: bool = False):
             if write_only and self.mode == "r":
                 raise WriteOperationInReadModeError(
                     f"Cannot call {func.__name__}() in read mode. "
-                    f"Use mode='w' or mode='a' to perform write operations."
+                    f"Use mode='w', mode='a', or mode='e' to perform write operations."
                 )
             return func(self, *args, **kwargs)
 

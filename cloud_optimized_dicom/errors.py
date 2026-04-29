@@ -53,3 +53,8 @@ class HintMismatchError(CODError):
 
 class InstanceValidationError(CODError):
     """Exception raised on Instance validation when the instance is invalid"""
+
+
+class EditSetChangedError(CODError):
+    """Exception raised on exit from mode='e' when the instance set changed during
+    the edit (a DICOM file was deleted/moved/renamed, or its UIDs were mutated)."""

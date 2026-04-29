@@ -1,6 +1,6 @@
 import os
 import tarfile
-from typing import TYPE_CHECKING, NamedTuple, Optional
+from typing import TYPE_CHECKING, Iterable, NamedTuple, Optional
 
 from ratarmountcore import open as rmc_open
 
@@ -23,6 +23,15 @@ class AppendResult(NamedTuple):
     same: list[Instance] = []
     conflict: list[Instance] = []
     errors: list[tuple[Instance, Exception]] = []
+
+
+class PackResult(NamedTuple):
+    """Result of `_pack_and_index`: the instances that successfully made it into
+    the tar, plus any (instance, exception) pairs that failed (only populated when
+    `tolerate_per_instance_errors=True`)."""
+
+    added: list[Instance]
+    errors: list[tuple[Instance, Exception]]
 
 
 class StateChange(NamedTuple):
@@ -499,6 +508,39 @@ def _handle_create_tar(
     return instances_added_to_tar, errors
 
 
+def _pack_and_index(
+    cod_object: "CODObject",
+    instances: Iterable[Instance],
+    tolerate_per_instance_errors: bool,
+) -> PackResult:
+    """Append `instances` to `cod_object.tar_file_path` (opened in 'a' mode), then
+    regenerate the sqlite index. Caller handles any pre-pack cleanup (e.g. removing
+    the existing tar for a fresh repack).
+
+    Args:
+        tolerate_per_instance_errors: If True (append/ingest semantics), per-instance
+            tar failures are caught, logged, and recorded in the returned errors list
+            so the rest can proceed. If False (edit semantics), the first failure
+            bubbles immediately — instances are already validated against disk so
+            anything else would indicate a real desync.
+    """
+    added: list[Instance] = []
+    errors: list[tuple[Instance, Exception]] = []
+    with tarfile.open(cod_object.tar_file_path, "a") as tar:
+        for instance in instances:
+            try:
+                instance.append_to_series_tar(tar)
+                added.append(instance)
+            except Exception as e:
+                if not tolerate_per_instance_errors:
+                    raise
+                logger.exception(e)
+                errors.append((instance, e))
+    _create_sqlite_index(cod_object)
+    cod_object._tar_synced = False
+    return PackResult(added=added, errors=errors)
+
+
 def _create_or_append_tar(cod_object: "CODObject", instances_to_add: list[Instance]):
     """Create/append to `cod_object.tar_file_path` all instances in `instances_to_add`
 
@@ -507,29 +549,18 @@ def _create_or_append_tar(cod_object: "CODObject", instances_to_add: list[Instan
     Raises:
         ValueError: if no instances were successfully added to the tar
     """
-    # validate that at least one instance is being added
     assert len(instances_to_add) > 0, "No instances to add to tar"
-    # create/append to tar
-    instances_added_to_tar: list[Instance] = []
-    errors: list[tuple[Instance, Exception]] = []
-    with tarfile.open(cod_object.tar_file_path, "a") as tar:
-        for instance in instances_to_add:
-            try:
-                instance.append_to_series_tar(tar)
-                instances_added_to_tar.append(instance)
-            except Exception as e:
-                logger.exception(e)
-                errors.append((instance, e))
+    pack = _pack_and_index(
+        cod_object, instances_to_add, tolerate_per_instance_errors=True
+    )
     # Edge case: no instances were successfully added to the tar
-    if len(instances_added_to_tar) == 0:
+    if len(pack.added) == 0:
         uri_str = "\n".join([instance.dicom_uri for instance in instances_to_add])
         raise ValueError(f"GRADIENT_STATE_LOGS:FAILED_TO_TAR_ALL_INSTANCES:{uri_str}")
     logger.info(
         f"GRADIENT_STATE_LOGS:POPULATED_TAR:{cod_object.tar_file_path} ({os.path.getsize(cod_object.tar_file_path)} bytes)"
     )
-    # tar has been altered, so it is no longer in sync with the datastore
-    cod_object._tar_synced = False
-    return instances_added_to_tar, errors
+    return pack.added, pack.errors
 
 
 def _create_sqlite_index(cod_object: "CODObject"):
@@ -548,6 +579,22 @@ def _create_sqlite_index(cod_object: "CODObject"):
         pass
 
 
+def _refresh_per_instance_metadata(
+    cod_object: "CODObject", instances: Iterable[Instance]
+) -> None:
+    """For each instance, set the remote per-instance URI as `output_uri`, run
+    `extract_metadata`, compress, and register the instance under its UID in the
+    series metadata. Idempotent — safe whether the instance is being added for the
+    first time (append) or refreshed in place (edit)."""
+    for instance in instances:
+        uid = instance.get_instance_uid(hashed=cod_object.hashed_uids)
+        output_uri = f"{cod_object.tar_uri}://instances/{uid}.dcm"
+        instance.extract_metadata(output_uri)
+        # compress metadata immediately to avoid ballooning memory usage
+        instance._dicom_metadata.compress()
+        cod_object._metadata.instances[uid] = instance
+
+
 def _handle_create_metadata(
     cod_object: "CODObject",
     instances_added_to_tar: list[Instance],
@@ -555,14 +602,6 @@ def _handle_create_metadata(
     """Update metadata locally with new instances.
     Do not catch errors; any exceptions here should bubble up as they represent a desync between tar and metadata
     """
-    # Add new instances to metadata
-    for instance in instances_added_to_tar:
-        # get hashed uid if series is hashed, standard if not
-        uid = instance.get_instance_uid(hashed=cod_object.hashed_uids)
-        output_uri = f"{cod_object.tar_uri}://instances/{uid}.dcm"
-        instance.extract_metadata(output_uri)
-        # compress metadata immediately to avoid ballooning memory usage
-        instance._dicom_metadata.compress()
-        cod_object._metadata.instances[uid] = instance
+    _refresh_per_instance_metadata(cod_object, instances_added_to_tar)
     # if we added any instances, metadata is now desynced
     cod_object._metadata_synced = False if len(instances_added_to_tar) > 0 else True
