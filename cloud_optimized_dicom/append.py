@@ -2,7 +2,7 @@ import os
 import tarfile
 from typing import TYPE_CHECKING, Iterable, NamedTuple, Optional
 
-from ratarmountcore import open as rmc_open
+from ratarmountcore.mountsource.factory import open_mount_source as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.config import logger

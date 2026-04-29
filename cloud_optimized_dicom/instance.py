@@ -8,7 +8,7 @@ from typing import Callable, Optional
 import pydicom3
 import pydicom3.uid
 from pydicom3.datadict import tag_for_keyword
-from ratarmountcore import open as rmc_open
+from ratarmountcore.mountsource.factory import open_mount_source as rmc_open
 from smart_open import open as smart_open
 
 import cloud_optimized_dicom.metrics as metrics
@@ -297,7 +297,7 @@ class Instance:
             if os.path.exists(f"{tar_path}.index.sqlite"):
                 options = {"indexFilePath": f"{tar_path}.index.sqlite"}
             with rmc_open(f"{tar_path}.tar", **options) as archive:
-                internal_file_info = archive.getFileInfo(internal_path)
+                internal_file_info = archive.lookup(internal_path)
                 if not internal_file_info:
                     raise FileNotFoundError(f"File not found in tar: {internal_path}")
                 # set size if necessary
