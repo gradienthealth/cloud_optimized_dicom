@@ -5,6 +5,8 @@ then reopens in mode='r' to verify the edits round-tripped correctly.
 """
 
 import os
+from dataclasses import dataclass
+from typing import Literal
 
 import pydicom3
 import pytest
@@ -17,6 +19,30 @@ from cloud_optimized_dicom.errors import (
     LockAcquisitionError,
 )
 from cloud_optimized_dicom.instance import Instance
+
+
+# NOTE: SeriesHandle + the fresh_series/seeded_series fixtures are deliberately
+# local to this test module for now. If a second test file ends up wanting the
+# same boilerplate-collapsing pattern, lift them into conftest.py.
+@dataclass
+class SeriesHandle:
+    """Bundles the four sticky CODObject args so tests can `.open(mode=...)`
+    without re-typing client/datastore_path/study_uid/series_uid every call."""
+
+    client: storage.Client
+    datastore_path: str
+    study_uid: str
+    series_uid: str
+
+    def open(self, mode: Literal["r", "w", "a", "e"], **kwargs) -> CODObject:
+        return CODObject(
+            client=self.client,
+            datastore_path=self.datastore_path,
+            study_uid=self.study_uid,
+            series_uid=self.series_uid,
+            mode=mode,
+            **kwargs,
+        )
 
 
 @pytest.fixture(scope="module")
@@ -42,45 +68,29 @@ def series_uids(series_files: list[str]) -> tuple[str, str]:
 
 
 @pytest.fixture
-def seeded_series(
+def fresh_series(
     gcs_client: storage.Client,
     datastore_path: str,
-    series_files: list[str],
     series_uids: tuple[str, str],
-):
-    """Ingest the series fixture into a fresh CODObject via mode='w'.
-
-    Yields (study_uid, series_uid) so tests can re-open the same series.
-    """
+) -> SeriesHandle:
+    """A SeriesHandle pointing at the (cleared) datastore — no instances yet."""
     study_uid, series_uid = series_uids
-    instances = [Instance(dicom_uri=p) for p in series_files]
-    with CODObject(
-        client=gcs_client,
-        datastore_path=datastore_path,
-        study_uid=study_uid,
-        series_uid=series_uid,
-        mode="w",
-    ) as cod:
-        cod.append(instances)
-    return study_uid, series_uid
+    return SeriesHandle(gcs_client, datastore_path, study_uid, series_uid)
 
 
-def test_edit_mode_happy_path(
-    gcs_client: storage.Client,
-    datastore_path: str,
-    seeded_series: tuple[str, str],
-):
+@pytest.fixture
+def seeded_series(fresh_series: SeriesHandle, series_files: list[str]) -> SeriesHandle:
+    """fresh_series, plus the two-file fixture ingested via mode='w'."""
+    with fresh_series.open(mode="w") as cod:
+        cod.append([Instance(dicom_uri=p) for p in series_files])
+    return fresh_series
+
+
+def test_edit_mode_happy_path(seeded_series: SeriesHandle):
     """Modify a tag in one instance; verify it persists and the other is untouched."""
-    study_uid, series_uid = seeded_series
     new_patient_name = "REDACTED^EDIT^TEST"
 
-    with CODObject(
-        client=gcs_client,
-        datastore_path=datastore_path,
-        study_uid=study_uid,
-        series_uid=series_uid,
-        mode="e",
-    ) as cod:
+    with seeded_series.open(mode="e") as cod:
         instances = list(cod._get_instances(strict_sorting=False).values())
         assert len(instances) == 2
         target = instances[0]
@@ -90,14 +100,7 @@ def test_edit_mode_happy_path(
         ds.PatientName = new_patient_name
         ds.save_as(target.dicom_uri)
 
-    # Round-trip verification in read mode
-    with CODObject(
-        client=gcs_client,
-        datastore_path=datastore_path,
-        study_uid=study_uid,
-        series_uid=series_uid,
-        mode="r",
-    ) as cod:
+    with seeded_series.open(mode="r") as cod:
         cod.extract_locally()
         after = cod._get_instances(strict_sorting=False)
         assert len(after) == 2
@@ -108,38 +111,15 @@ def test_edit_mode_happy_path(
         assert str(edited_ds.PatientName) == new_patient_name
 
 
-def test_edit_mode_missing_series_raises(
-    gcs_client: storage.Client,
-    datastore_path: str,
-    series_uids: tuple[str, str],
-):
+def test_edit_mode_missing_series_raises(fresh_series: SeriesHandle):
     """Opening mode='e' against a never-written series raises CODObjectNotFoundError at init."""
-    study_uid, series_uid = series_uids
     with pytest.raises(CODObjectNotFoundError):
-        CODObject(
-            client=gcs_client,
-            datastore_path=datastore_path,
-            study_uid=study_uid,
-            series_uid=series_uid,
-            mode="e",
-        )
+        fresh_series.open(mode="e")
 
 
-def test_edit_mode_append_rejected(
-    gcs_client: storage.Client,
-    datastore_path: str,
-    series_dir: str,
-    seeded_series: tuple[str, str],
-):
+def test_edit_mode_append_rejected(seeded_series: SeriesHandle, series_dir: str):
     """append() is blocked inside a mode='e' context."""
-    study_uid, series_uid = seeded_series
-    with CODObject(
-        client=gcs_client,
-        datastore_path=datastore_path,
-        study_uid=study_uid,
-        series_uid=series_uid,
-        mode="e",
-    ) as cod:
+    with seeded_series.open(mode="e") as cod:
         new_instance = Instance(
             dicom_uri=os.path.join(
                 series_dir,
@@ -150,129 +130,60 @@ def test_edit_mode_append_rejected(
             cod.append([new_instance])
 
 
-def test_edit_mode_deleted_file_raises(
-    gcs_client: storage.Client,
-    datastore_path: str,
-    seeded_series: tuple[str, str],
-):
+def test_edit_mode_deleted_file_raises(seeded_series: SeriesHandle):
     """Deleting a local instance file mid-edit raises EditSetChangedError on exit."""
-    study_uid, series_uid = seeded_series
     with pytest.raises(EditSetChangedError):
-        with CODObject(
-            client=gcs_client,
-            datastore_path=datastore_path,
-            study_uid=study_uid,
-            series_uid=series_uid,
-            mode="e",
-        ) as cod:
+        with seeded_series.open(mode="e") as cod:
             first = next(iter(cod._get_instances(strict_sorting=False).values()))
             os.remove(first.dicom_uri)
 
 
-def test_edit_mode_corrupted_uid_raises(
-    gcs_client: storage.Client,
-    datastore_path: str,
-    seeded_series: tuple[str, str],
-):
+def test_edit_mode_corrupted_uid_raises(seeded_series: SeriesHandle):
     """Mutating an instance's SOPInstanceUID raises EditSetChangedError on exit."""
-    study_uid, series_uid = seeded_series
     with pytest.raises(EditSetChangedError):
-        with CODObject(
-            client=gcs_client,
-            datastore_path=datastore_path,
-            study_uid=study_uid,
-            series_uid=series_uid,
-            mode="e",
-        ) as cod:
+        with seeded_series.open(mode="e") as cod:
             first = next(iter(cod._get_instances(strict_sorting=False).values()))
             ds = pydicom3.dcmread(first.dicom_uri)
             ds.SOPInstanceUID = "1.2.3.4.5.6.7.8.9.1234567890"
             ds.save_as(first.dicom_uri)
 
 
-def test_edit_mode_concurrent_lock(
-    gcs_client: storage.Client,
-    datastore_path: str,
-    seeded_series: tuple[str, str],
-):
+def test_edit_mode_concurrent_lock(seeded_series: SeriesHandle):
     """Opening mode='e' twice concurrently: the second call raises LockAcquisitionError."""
-    study_uid, series_uid = seeded_series
-    with CODObject(
-        client=gcs_client,
-        datastore_path=datastore_path,
-        study_uid=study_uid,
-        series_uid=series_uid,
-        mode="e",
-    ):
+    with seeded_series.open(mode="e"):
         with pytest.raises(LockAcquisitionError):
-            CODObject(
-                client=gcs_client,
-                datastore_path=datastore_path,
-                study_uid=study_uid,
-                series_uid=series_uid,
-                mode="e",
-            )
+            seeded_series.open(mode="e")
 
 
-def _generate_thumbnail_for(
-    gcs_client: storage.Client,
-    datastore_path: str,
-    study_uid: str,
-    series_uid: str,
-) -> tuple[str, int]:
+def _generate_thumbnail(handle: SeriesHandle) -> tuple[str, int]:
     """Generate a thumbnail and return (uri, blob generation) for change detection."""
-    with CODObject(
-        client=gcs_client,
-        datastore_path=datastore_path,
-        study_uid=study_uid,
-        series_uid=series_uid,
-        mode="a",
-    ) as cod:
+    with handle.open(mode="a") as cod:
         cod.get_thumbnail(generate_if_missing=True)
         thumb_uri = cod._get_metadata_field("thumbnail")["uri"]
-    thumb_blob = storage.Blob.from_string(thumb_uri, client=gcs_client)
+    thumb_blob = storage.Blob.from_string(thumb_uri, client=handle.client)
     thumb_blob.reload()
     return thumb_uri, thumb_blob.generation
 
 
-def test_edit_mode_thumbnail_regen_on_pd_change(
-    gcs_client: storage.Client,
-    datastore_path: str,
-    seeded_series: tuple[str, str],
-):
+def test_edit_mode_thumbnail_regen_on_pd_change(seeded_series: SeriesHandle):
     """Editing an instance with pixeldata regenerates the thumbnail.
 
     Detection is via file-level crc32c on instances with has_pixeldata=True, so any
     edit (even a tag-only edit) to such an instance triggers regen.
     """
-    study_uid, series_uid = seeded_series
-    thumb_uri, thumb_gen_before = _generate_thumbnail_for(
-        gcs_client, datastore_path, study_uid, series_uid
-    )
+    thumb_uri, thumb_gen_before = _generate_thumbnail(seeded_series)
 
-    with CODObject(
-        client=gcs_client,
-        datastore_path=datastore_path,
-        study_uid=study_uid,
-        series_uid=series_uid,
-        mode="e",
-    ) as cod:
+    with seeded_series.open(mode="e") as cod:
         target = next(iter(cod._get_instances(strict_sorting=False).values()))
         ds = pydicom3.dcmread(target.dicom_uri)
         ds.PatientName = "REDACTED^REGEN^TEST"
         ds.save_as(target.dicom_uri)
 
-    thumb_blob = storage.Blob.from_string(thumb_uri, client=gcs_client)
+    thumb_blob = storage.Blob.from_string(thumb_uri, client=seeded_series.client)
     thumb_blob.reload()
     assert (
         thumb_blob.generation != thumb_gen_before
     ), "thumbnail blob should have been rewritten (new GCS generation)"
 
-    with CODObject(
-        client=gcs_client,
-        datastore_path=datastore_path,
-        study_uid=study_uid,
-        series_uid=series_uid,
-        mode="r",
-    ) as cod:
+    with seeded_series.open(mode="r") as cod:
         assert cod._get_metadata_field("thumbnail") is not None

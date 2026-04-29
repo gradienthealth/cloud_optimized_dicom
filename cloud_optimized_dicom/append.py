@@ -25,6 +25,15 @@ class AppendResult(NamedTuple):
     errors: list[tuple[Instance, Exception]] = []
 
 
+class PackResult(NamedTuple):
+    """Result of `_pack_and_index`: the instances that successfully made it into
+    the tar, plus any (instance, exception) pairs that failed (only populated when
+    `tolerate_per_instance_errors=True`)."""
+
+    added: list[Instance]
+    errors: list[tuple[Instance, Exception]]
+
+
 class StateChange(NamedTuple):
     new: list[tuple[Instance, Optional[SeriesMetadata], Optional[str]]]
     same: list[tuple[Instance, Optional[SeriesMetadata], Optional[str]]]
@@ -503,7 +512,7 @@ def _pack_and_index(
     cod_object: "CODObject",
     instances: Iterable[Instance],
     tolerate_per_instance_errors: bool,
-) -> tuple[list[Instance], list[tuple[Instance, Exception]]]:
+) -> PackResult:
     """Append `instances` to `cod_object.tar_file_path` (opened in 'a' mode), then
     regenerate the sqlite index. Caller handles any pre-pack cleanup (e.g. removing
     the existing tar for a fresh repack).
@@ -514,10 +523,6 @@ def _pack_and_index(
             so the rest can proceed. If False (edit semantics), the first failure
             bubbles immediately — instances are already validated against disk so
             anything else would indicate a real desync.
-
-    Returns:
-        (added, errors): instances successfully packed, and (instance, exc) tuples
-        for those that failed when `tolerate_per_instance_errors=True`.
     """
     added: list[Instance] = []
     errors: list[tuple[Instance, Exception]] = []
@@ -533,7 +538,7 @@ def _pack_and_index(
                 errors.append((instance, e))
     _create_sqlite_index(cod_object)
     cod_object._tar_synced = False
-    return added, errors
+    return PackResult(added=added, errors=errors)
 
 
 def _create_or_append_tar(cod_object: "CODObject", instances_to_add: list[Instance]):
@@ -545,17 +550,17 @@ def _create_or_append_tar(cod_object: "CODObject", instances_to_add: list[Instan
         ValueError: if no instances were successfully added to the tar
     """
     assert len(instances_to_add) > 0, "No instances to add to tar"
-    instances_added_to_tar, errors = _pack_and_index(
+    pack = _pack_and_index(
         cod_object, instances_to_add, tolerate_per_instance_errors=True
     )
     # Edge case: no instances were successfully added to the tar
-    if len(instances_added_to_tar) == 0:
+    if len(pack.added) == 0:
         uri_str = "\n".join([instance.dicom_uri for instance in instances_to_add])
         raise ValueError(f"GRADIENT_STATE_LOGS:FAILED_TO_TAR_ALL_INSTANCES:{uri_str}")
     logger.info(
         f"GRADIENT_STATE_LOGS:POPULATED_TAR:{cod_object.tar_file_path} ({os.path.getsize(cod_object.tar_file_path)} bytes)"
     )
-    return instances_added_to_tar, errors
+    return pack.added, pack.errors
 
 
 def _create_sqlite_index(cod_object: "CODObject"):

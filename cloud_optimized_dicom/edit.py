@@ -52,36 +52,31 @@ class EditState:
             }
         )
 
+    def compute_pixeldata_changed(self, instances: dict[str, "Instance"]) -> bool:
+        """Did any instance with pixeldata get a new file-level crc32c since the
+        snapshot was taken? (Conservative: any byte-level change to a DICOM that
+        contains PixelData counts, even if only tags were edited.)"""
+        return any(
+            inst.crc32c() != self.snapshots[uid].crc32c
+            and self.snapshots[uid].has_pixeldata
+            for uid, inst in instances.items()
+        )
 
-def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
-    """Validate the instance set is unchanged since context enter, re-read each modified
-    DICOM from its local path, repack the tar, regenerate the sqlite index, refresh
-    per-instance metadata, and (optionally) regenerate the thumbnail.
 
-    Does NOT upload — that is _sync()'s job, which the caller invokes after this returns.
-
-    Raises:
-        EditSetChangedError: if any instance's local file has been deleted, or if the
-            instance UID set (or study/series UID) on disk no longer matches what was
-            loaded from metadata on context enter.
-    """
-    edit_state = cod_object._edit_state
-    assert edit_state is not None, (
-        "Edit-mode exit called without __enter__ having been called. "
-        "CODObject instances in mode='e' must be used as a context manager."
-    )
-
-    instances = cod_object._get_instances(strict_sorting=False)
-
-    # 1) existence check: user must not have deleted any local file
+def _assert_local_files_present(instances: dict[str, "Instance"]) -> None:
+    """Each instance's local file must still exist (the user can't `rm` a file
+    extracted into the edit-mode temp dir and expect the repack to silently skip it)."""
     for uid, instance in instances.items():
         if not os.path.exists(instance.dicom_uri):
             raise EditSetChangedError(
                 f"Instance {uid} local file missing on edit-mode exit: {instance.dicom_uri}"
             )
 
-    # 2) re-validate each instance from disk (recomputes crc32c, size, UIDs, has_pixeldata)
-    for uid, instance in instances.items():
+
+def _revalidate_instances_from_disk(instances: dict[str, "Instance"]) -> None:
+    """Clear cached per-instance fields and re-run `validate()` so crc32c, size,
+    has_pixeldata, and the three UIDs reflect whatever the user just wrote to disk."""
+    for instance in instances.values():
         instance._crc32c = None
         instance._size = None
         instance._instance_uid = None
@@ -91,8 +86,19 @@ def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
         instance._dicom_metadata = None
         instance.validate()
 
-    # 3) UID set must not have changed. Check per-instance UID against the metadata key
-    #    (hashed if cod_object.hashed_uids) and study/series UIDs against cod_object.
+
+def _assert_uid_set_unchanged(
+    cod_object: "CODObject",
+    edit_state: EditState,
+    instances: dict[str, "Instance"],
+) -> None:
+    """No instance UID may have changed, and the dict-key set must match the snapshot.
+
+    Per-instance: the instance's freshly-read UID must still equal the metadata key
+    it lives under (and study/series UIDs must still belong to this CODObject).
+    Set-level: nobody added or removed an instance — `mode='e'` blocks `append()`
+    so this is mostly a defensive check against direct `_metadata.instances` mutation.
+    """
     for uid, instance in instances.items():
         new_uid = instance.get_instance_uid(
             hashed=cod_object.hashed_uids, trust_hints_if_available=False
@@ -109,25 +115,19 @@ def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
     original_uids = set(edit_state.snapshots.keys())
     current_uids = set(instances.keys())
     if original_uids != current_uids:
-        # Can only happen if someone reached into _metadata.instances directly — mode='e'
-        # blocks append() so there's no public API that would do this. Defensive check.
         raise EditSetChangedError(
             f"Instance set changed during edit. "
             f"Added={current_uids - original_uids}, Removed={original_uids - current_uids}"
         )
 
-    # 4) detect pixeldata change (file-level crc32c delta on any instance with pixeldata)
-    edit_state.pixeldata_changed = any(
-        instance.crc32c() != edit_state.snapshots[uid].crc32c
-        and edit_state.snapshots[uid].has_pixeldata
-        for uid, instance in instances.items()
-    )
 
-    # 5) repack the tar from scratch (can't just overwrite entries — file sizes differ).
-    #    Delete the existing tar+index first so _pack_and_index starts fresh; the
-    #    tar_file_path property auto-recreates an empty tar on next access. Pass
-    #    tolerate_per_instance_errors=False — instances are already validated against
-    #    disk above, so any failure here is a real desync that should hang the lock.
+def _repack_tar_and_index(
+    cod_object: "CODObject", instances: dict[str, "Instance"]
+) -> None:
+    """Delete the existing local tar + sqlite index, then re-pack from the (already-
+    validated) instances. Strict — any per-instance failure bubbles, since instances
+    are known-good on disk by the time we get here, so anything else is a real desync.
+    """
     if os.path.exists(cod_object.tar_file_path):
         os.remove(cod_object.tar_file_path)
     if os.path.exists(cod_object.index_file_path):
@@ -138,14 +138,9 @@ def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
         f"({os.path.getsize(cod_object.tar_file_path)} bytes)"
     )
 
-    # 6) rebuild per-instance DICOM metadata from the freshly-repacked tar. After
-    #    _pack_and_index, each instance's dicom_uri points at the local tar and
-    #    _byte_offsets reflect the new layout, so extract_metadata reads from the
-    #    correct place. Bulk-data refs must use the REMOTE per-instance URI, not the
-    #    local tar path — _refresh_per_instance_metadata handles that.
-    _refresh_per_instance_metadata(cod_object, instances.values())
 
-    # 7) regenerate the thumbnail if one exists and pixeldata changed.
+def _maybe_regen_thumbnail(cod_object: "CODObject", edit_state: EditState) -> None:
+    """Regenerate the thumbnail iff one exists and pixeldata changed."""
     thumb_meta = cod_object._get_metadata_field("thumbnail")
     if thumb_meta is not None and edit_state.pixeldata_changed:
         thumbnail_size = thumb_meta.get("size", DEFAULT_SIZE)
@@ -155,8 +150,38 @@ def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
             thumbnail_size=thumbnail_size,
         )
 
-    # 8) flip sync flags — tar and metadata have both been rewritten locally and
-    #    need to be uploaded. (_metadata_synced must be flipped AFTER the thumbnail
-    #    step, since generate_thumbnail also flips it to False.)
+
+def _validate_and_repack_for_edit(cod_object: "CODObject") -> None:
+    """Validate the instance set is unchanged since context enter, re-read each
+    modified DICOM from its local path, repack the tar, regenerate the sqlite
+    index, refresh per-instance metadata, and (optionally) regenerate the thumbnail.
+
+    Does NOT upload — that is _sync()'s job, which the caller invokes after this returns.
+
+    Raises:
+        EditSetChangedError: if any instance's local file has been deleted, or if the
+            instance UID set (or study/series UID) on disk no longer matches what was
+            loaded from metadata on context enter.
+    """
+    edit_state = cod_object._edit_state
+    assert edit_state is not None, (
+        "Edit-mode exit called without __enter__ having been called. "
+        "CODObject instances in mode='e' must be used as a context manager."
+    )
+
+    instances = cod_object._get_instances(strict_sorting=False)
+
+    _assert_local_files_present(instances)
+    _revalidate_instances_from_disk(instances)
+    _assert_uid_set_unchanged(cod_object, edit_state, instances)
+    edit_state.pixeldata_changed = edit_state.compute_pixeldata_changed(instances)
+
+    _repack_tar_and_index(cod_object, instances)
+    # bulk-data refs in the rebuilt metadata must use the REMOTE per-instance URI,
+    # not the local tar path that _pack_and_index just set as instance.dicom_uri.
+    _refresh_per_instance_metadata(cod_object, instances.values())
+    _maybe_regen_thumbnail(cod_object, edit_state)
+
+    # tar and metadata have both been rewritten locally; flag for upload by _sync()
     cod_object._tar_synced = False
     cod_object._metadata_synced = False
