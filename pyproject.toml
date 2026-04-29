@@ -32,7 +32,6 @@ dependencies = [
     "zstandard>=0.24.0",
     # Floor ensures the urllib3 2.6+ Gzip/Brotli decoder fix from upstream PR #495 is installed.
     "google-resumable-media>=2.8.1",
-    "urllib3>=2.0.0",
 ]
 
 [project.optional-dependencies]
