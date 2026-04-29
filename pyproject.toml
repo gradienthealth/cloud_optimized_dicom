@@ -18,16 +18,16 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "smart-open==7.0.4",
+    "smart-open==7.6.0",
     "ratarmountcore==0.10.4",
     "numpy",
     "google-cloud-storage==3.10.1",
     "filetype==1.2.0",
-    "pylibjpeg==2.0.1",
-    "pylibjpeg-libjpeg==2.3.0",
-    "pylibjpeg-openjpeg==2.4.0",
+    "pylibjpeg==2.1.0",
+    "pylibjpeg-libjpeg==2.4.0",
+    "pylibjpeg-openjpeg==2.5.0",
     "pydicom3>=3.1.0",
-    "opencv-python-headless==4.11.0.86",
+    "opencv-python-headless==4.13.0.92",
     "ffmpeg-python==0.2.0",
     "zstandard>=0.24.0",
     # Floor ensures the urllib3 2.6+ Gzip/Brotli decoder fix from upstream PR #495 is installed.
@@ -36,7 +36,7 @@ dependencies = [
 
 [project.optional-dependencies]
 beam = [
-    "apache-beam[gcp]==2.63.0",
+    "apache-beam[gcp]==2.73.0",
 ]
 test = [
     "pydicom==2.3.0",
@@ -49,7 +49,7 @@ dev = [
     "pre-commit>=3.0.0",
     "pydicom==2.3.0",
     "matplotlib",
-    "apache-beam[gcp]==2.63.0",
+    "apache-beam[gcp]==2.73.0",
     "pytest>=8.0.0",
     "pytest-mock>=3.12.0",
     "pytest-xdist>=3.6.0",
