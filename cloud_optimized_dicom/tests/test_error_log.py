@@ -8,7 +8,7 @@ from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.errors import ErrorLogExistsError
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
-ERROR_LOG_DATASTORE_PATH = "gs://siskin-172863-temp/cod_error_log_tests/dicomweb"
+ERROR_LOG_DATASTORE_BASE = "gs://siskin-172863-temp/cod_error_log_tests"
 ERROR_LOG_STUDY_UID = "1.2.3.4.5.6.7.8.9.10"
 ERROR_LOG_SERIES_UID = "1.2.3.4.5.6.7.8.9.10"
 
@@ -18,9 +18,10 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture
-def error_log_datastore_path(gcs_client: storage.Client) -> str:
-    delete_uploaded_blobs(gcs_client, [ERROR_LOG_DATASTORE_PATH])
-    return ERROR_LOG_DATASTORE_PATH
+def error_log_datastore_path(gcs_client: storage.Client, worker_namespace: str) -> str:
+    path = f"{ERROR_LOG_DATASTORE_BASE}/{worker_namespace}/dicomweb"
+    delete_uploaded_blobs(gcs_client, [path])
+    return path
 
 
 def test_error_log_upload(gcs_client: storage.Client, error_log_datastore_path: str):
