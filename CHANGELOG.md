@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v1.0.0...v1.1.0) (2026-04-29)
+
+
+### Features
+
+* **PROC-1548:** add edit mode for in-place DICOM modification ([#102](https://github.com/gradienthealth/cloud_optimized_dicom/issues/102)) ([4375317](https://github.com/gradienthealth/cloud_optimized_dicom/commit/4375317c69d62eb2cd929236072257944b38e9b3))
+
 ## [1.0.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v0.2.5...v1.0.0) (2026-04-21)
 
 
