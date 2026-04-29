@@ -125,11 +125,12 @@ A **lock** is just a file with a specific name (`.gradient.lock`).
 - `mode="r"` -> Read-only. No lock is acquired. Write operations will raise a `WriteOperationInReadModeError`.
 - `mode="w"` -> Write (overwrite). A lock is acquired automatically. Starts fresh with empty metadata/tar locally. Overwrites remote tar/metadata on sync.
 - `mode="a"` -> Append. A lock is acquired automatically. Fetches remote tar if it exists. Appends to existing tar/metadata on sync.
+- `mode="e"` -> Edit. A lock is acquired automatically. Requires the series to already exist (raises `CODObjectNotFoundError` otherwise). On context enter, fetches and extracts the tar so each `instance.dicom_uri` points at a local `.dcm` the caller can rewrite in place. On context exit, validates the instance UID set is unchanged, repacks the tar, rebuilds the sqlite index + series metadata, regenerates the thumbnail if pixel data changed, and uploads. Cannot add or remove instances (use `mode="a"` or `mode="w"` for that).
 
-Because `mode="w"` and `mode="a"` raise an error if the lock cannot be acquired (already exists), it is guaranteed that no other writing-enabled `CODObject` will be created on the same series while one already exists, thus avoiding the race condition where two workers attempt to create CODObjects with the same study/series UIDs.
+Because `mode="w"`, `mode="a"`, and `mode="e"` raise an error if the lock cannot be acquired (already exists), it is guaranteed that no other writing-enabled `CODObject` will be created on the same series while one already exists, thus avoiding the race condition where two workers attempt to create CODObjects with the same study/series UIDs.
 
 ### When is a lock necessary?
-When the operation you are attempting involves actually modifying the COD datastore itself (example: ingesting new files), use `mode="w"` or `mode="a"`.
+When the operation you are attempting involves actually modifying the COD datastore itself (example: ingesting new files), use `mode="w"` or `mode="a"`. To modify the bytes of existing instances in place (example: applying PHI redactions), use `mode="e"`.
 
 For read-only operations like exporting or reading data from COD, use `mode="r"` so your operation is not blocked if another process is writing to the datastore.
 

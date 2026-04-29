@@ -483,14 +483,14 @@ class CODObject:
 
     @public_method(write_only=True)
     def sync(self, tar_storage_class: str = STANDARD_STORAGE_CLASS):
-        """Deprecated. Sync is now called automatically on context exit for mode='w' or mode='a'.
+        """Deprecated. Sync is now called automatically on context exit for mode='w', mode='a', or mode='e'.
 
         Args:
             tar_storage_class: str - Storage class to use for the tar file (default: `STANDARD`).
         """
         warnings.warn(
             "Explicit sync() calls are deprecated. sync() is now called automatically "
-            "on context exit for mode='w' or mode='a'.",
+            "on context exit for mode='w', mode='a', or mode='e'.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -610,7 +610,7 @@ class CODObject:
             # Generating thumbnails is a write operation - require write mode
             if self.mode == "r":
                 raise WriteOperationInReadModeError(
-                    "Cannot generate thumbnail in read mode. Use mode='w' or mode='a', "
+                    "Cannot generate thumbnail in read mode. Use mode='w', mode='a', or mode='e', "
                     "or set generate_if_missing=False to only fetch existing thumbnails."
                 )
             generate_thumbnail(
