@@ -28,7 +28,7 @@ from cloud_optimized_dicom.errors import (
 )
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
-from cloud_optimized_dicom.redact import FillValue, apply_redactions
+from cloud_optimized_dicom.redact import FillValue, redact_pixel_data
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.thumbnail import (
     DEFAULT_SIZE,
@@ -456,8 +456,9 @@ class CODObject:
         Must be called inside a `mode='e'` context. Each `BoundingBox` is
         applied to its `applies_to` instance UIDs (and the listed `frames`,
         or all frames if `frames is None`); affected instances are
-        re-encoded with their original transfer syntax. An audit record is
-        appended to series-level `metadata_fields["redactions"]`.
+        re-encoded as JPEG 2000 Lossless regardless of source transfer
+        syntax. An audit record is appended to series-level
+        `metadata_fields["redactions"]`.
 
         Hard-fails before any disk write if any of the following hold:
 
@@ -465,7 +466,6 @@ class CODObject:
         * A `BoundingBox.frames` index is out of range for its instance.
         * A `BoundingBox` is not fully contained in the target frame's
           `(Rows, Columns)`.
-        * The original transfer syntax has no usable encoder installed.
         * `fill_value` is incompatible with the target's
           `PhotometricInterpretation` / `SamplesPerPixel`.
 
@@ -474,10 +474,12 @@ class CODObject:
             reviewer: Identifier of the human reviewer who requested the
                 redaction; recorded verbatim in the audit trail.
             fill_value: Pixel value used to fill each box. If None, defaults
-                to whatever displays as black for the dataset's
-                PhotometricInterpretation (e.g. 0 for MONOCHROME2).
+                to whatever displays as black for the (post-decode)
+                PhotometricInterpretation: 0 for MONOCHROME2,
+                2**BitsStored - 1 for MONOCHROME1, (0, 0, 0) for any
+                color photometric interpretation.
         """
-        apply_redactions(self, boxes, reviewer=reviewer, fill_value=fill_value)
+        redact_pixel_data(self, boxes, reviewer=reviewer, fill_value=fill_value)
 
     def _sync(self, tar_storage_class: str = STANDARD_STORAGE_CLASS):
         """Private: Sync tar+index and/or metadata to GCS, as needed.

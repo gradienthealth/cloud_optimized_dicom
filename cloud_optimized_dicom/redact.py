@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
 import pydicom3
-from google.cloud import storage
 from pydicom3.uid import JPEG2000Lossless
 
 from cloud_optimized_dicom.bounding_box import BoundingBox
@@ -53,35 +52,6 @@ FillValue = Union[int, tuple[int, ...]]
 
 
 def redact_pixel_data(
-    client: storage.Client,
-    datastore_path: str,
-    study_uid: str,
-    series_uid: str,
-    boxes: list[BoundingBox],
-    *,
-    reviewer: str,
-    hashed_uids: bool = False,
-    fill_value: Optional[FillValue] = None,
-) -> None:
-    """Open the target series in mode='e' and apply pixel-data blackout boxes.
-
-    See `CODObject.redact_pixel_data` for the per-call validation rules. On any
-    failure, the lock is released and no remote changes are uploaded.
-    """
-    from cloud_optimized_dicom.cod_object import CODObject
-
-    with CODObject(
-        client=client,
-        datastore_path=datastore_path,
-        study_uid=study_uid,
-        series_uid=series_uid,
-        mode="e",
-        hashed_uids=hashed_uids,
-    ) as cod:
-        apply_redactions(cod, boxes, reviewer=reviewer, fill_value=fill_value)
-
-
-def apply_redactions(
     cod_object: "CODObject",
     boxes: list[BoundingBox],
     *,

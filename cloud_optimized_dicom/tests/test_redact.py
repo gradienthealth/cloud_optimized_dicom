@@ -3,8 +3,8 @@
 Covers: redaction works end-to-end, output is normalized to JPEG 2000
 Lossless with a stable SOPInstanceUID, and the API is mode-guarded.
 Comprehensive edge-case coverage (audit trail accumulation, multiframe
-frame-selection, hard-error paths, free-function entry point) lives in a
-follow-up PR stacked on top of this one.
+frame-selection, hard-error paths) lives in a follow-up PR stacked on
+top of this one.
 """
 
 import numpy as np
@@ -16,19 +16,16 @@ from cloud_optimized_dicom.errors import WriteOperationInReadModeError
 from cloud_optimized_dicom.tests.conftest import SeriesHandle
 
 
-def _read_remote_pixel_array(handle: SeriesHandle, instance_uid: str) -> np.ndarray:
-    """Pull the series tar fresh from GCS, return the pixel_array of the named instance."""
-    with handle.open(mode="r") as cod:
-        cod.extract_locally()
-        instance = cod._get_instance(instance_uid)
-        return pydicom3.dcmread(instance.dicom_uri).pixel_array
-
-
 def _read_remote_dataset(handle: SeriesHandle, instance_uid: str) -> pydicom3.Dataset:
+    """Pull the series tar fresh from GCS and return the named instance as a Dataset."""
     with handle.open(mode="r") as cod:
         cod.extract_locally()
         instance = cod._get_instance(instance_uid)
         return pydicom3.dcmread(instance.dicom_uri)
+
+
+def _read_remote_pixel_array(handle: SeriesHandle, instance_uid: str) -> np.ndarray:
+    return _read_remote_dataset(handle, instance_uid).pixel_array
 
 
 def test_redact_single_frame_happy_path(seeded_series: SeriesHandle):
