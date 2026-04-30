@@ -15,6 +15,8 @@ in practice nothing's changing format for already-stored data.
 
 import dataclasses
 import datetime
+import os
+import tempfile
 from collections import defaultdict
 from typing import TYPE_CHECKING, Optional, Union
 
@@ -69,23 +71,30 @@ def redact_pixel_data(
     instances = cod_object._get_instances(strict_sorting=False)
     redactions_by_uid = _group_by_uid(redactions, instances)
 
-    # Pre-flight: read each affected instance's header (no pixel decode) and
-    # validate every redaction against it. Raises before any pixel data is
-    # decoded or written.
+    # Pre-flight: read each affected instance once with PixelData deferred,
+    # validate against the header, and stash the dataset for the apply pass
+    # so we don't dcmread the file twice. defer_size keeps each Dataset's
+    # in-memory footprint at header-only until the apply step calls
+    # ds.pixel_array, which avoids holding all instances' decoded pixel
+    # data simultaneously when N is large.
+    datasets: dict[str, pydicom3.Dataset] = {}
     for uid, uid_redactions in redactions_by_uid.items():
-        ds = pydicom3.dcmread(instances[uid].dicom_uri, stop_before_pixels=True)
+        ds = pydicom3.dcmread(instances[uid].dicom_uri, defer_size=1024)
         _validate_redactions_against_header(uid, ds, uid_redactions, fill_value)
+        datasets[uid] = ds
 
-    # Apply pass.
-    now = datetime.datetime.now(datetime.timezone.utc)
+    # Apply pass. Drop each dataset after its instance is rewritten so the
+    # decoded pixel data and any other materialized tags are eligible for GC.
     for uid, uid_redactions in redactions_by_uid.items():
         _apply_to_instance(
             instance=instances[uid],
+            ds=datasets[uid],
             redactions=uid_redactions,
             fill_value=fill_value,
-            now=now,
         )
+        del datasets[uid]
 
+    now = datetime.datetime.now(datetime.timezone.utc)
     _append_audit_record(cod_object, redactions, reviewer=reviewer, now=now)
 
 
@@ -175,11 +184,10 @@ def _derive_fill_value(samples: int, pi: str, bits_stored: int) -> FillValue:
 
 def _apply_to_instance(
     instance: "Instance",
+    ds: pydicom3.Dataset,
     redactions: list[PixelRedaction],
     fill_value: Optional[FillValue],
-    now: datetime.datetime,
 ) -> None:
-    ds = pydicom3.dcmread(instance.dicom_uri)
     original_pi = str(ds.PhotometricInterpretation)
     arr = ds.pixel_array
 
@@ -204,33 +212,49 @@ def _apply_to_instance(
     else:
         framed = arr
 
-    fv = (
-        fill_value
-        if fill_value is not None
-        else _derive_fill_value(samples, effective_pi, bits_stored)
-    )
+    if fill_value is None:
+        fill_value = _derive_fill_value(samples, effective_pi, bits_stored)
 
     for r in redactions:
         box = r.box
         frames = r.frames if r.frames is not None else range(num_frames)
         for f in frames:
-            framed[f, box.y : box.y + box.height, box.x : box.x + box.width] = fv
+            framed[f, box.y : box.y + box.height, box.x : box.x + box.width] = (
+                fill_value
+            )
 
-    _stamp_deid_tags(ds, now)
+    _stamp_deid_tags(ds)
 
     # Always normalize to JPEG 2000 Lossless (see module docstring for why).
     # Lossless leaves SOPInstanceUID alone, which mode='e' set-changed validation
     # relies on; pydicom only auto-regenerates the UID for lossy compresses.
     ds.compress(JPEG2000Lossless, arr=arr)
-    ds.save_as(instance.dicom_uri)
+
+    # Write to a sibling temp file then atomically rename. pydicom's save_as
+    # truncates the destination before iterating tags to write; if the
+    # destination is the same path we read from with defer_size, any tag
+    # pydicom hasn't materialized yet (e.g., a private tag above the defer
+    # threshold) would fail to deferred-read. Writing to a side path keeps
+    # the source intact until the rename.
+    target = instance.dicom_uri
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target), suffix=".dcm")
+    os.close(fd)
+    ds.save_as(tmp)
+    os.replace(tmp, target)
 
 
-def _stamp_deid_tags(ds: pydicom3.Dataset, now: datetime.datetime) -> None:
+def _stamp_deid_tags(ds: pydicom3.Dataset) -> None:
     """Mark the instance as having had its pixel data scrubbed of PHI.
 
-    Three standard tags get touched. Each one is what downstream consumers
+    Two standard tags get touched. Each one is what downstream consumers
     (PACS, research collaborators, compliance audits) look at to decide
     whether the instance is safe to use.
+
+    InstanceCreationDate/Time are deliberately left alone: those describe
+    when the SOP instance was originally created (acquisition/reconstruction
+    time, of clinical interest) and overwriting destroys that signal. The
+    redaction timestamp is preserved in the audit record under
+    metadata_fields["redactions"] instead.
     """
 
     # (0028,0301) BurnedInAnnotation: "is there PHI burned into the pixels?"
@@ -252,13 +276,6 @@ def _stamp_deid_tags(ds: pydicom3.Dataset, now: datetime.datetime) -> None:
     seq = list(getattr(ds, "DeidentificationMethodCodeSequence", []) or [])
     seq.append(method_item)
     ds.DeidentificationMethodCodeSequence = seq
-
-    # (0008,0012)/(0008,0013) InstanceCreationDate/Time: stamp the instance
-    # with the redaction time. Visible in any DICOM viewer (so a reviewer can
-    # see "this was modified") and used by downstream caches/dedupers that
-    # key on freshness.
-    ds.InstanceCreationDate = now.strftime("%Y%m%d")
-    ds.InstanceCreationTime = now.strftime("%H%M%S")
 
 
 def _append_audit_record(
