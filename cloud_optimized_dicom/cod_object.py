@@ -14,6 +14,7 @@ from ratarmountcore.mountsource.factory import open_mount_source as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.append import append
+from cloud_optimized_dicom.bounding_box import PixelRedaction
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.edit import EditState, _validate_and_repack_for_edit
 from cloud_optimized_dicom.errors import (
@@ -27,6 +28,7 @@ from cloud_optimized_dicom.errors import (
 )
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.locker import CODLocker
+from cloud_optimized_dicom.redact import FillValue, redact_pixel_data
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.thumbnail import (
     DEFAULT_SIZE,
@@ -440,6 +442,44 @@ class CODObject:
             max_series_size=max_series_size,
             compress=compress,
         )
+
+    @public_method(write_only=True)
+    def redact_pixel_data(
+        self,
+        redactions: list[PixelRedaction],
+        *,
+        reviewer: str,
+        fill_value: Optional[FillValue] = None,
+    ) -> None:
+        """Black out pixel-data regions on instances in this series.
+
+        Must be called inside a `mode='e'` context. Each `PixelRedaction` is
+        applied to its `applies_to` instance UIDs (and the listed `frames`,
+        or all frames if `frames is None`); affected instances are
+        re-encoded as JPEG 2000 Lossless regardless of source transfer
+        syntax. An audit record is appended to series-level
+        `metadata_fields["redactions"]`.
+
+        Hard-fails before any disk write if any of the following hold:
+
+        * A `PixelRedaction.applies_to` UID is not present in this series.
+        * A `PixelRedaction.frames` index is out of range for its instance.
+        * A `PixelRedaction.box` is not fully contained in the target
+          frame's `(Rows, Columns)`.
+        * `fill_value` is incompatible with the target's
+          `PhotometricInterpretation` / `SamplesPerPixel`.
+
+        Args:
+            redactions: Redactions to apply.
+            reviewer: Identifier of the human reviewer who requested the
+                redaction; recorded verbatim in the audit trail.
+            fill_value: Pixel value used to fill each box. If None, defaults
+                to whatever displays as black for the (post-decode)
+                PhotometricInterpretation: 0 for MONOCHROME2,
+                2**BitsStored - 1 for MONOCHROME1, (0, 0, 0) for any
+                color photometric interpretation.
+        """
+        redact_pixel_data(self, redactions, reviewer=reviewer, fill_value=fill_value)
 
     def _sync(self, tar_storage_class: str = STANDARD_STORAGE_CLASS):
         """Private: Sync tar+index and/or metadata to GCS, as needed.
