@@ -58,3 +58,24 @@ class InstanceValidationError(CODError):
 class EditSetChangedError(CODError):
     """Exception raised on exit from mode='e' when the instance set changed during
     the edit (a DICOM file was deleted/moved/renamed, or its UIDs were mutated)."""
+
+
+class RedactionError(CODError):
+    """Base class for pixel-data redaction failures (see redact.py)."""
+
+
+class RedactionTargetMissingError(RedactionError):
+    """A bbox.applies_to UID does not exist in the target series."""
+
+
+class RedactionFrameOutOfRangeError(RedactionError):
+    """A bbox.frames index is out of range for its target instance."""
+
+
+class RedactionBoxOutOfBoundsError(RedactionError):
+    """A bbox is not fully contained in (Rows, Columns) of its target frame."""
+
+
+class RedactionFillValueError(RedactionError):
+    """The provided fill_value is incompatible with the target's PhotometricInterpretation
+    or SamplesPerPixel."""
