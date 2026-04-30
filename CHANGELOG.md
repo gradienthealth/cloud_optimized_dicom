@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v1.1.1...v1.2.0) (2026-04-30)
+
+
+### Features
+
+* **PROC-1576:** add BoundingBox and PixelRedaction dataclasses ([#126](https://github.com/gradienthealth/cloud_optimized_dicom/issues/126)) ([45d2a70](https://github.com/gradienthealth/cloud_optimized_dicom/commit/45d2a705400bdd3d770250a7b95768e3a5fe4d79))
+* **PROC-1576:** redact pixel data via bounding boxes in edit mode ([#125](https://github.com/gradienthealth/cloud_optimized_dicom/issues/125)) ([097981e](https://github.com/gradienthealth/cloud_optimized_dicom/commit/097981ea4a5f912fbeb472158177d62c448d7428))
+
 ## [1.1.1](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v1.1.0...v1.1.1) (2026-04-29)
 
 
