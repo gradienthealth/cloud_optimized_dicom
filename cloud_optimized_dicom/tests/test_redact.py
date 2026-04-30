@@ -11,7 +11,7 @@ import numpy as np
 import pydicom3
 import pytest
 
-from cloud_optimized_dicom.bounding_box import BoundingBox
+from cloud_optimized_dicom.bounding_box import BoundingBox, PixelRedaction
 from cloud_optimized_dicom.errors import WriteOperationInReadModeError
 from cloud_optimized_dicom.tests.conftest import SeriesHandle
 
@@ -38,10 +38,13 @@ def test_redact_single_frame_happy_path(seeded_series: SeriesHandle):
     before_target = _read_remote_pixel_array(seeded_series, target_uid)
     before_untouched = _read_remote_pixel_array(seeded_series, untouched_uid)
 
-    box = BoundingBox(x=10, y=20, width=30, height=40, applies_to=[target_uid])
+    redaction = PixelRedaction(
+        box=BoundingBox(x=10, y=20, width=30, height=40),
+        applies_to=[target_uid],
+    )
 
     with seeded_series.open(mode="e") as cod:
-        cod.redact_pixel_data([box], reviewer="reviewer-a@gradienthealth.io")
+        cod.redact_pixel_data([redaction], reviewer="reviewer-a@gradienthealth.io")
 
     after_target = _read_remote_pixel_array(seeded_series, target_uid)
     after_untouched = _read_remote_pixel_array(seeded_series, untouched_uid)
@@ -61,19 +64,21 @@ def test_redact_single_frame_happy_path(seeded_series: SeriesHandle):
 def test_redact_outputs_j2k_lossless_with_stable_sop_uid(
     seeded_series: SeriesHandle,
 ):
-    """Output TS is fixed at JPEG 2000 Lossless and SOPInstanceUID is stable
-    across the redact (regression: pydicom auto-regenerates the SOP UID for
-    lossy compress() calls, which would trip mode='e' set-changed validation;
-    we pass generate_instance_uid=False to suppress that)."""
+    """Output TS is JPEG 2000 Lossless and SOPInstanceUID is stable across the
+    redact. If the implementation ever switches to a lossy transfer syntax,
+    pydicom would auto-regenerate the SOP UID and trip mode='e' set-changed
+    validation; this test guards that invariant."""
     with seeded_series.open(mode="r") as cod:
         target_uid = next(iter(cod._get_instances(strict_sorting=False)))
 
     pre = _read_remote_dataset(seeded_series, target_uid)
     sop_before = pre.SOPInstanceUID
 
-    box = BoundingBox(x=0, y=0, width=10, height=10, applies_to=[target_uid])
+    redaction = PixelRedaction(
+        box=BoundingBox(x=0, y=0, width=10, height=10), applies_to=[target_uid]
+    )
     with seeded_series.open(mode="e") as cod:
-        cod.redact_pixel_data([box], reviewer="ts-test@gradienthealth.io")
+        cod.redact_pixel_data([redaction], reviewer="ts-test@gradienthealth.io")
 
     post = _read_remote_dataset(seeded_series, target_uid)
     assert str(post.file_meta.TransferSyntaxUID) == "1.2.840.10008.1.2.4.90"
@@ -84,6 +89,8 @@ def test_redact_in_read_mode_raises(seeded_series: SeriesHandle):
     """The public_method(write_only=True) decorator blocks read-mode calls."""
     with seeded_series.open(mode="r") as cod:
         target_uid = next(iter(cod._get_instances(strict_sorting=False)))
-        box = BoundingBox(x=0, y=0, width=5, height=5, applies_to=[target_uid])
+        redaction = PixelRedaction(
+            box=BoundingBox(x=0, y=0, width=5, height=5), applies_to=[target_uid]
+        )
         with pytest.raises(WriteOperationInReadModeError):
-            cod.redact_pixel_data([box], reviewer="r")
+            cod.redact_pixel_data([redaction], reviewer="r")

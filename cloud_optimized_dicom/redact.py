@@ -1,6 +1,6 @@
 """Pixel-data redaction via mode='e'.
 
-Reviewer-supplied bounding boxes are blacked out in each target instance's
+Reviewer-supplied redactions are blacked out in each target instance's
 PixelData, then the instance is re-encoded as JPEG 2000 Lossless. An audit
 record is appended to series-level metadata_fields["redactions"] so the
 action is traceable later.
@@ -13,6 +13,7 @@ hard dependency, and (c) matches what append.py already does on ingest, so
 in practice nothing's changing format for already-stored data.
 """
 
+import dataclasses
 import datetime
 from collections import defaultdict
 from typing import TYPE_CHECKING, Optional, Union
@@ -21,7 +22,7 @@ import numpy as np
 import pydicom3
 from pydicom3.uid import JPEG2000Lossless
 
-from cloud_optimized_dicom.bounding_box import BoundingBox
+from cloud_optimized_dicom.bounding_box import PixelRedaction
 from cloud_optimized_dicom.errors import (
     RedactionBoxOutOfBoundsError,
     RedactionFillValueError,
@@ -53,7 +54,7 @@ FillValue = Union[int, tuple[int, ...]]
 
 def redact_pixel_data(
     cod_object: "CODObject",
-    boxes: list[BoundingBox],
+    redactions: list[PixelRedaction],
     *,
     reviewer: str,
     fill_value: Optional[FillValue] = None,
@@ -66,47 +67,47 @@ def redact_pixel_data(
         )
 
     instances = cod_object._get_instances(strict_sorting=False)
-    boxes_by_uid = _group_boxes_by_uid(boxes, instances)
+    redactions_by_uid = _group_by_uid(redactions, instances)
 
     # Pre-flight: read each affected instance's header (no pixel decode) and
-    # validate every box against it. Raises before any pixel data is decoded
-    # or written.
-    for uid, uid_boxes in boxes_by_uid.items():
+    # validate every redaction against it. Raises before any pixel data is
+    # decoded or written.
+    for uid, uid_redactions in redactions_by_uid.items():
         ds = pydicom3.dcmread(instances[uid].dicom_uri, stop_before_pixels=True)
-        _validate_box_set_against_header(uid, ds, uid_boxes, fill_value)
+        _validate_redactions_against_header(uid, ds, uid_redactions, fill_value)
 
     # Apply pass.
     now = datetime.datetime.now(datetime.timezone.utc)
-    for uid, uid_boxes in boxes_by_uid.items():
+    for uid, uid_redactions in redactions_by_uid.items():
         _apply_to_instance(
             instance=instances[uid],
-            boxes=uid_boxes,
+            redactions=uid_redactions,
             fill_value=fill_value,
             now=now,
         )
 
-    _append_audit_record(cod_object, boxes, reviewer=reviewer, now=now)
+    _append_audit_record(cod_object, redactions, reviewer=reviewer, now=now)
 
 
-def _group_boxes_by_uid(
-    boxes: list[BoundingBox], instances: dict
-) -> dict[str, list[BoundingBox]]:
-    grouped: dict[str, list[BoundingBox]] = defaultdict(list)
-    for box in boxes:
-        for uid in box.applies_to:
+def _group_by_uid(
+    redactions: list[PixelRedaction], instances: dict
+) -> dict[str, list[PixelRedaction]]:
+    grouped: dict[str, list[PixelRedaction]] = defaultdict(list)
+    for r in redactions:
+        for uid in r.applies_to:
             if uid not in instances:
                 raise RedactionTargetMissingError(
-                    f"Bounding box targets instance {uid!r} which is not in the series. "
+                    f"Redaction targets instance {uid!r} which is not in the series. "
                     f"(known: {sorted(instances.keys())})"
                 )
-            grouped[uid].append(box)
+            grouped[uid].append(r)
     return grouped
 
 
-def _validate_box_set_against_header(
+def _validate_redactions_against_header(
     uid: str,
     ds: pydicom3.Dataset,
-    boxes: list[BoundingBox],
+    redactions: list[PixelRedaction],
     fill_value: Optional[FillValue],
 ) -> None:
     rows = int(ds.Rows)
@@ -117,7 +118,8 @@ def _validate_box_set_against_header(
 
     _validate_fill_value(uid, fill_value, samples, photometric)
 
-    for box in boxes:
+    for r in redactions:
+        box = r.box
         if box.x < 0 or box.y < 0 or box.width <= 0 or box.height <= 0:
             raise RedactionBoxOutOfBoundsError(
                 f"Instance {uid}: box {box} has non-positive width/height "
@@ -127,7 +129,7 @@ def _validate_box_set_against_header(
             raise RedactionBoxOutOfBoundsError(
                 f"Instance {uid}: box {box} not contained in frame ({cols}x{rows})"
             )
-        frames = box.frames if box.frames is not None else range(num_frames)
+        frames = r.frames if r.frames is not None else range(num_frames)
         for f in frames:
             if f < 0 or f >= num_frames:
                 raise RedactionFrameOutOfRangeError(
@@ -173,7 +175,7 @@ def _derive_fill_value(samples: int, pi: str, bits_stored: int) -> FillValue:
 
 def _apply_to_instance(
     instance: "Instance",
-    boxes: list[BoundingBox],
+    redactions: list[PixelRedaction],
     fill_value: Optional[FillValue],
     now: datetime.datetime,
 ) -> None:
@@ -208,23 +210,41 @@ def _apply_to_instance(
         else _derive_fill_value(samples, effective_pi, bits_stored)
     )
 
-    for box in boxes:
-        frames = box.frames if box.frames is not None else range(num_frames)
+    for r in redactions:
+        box = r.box
+        frames = r.frames if r.frames is not None else range(num_frames)
         for f in frames:
             framed[f, box.y : box.y + box.height, box.x : box.x + box.width] = fv
 
     _stamp_deid_tags(ds, now)
 
-    # Always normalize to JPEG 2000 Lossless. generate_instance_uid=False keeps
-    # SOPInstanceUID stable so mode='e' set-changed validation doesn't trip
-    # (pydicom would otherwise mint a fresh UID for any lossy encode).
-    ds.compress(JPEG2000Lossless, arr=arr, generate_instance_uid=False)
+    # Always normalize to JPEG 2000 Lossless (see module docstring for why).
+    # Lossless leaves SOPInstanceUID alone, which mode='e' set-changed validation
+    # relies on; pydicom only auto-regenerates the UID for lossy compresses.
+    ds.compress(JPEG2000Lossless, arr=arr)
     ds.save_as(instance.dicom_uri)
 
 
 def _stamp_deid_tags(ds: pydicom3.Dataset, now: datetime.datetime) -> None:
+    """Mark the instance as having had its pixel data scrubbed of PHI.
+
+    Three standard tags get touched. Each one is what downstream consumers
+    (PACS, research collaborators, compliance audits) look at to decide
+    whether the instance is safe to use.
+    """
+
+    # (0028,0301) BurnedInAnnotation: "is there PHI burned into the pixels?"
+    # Downstream tools gate sharing/release on this flag. After we redact, the
+    # answer is "NO"; without setting it, consumers continue to assume worst-
+    # case and the redaction has no externally-observable effect.
     ds.BurnedInAnnotation = "NO"
 
+    # (0012,0064) DeidentificationMethodCodeSequence: a list of coded entries
+    # from CID 7050 documenting *which* de-id methods ran. Code 113101 ("Clean
+    # Pixel Data Option") is the standard DICOM PS3.16 entry for what we just
+    # did. Required to claim Basic Confidentiality Profile compliance.
+    # Append rather than overwrite: upstream text/metadata de-id may have
+    # already added entries we mustn't clobber.
     method_item = pydicom3.Dataset()
     method_item.CodeValue = _DEID_METHOD_CODE
     method_item.CodingSchemeDesignator = _DEID_METHOD_DESIGNATOR
@@ -233,13 +253,17 @@ def _stamp_deid_tags(ds: pydicom3.Dataset, now: datetime.datetime) -> None:
     seq.append(method_item)
     ds.DeidentificationMethodCodeSequence = seq
 
+    # (0008,0012)/(0008,0013) InstanceCreationDate/Time: stamp the instance
+    # with the redaction time. Visible in any DICOM viewer (so a reviewer can
+    # see "this was modified") and used by downstream caches/dedupers that
+    # key on freshness.
     ds.InstanceCreationDate = now.strftime("%Y%m%d")
     ds.InstanceCreationTime = now.strftime("%H%M%S")
 
 
 def _append_audit_record(
     cod_object: "CODObject",
-    boxes: list[BoundingBox],
+    redactions: list[PixelRedaction],
     *,
     reviewer: str,
     now: datetime.datetime,
@@ -247,17 +271,7 @@ def _append_audit_record(
     record = {
         "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "reviewer": reviewer,
-        "entries": [
-            {
-                "x": b.x,
-                "y": b.y,
-                "width": b.width,
-                "height": b.height,
-                "applies_to": list(b.applies_to),
-                "frames": list(b.frames) if b.frames is not None else None,
-            }
-            for b in boxes
-        ],
+        "entries": [dataclasses.asdict(r) for r in redactions],
     }
     existing = cod_object._get_metadata_field("redactions") or []
     cod_object.add_metadata_field(
