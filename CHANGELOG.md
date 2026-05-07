@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v2.0.0...v2.0.1) (2026-05-07)
+
+
+### Bug Fixes
+
+* **PROC-1669:** relax google-cloud-storage and apache-beam pins ([#137](https://github.com/gradienthealth/cloud_optimized_dicom/issues/137)) ([344772e](https://github.com/gradienthealth/cloud_optimized_dicom/commit/344772e878afe9da0e8ca04f7761d120414f87fa))
+
 ## [2.0.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v1.2.0...v2.0.0) (2026-05-07)
 
 
