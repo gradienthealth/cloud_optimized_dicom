@@ -3,9 +3,17 @@
 ## [2.0.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v1.2.0...v2.0.0) (2026-05-07)
 
 
-### Miscellaneous Chores
+### ⚠ BREAKING CHANGES
 
-* **PROC-1668:** trigger v2.0.0 release ([#135](https://github.com/gradienthealth/cloud_optimized_dicom/issues/135)) ([a2f2c1a](https://github.com/gradienthealth/cloud_optimized_dicom/commit/a2f2c1a852e6fa8ee714a4db8ca8527f83531814))
+* **PROC-1668:** `cloud_optimized_dicom` now depends on upstream `pydicom>=3.0` instead of the `pydicom3` fork. Downstream impact:
+    - `isinstance` checks against `pydicom3.*` on cod-returned objects will start returning `False` — switch to `pydicom.*`. (This is exactly the bug PROC-1668 fixes for gradient-beam.)
+    - Installing `cloud-optimized-dicom` no longer transitively installs `pydicom3`. Code that imported `pydicom3` only because cod brought it in must either switch to `import pydicom` or add the fork to its own dependencies.
+    - Environments pinned to `pydicom<3` will no longer resolve. Bump to `pydicom>=3.0`.
+
+
+### Features
+
+* **PROC-1668:** drop pydicom3 fork in favor of upstream pydicom ([#134](https://github.com/gradienthealth/cloud_optimized_dicom/pull/134)) ([42d5e7e](https://github.com/gradienthealth/cloud_optimized_dicom/commit/42d5e7eb8110c120a7feb41085a5efc3270ef586))
 
 ## [1.2.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v1.1.1...v1.2.0) (2026-04-30)
 
