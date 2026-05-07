@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING, Tuple
 import cv2
 import ffmpeg
 import numpy as np
-import pydicom3
+import pydicom
 from google.cloud import storage
-from pydicom3.pixels import (
+from pydicom.pixels import (
     apply_color_lut,
     apply_modality_lut,
     apply_voi_lut,
@@ -112,7 +112,7 @@ def _resize(frame: np.ndarray, max_dim=128) -> np.ndarray:
 
 def _apply_pydicom_handling(
     frame: np.ndarray,
-    ds: pydicom3.Dataset,
+    ds: pydicom.Dataset,
     apply_modality=True,
     apply_voi=True,
     apply_window=True,
@@ -184,7 +184,7 @@ def _apply_pydicom_handling(
 
 
 def _normalize_and_convert(
-    frame: np.ndarray, ds: pydicom3.Dataset, invert_monochrome1: bool = True
+    frame: np.ndarray, ds: pydicom.Dataset, invert_monochrome1: bool = True
 ) -> np.ndarray:
     """Performs the following operations in sequence:
         1) Normalize the frame between 0 and 255
@@ -225,7 +225,7 @@ def _normalize_and_convert(
 
 def _convert_to_bgr(frame: np.ndarray) -> np.ndarray:
     """Convert a frame to BGR (what openCV expects).
-    Note: For multi-sample data, we assume the frame is in RGB format, which it should be because pydicom3.iter_pixels converts YBR to RGB.
+    Note: For multi-sample data, we assume the frame is in RGB format, which it should be because pydicom.iter_pixels converts YBR to RGB.
 
     Returns:
         A numpy array of the frame in BGR format.
@@ -322,7 +322,7 @@ def _pad(
 
 
 def _generate_thumbnail_frame_and_anchors(
-    frame: np.ndarray, ds: pydicom3.Dataset, thumbnail_size: int
+    frame: np.ndarray, ds: pydicom.Dataset, thumbnail_size: int
 ) -> Tuple[np.ndarray, dict]:
     """
     Given a DICOM frame (from `pydicom.pixels.iter_pixels`), create a thumbnail and record
@@ -401,9 +401,9 @@ def _generate_thumbnail_frames(
     thumbnail_index_to_instance_frame = []
     for instance_uid, instance in uid_to_instance.items():
         with instance.open() as f:
-            ds = pydicom3.dcmread(f, defer_size=1024)
+            ds = pydicom.dcmread(f, defer_size=1024)
             instance_frame_metadata = []
-            for instance_frame_index, frame in enumerate(pydicom3.iter_pixels(ds)):
+            for instance_frame_index, frame in enumerate(pydicom.iter_pixels(ds)):
                 thumbnail_frame, anchors = _generate_thumbnail_frame_and_anchors(
                     frame, ds, thumbnail_size
                 )

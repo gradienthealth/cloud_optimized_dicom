@@ -3,8 +3,8 @@ import os
 import tempfile
 
 import numpy as np
-import pydicom3
-import pydicom3.encaps
+import pydicom
+import pydicom.encaps
 import pytest
 from google.cloud import storage
 
@@ -400,7 +400,7 @@ def test_series_missing_pixel_data_error(
     # Create a DICOM file without pixel data by reading an existing file
     # and removing the pixel data
     dicom_path = os.path.join(test_data_dir, "monochrome1.dcm")
-    ds = pydicom3.dcmread(dicom_path)
+    ds = pydicom.dcmread(dicom_path)
 
     # Remove pixel data
     if hasattr(ds, "PixelData"):

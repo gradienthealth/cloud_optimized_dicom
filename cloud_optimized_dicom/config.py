@@ -1,6 +1,6 @@
 import logging
 
-import pydicom3
+import pydicom
 
 logger = logging.getLogger("cloud_optimized_dicom")
 logger.addHandler(logging.NullHandler())
@@ -46,8 +46,21 @@ def get_child_logger(name: str):
 # by default, we leave the NullHandler in place and set logging to WARNING
 debug(False, False)
 
-# To maximize compatibility we set pydicom3.config.convert_wrong_length_to_UN = True by default
+# To maximize compatibility we set pydicom.config.convert_wrong_length_to_UN = True by default
 # Pydicom's default behavior (False) is to raise an error when attempting to read a DICOM file with a weird/bad private tag
 # The design philosophy of COD is to "ingest everything we can", which includes such technically invalid DICOM files
-# If a user wants to be more strict, they can set pydicom3.config.convert_wrong_length_to_UN = False
-pydicom3.config.convert_wrong_length_to_UN = True
+# If a user wants to be more strict, they can set pydicom.config.convert_wrong_length_to_UN = False
+pydicom.config.convert_wrong_length_to_UN = True
+
+
+# Suppress per-plugin tracebacks from pydicom.pixels.decoders.base._decode_frame: when every plugin
+# fails the loop re-raises a RuntimeError summarizing each failure, so the LOGGER.exception(exc)
+# emitted on each attempt is duplicate noise (replaces the carried fork patch).
+class _DecodeFrameExceptionFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.funcName != "_decode_frame"
+
+
+logging.getLogger("pydicom.pixels.decoders.base").addFilter(
+    _DecodeFrameExceptionFilter()
+)

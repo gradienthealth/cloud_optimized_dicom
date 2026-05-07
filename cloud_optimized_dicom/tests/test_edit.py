@@ -6,7 +6,7 @@ then reopens in mode='r' to verify the edits round-tripped correctly.
 
 import os
 
-import pydicom3
+import pydicom
 import pytest
 from google.cloud import storage
 
@@ -29,7 +29,7 @@ def test_edit_mode_happy_path(seeded_series: SeriesHandle):
         target = instances[0]
         target_uid_before = target.instance_uid()
         target_crc_before = target.crc32c()
-        ds = pydicom3.dcmread(target.dicom_uri)
+        ds = pydicom.dcmread(target.dicom_uri)
         ds.PatientName = new_patient_name
         ds.save_as(target.dicom_uri)
 
@@ -40,7 +40,7 @@ def test_edit_mode_happy_path(seeded_series: SeriesHandle):
         assert target_uid_before in after
         # crc32c of the edited instance differs from before
         assert after[target_uid_before].crc32c() != target_crc_before
-        edited_ds = pydicom3.dcmread(after[target_uid_before].dicom_uri)
+        edited_ds = pydicom.dcmread(after[target_uid_before].dicom_uri)
         assert str(edited_ds.PatientName) == new_patient_name
 
 
@@ -76,7 +76,7 @@ def test_edit_mode_corrupted_uid_raises(seeded_series: SeriesHandle):
     with pytest.raises(EditSetChangedError):
         with seeded_series.open(mode="e") as cod:
             first = next(iter(cod._get_instances(strict_sorting=False).values()))
-            ds = pydicom3.dcmread(first.dicom_uri)
+            ds = pydicom.dcmread(first.dicom_uri)
             ds.SOPInstanceUID = "1.2.3.4.5.6.7.8.9.1234567890"
             ds.save_as(first.dicom_uri)
 
@@ -108,7 +108,7 @@ def test_edit_mode_thumbnail_regen_on_pd_change(seeded_series: SeriesHandle):
 
     with seeded_series.open(mode="e") as cod:
         target = next(iter(cod._get_instances(strict_sorting=False).values()))
-        ds = pydicom3.dcmread(target.dicom_uri)
+        ds = pydicom.dcmread(target.dicom_uri)
         ds.PatientName = "REDACTED^REGEN^TEST"
         ds.save_as(target.dicom_uri)
 

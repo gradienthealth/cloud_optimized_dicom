@@ -4,8 +4,8 @@ import os
 import tempfile
 from dataclasses import dataclass
 
-import pydicom3
-import pydicom3.tag
+import pydicom
+import pydicom.tag
 import pytest
 from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
@@ -192,7 +192,7 @@ def test_pipeline_and_check_offsets(
                 assert instance._byte_offsets is not None
                 tar.seek(instance._byte_offsets[0])
                 data = tar.read(instance._byte_offsets[1] - instance._byte_offsets[0])
-                with pydicom3.dcmread(io.BytesIO(data)) as ds:
+                with pydicom.dcmread(io.BytesIO(data)) as ds:
                     assert ds.SOPInstanceUID == instance.instance_uid()
 
 
@@ -306,11 +306,11 @@ def test_diff_hash(
     v2_blob = storage.Blob.from_string(v2_uri, client=gcs_client)
     v1_blob.upload_from_filename(dcm_path)
     # change something (cause hash mismatch)
-    ds = pydicom3.dcmread(dcm_path)
+    ds = pydicom.dcmread(dcm_path)
     study_uid = getattr(ds, "StudyInstanceUID")
     series_uid = getattr(ds, "SeriesInstanceUID")
     instance_uid = getattr(ds, "SOPInstanceUID")
-    ds.add_new(pydicom3.tag.Tag(0x6001, 0x0010), "LO", "Gradient Health")
+    ds.add_new(pydicom.tag.Tag(0x6001, 0x0010), "LO", "Gradient Health")
     with tempfile.NamedTemporaryFile() as temp_file:
         ds.save_as(temp_file.name)
         v2_blob.upload_from_filename(temp_file.name)
@@ -379,7 +379,7 @@ def test_diff_hash_pixeldata(
     v2_blob = storage.Blob.from_string(v2_uri, client=gcs_client)
     v1_blob.upload_from_filename(dcm_path, retry=DEFAULT_RETRY)
     # load ds & cause hash mismatch in pixel data
-    ds = pydicom3.dcmread(dcm_path)
+    ds = pydicom.dcmread(dcm_path)
     study_uid = getattr(ds, "StudyInstanceUID")
     series_uid = getattr(ds, "SeriesInstanceUID")
     getattr(ds, "SOPInstanceUID")

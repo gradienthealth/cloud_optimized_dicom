@@ -57,7 +57,7 @@ SISKIN_ENV_ENABLED=1 python -m unittest discover -v cloud_optimized_dicom.tests
 ## Project Structure
 
 The project uses `pyproject.toml` for package configuration and dependency management. Key dependencies include:
-- `pydicom3`: Custom fork of pydicom with namespace isolation
+- `pydicom`: DICOM parser/writer (upstream pydicom 3)
 - `google-cloud-storage`: For cloud storage operations
 - `zstandard`: For metadata compression (v2.0)
 - `apache-beam[gcp]` (optional): For data processing pipelines — install with `pip install cloud-optimized-dicom[beam]`

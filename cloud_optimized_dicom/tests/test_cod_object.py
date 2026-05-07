@@ -1,6 +1,6 @@
 import pytest
 from google.cloud import storage
-from pydicom3 import dcmread
+from pydicom import dcmread
 
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance

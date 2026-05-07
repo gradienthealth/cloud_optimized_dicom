@@ -21,8 +21,8 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
-import pydicom3
-from pydicom3.uid import JPEG2000Lossless
+import pydicom
+from pydicom.uid import JPEG2000Lossless
 
 from cloud_optimized_dicom.bounding_box import PixelRedaction
 from cloud_optimized_dicom.errors import (
@@ -77,9 +77,9 @@ def redact_pixel_data(
     # in-memory footprint at header-only until the apply step calls
     # ds.pixel_array, which avoids holding all instances' decoded pixel
     # data simultaneously when N is large.
-    datasets: dict[str, pydicom3.Dataset] = {}
+    datasets: dict[str, pydicom.Dataset] = {}
     for uid, uid_redactions in redactions_by_uid.items():
-        ds = pydicom3.dcmread(instances[uid].dicom_uri, defer_size=1024)
+        ds = pydicom.dcmread(instances[uid].dicom_uri, defer_size=1024)
         _validate_redactions_against_header(uid, ds, uid_redactions, fill_value)
         datasets[uid] = ds
 
@@ -115,7 +115,7 @@ def _group_by_uid(
 
 def _validate_redactions_against_header(
     uid: str,
-    ds: pydicom3.Dataset,
+    ds: pydicom.Dataset,
     redactions: list[PixelRedaction],
     fill_value: Optional[FillValue],
 ) -> None:
@@ -184,7 +184,7 @@ def _derive_fill_value(samples: int, pi: str, bits_stored: int) -> FillValue:
 
 def _apply_to_instance(
     instance: "Instance",
-    ds: pydicom3.Dataset,
+    ds: pydicom.Dataset,
     redactions: list[PixelRedaction],
     fill_value: Optional[FillValue],
 ) -> None:
@@ -226,9 +226,9 @@ def _apply_to_instance(
     _stamp_deid_tags(ds)
 
     # Always normalize to JPEG 2000 Lossless (see module docstring for why).
-    # Lossless leaves SOPInstanceUID alone, which mode='e' set-changed validation
-    # relies on; pydicom only auto-regenerates the UID for lossy compresses.
-    ds.compress(JPEG2000Lossless, arr=arr)
+    # generate_instance_uid=False keeps the SOPInstanceUID stable, which mode='e'
+    # set-changed validation relies on.
+    ds.compress(JPEG2000Lossless, arr=arr, generate_instance_uid=False)
 
     # Write to a sibling temp file then atomically rename. pydicom's save_as
     # truncates the destination before iterating tags to write; if the
@@ -243,7 +243,7 @@ def _apply_to_instance(
     os.replace(tmp, target)
 
 
-def _stamp_deid_tags(ds: pydicom3.Dataset) -> None:
+def _stamp_deid_tags(ds: pydicom.Dataset) -> None:
     """Mark the instance as having had its pixel data scrubbed of PHI.
 
     Two standard tags get touched. Each one is what downstream consumers
@@ -269,7 +269,7 @@ def _stamp_deid_tags(ds: pydicom3.Dataset) -> None:
     # did. Required to claim Basic Confidentiality Profile compliance.
     # Append rather than overwrite: upstream text/metadata de-id may have
     # already added entries we mustn't clobber.
-    method_item = pydicom3.Dataset()
+    method_item = pydicom.Dataset()
     method_item.CodeValue = _DEID_METHOD_CODE
     method_item.CodingSchemeDesignator = _DEID_METHOD_DESIGNATOR
     method_item.CodeMeaning = _DEID_METHOD_MEANING
