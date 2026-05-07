@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v1.2.0...v2.0.0) (2026-05-07)
+
+
+### Miscellaneous Chores
+
+* **PROC-1668:** trigger v2.0.0 release ([#135](https://github.com/gradienthealth/cloud_optimized_dicom/issues/135)) ([a2f2c1a](https://github.com/gradienthealth/cloud_optimized_dicom/commit/a2f2c1a852e6fa8ee714a4db8ca8527f83531814))
+
 ## [1.2.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v1.1.1...v1.2.0) (2026-04-30)
 
 
