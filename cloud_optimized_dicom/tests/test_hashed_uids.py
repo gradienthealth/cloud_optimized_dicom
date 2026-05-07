@@ -1,6 +1,6 @@
 from tempfile import NamedTemporaryFile
 
-import pydicom3
+import pydicom
 import pytest
 from google.cloud import storage
 
@@ -192,7 +192,7 @@ def test_append_diff_hash_dupe_with_hashed_uids(
     assert append_result.new[0] == instance
     # make a diff hash dupe
     with NamedTemporaryFile(suffix=".dcm") as f:
-        with pydicom3.dcmread(local_instance_path) as ds:
+        with pydicom.dcmread(local_instance_path) as ds:
             ds.add_new((0x1234, 0x5678), "DS", "12345678")
             ds.save_as(f.name)
         diff_hash_dupe = Instance(dicom_uri=f.name, uid_hash_func=example_hash_function)

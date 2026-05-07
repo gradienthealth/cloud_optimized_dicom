@@ -8,8 +8,8 @@ as expected.
 import os
 
 import numpy as np
-import pydicom3
-import pydicom3.examples
+import pydicom
+import pydicom.examples
 import pytest
 from google.cloud import storage
 
@@ -25,12 +25,12 @@ from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.tests.conftest import SeriesHandle
 
 
-def _read_remote_dataset(handle: SeriesHandle, instance_uid: str) -> pydicom3.Dataset:
+def _read_remote_dataset(handle: SeriesHandle, instance_uid: str) -> pydicom.Dataset:
     """Pull the series tar fresh from GCS and return the named instance as a Dataset."""
     with handle.open(mode="r") as cod:
         cod.extract_locally()
         instance = cod._get_instance(instance_uid)
-        return pydicom3.dcmread(instance.dicom_uri)
+        return pydicom.dcmread(instance.dicom_uri)
 
 
 def _read_remote_pixel_array(handle: SeriesHandle, instance_uid: str) -> np.ndarray:
@@ -64,7 +64,7 @@ def ybr_full_422_path() -> str:
     pydicom's bundled example set rather than committed to this repo: pydicom
     documents `examples.ybr_color` as part of the package itself (not the
     on-demand download set), so it ships with every pydicom install."""
-    return str(pydicom3.examples.get_path("ybr_color"))
+    return str(pydicom.examples.get_path("ybr_color"))
 
 
 @pytest.fixture

@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
 
-import pydicom3
-import pydicom3.uid
-from pydicom3.datadict import tag_for_keyword
+import pydicom
+import pydicom.uid
+from pydicom.datadict import tag_for_keyword
 from ratarmountcore.mountsource.factory import open_mount_source as rmc_open
 from smart_open import open as smart_open
 
@@ -141,7 +141,7 @@ class Instance:
         with self.open() as f:
             # defer loading all tags (every tag is > 1 byte) bc we only need UIDs and pixeldata existence
             # stop_before_pixels=True cannot be used here bc it prevents us from checking for pixeldata existence
-            with pydicom3.dcmread(f, defer_size=1) as ds:
+            with pydicom.dcmread(f, defer_size=1) as ds:
                 self._instance_uid = getattr(ds, "SOPInstanceUID")
                 self._series_uid = getattr(ds, "SeriesInstanceUID")
                 self._study_uid = getattr(ds, "StudyInstanceUID")
@@ -316,11 +316,11 @@ class Instance:
         start, stop = self._byte_offsets[0], self._byte_offsets[1] + 1
         return VirtualFile(master_file_pointer, start, stop)
 
-    def compress(self, syntax: pydicom3.uid.UID = pydicom3.uid.JPEG2000Lossless):
+    def compress(self, syntax: pydicom.uid.UID = pydicom.uid.JPEG2000Lossless):
         """Compress the instance to the given syntax. Fails if used prior to fetching, or if the local instance is nested in a tar.
 
         Args:
-            syntax: pydicom3.uid.UID to transcode to. Defaults to JPEG2000Lossless.
+            syntax: pydicom.uid.UID to transcode to. Defaults to JPEG2000Lossless.
         """
         if self.is_nested_in_tar or is_remote(self.dicom_uri):
             raise ValueError(
@@ -333,11 +333,13 @@ class Instance:
         # open the original instance
         with self.open() as f:
             # read the instance
-            with pydicom3.dcmread(f, defer_size=1024) as ds:
+            with pydicom.dcmread(f, defer_size=1024) as ds:
                 if ds.file_meta.TransferSyntaxUID.is_compressed:
                     logger.info(f"Skipping transcode ({self} is already compressed)")
                     return
-                ds.compress(syntax)
+                # generate_instance_uid=False keeps the SOPInstanceUID stable across the transcode;
+                # COD identifies instances by UID, so a regenerated UID would orphan the entry.
+                ds.compress(syntax, generate_instance_uid=False)
                 # make a new temp file to write the transcoded instance to
                 with tempfile.NamedTemporaryFile(
                     suffix=".dcm", delete=False
@@ -417,12 +419,12 @@ class Instance:
         if output_uri is None:
             output_uri = self.dicom_uri
         with self.open() as f:
-            with pydicom3.dcmread(f, defer_size=1024) as ds:
+            with pydicom.dcmread(f, defer_size=1024) as ds:
                 # set custom offset tables
                 self._custom_offset_tables = get_multiframe_offset_tables(ds)
 
                 # define custom bulk data handler to include the head 512 bytes of overlarge elements
-                def bulk_data_handler(el: pydicom3.DataElement) -> str:
+                def bulk_data_handler(el: pydicom.DataElement) -> str:
                     """Given a bulk data element, return a dict containing this instance's output_uri
                     and the head 512 bytes of the element"""
                     # TODO would be nice to find a way to include the tail 512 bytes as well
@@ -466,7 +468,7 @@ class Instance:
         """Compute the crc32c hash of just the pixeldata"""
         with tempfile.NamedTemporaryFile(suffix="_pixeldata") as temp_file:
             with self.open() as ptr:
-                ds = pydicom3.dcmread(ptr, defer_size=1024)
+                ds = pydicom.dcmread(ptr, defer_size=1024)
                 # write ds.pixelData to temp_file
                 temp_file.write(ds.PixelData)
                 temp_file.flush()

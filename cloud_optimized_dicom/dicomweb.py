@@ -4,7 +4,7 @@ import re
 from tempfile import NamedTemporaryFile
 from typing import Iterator, Optional
 
-import pydicom3.encaps
+import pydicom.encaps
 from google.cloud import storage
 
 from cloud_optimized_dicom.cod_object import CODObject
@@ -161,10 +161,10 @@ class DicomwebRequest:
             tar_blob.download_to_filename(
                 temp_file.name, start=start_byte, end=end_byte
             )
-            with pydicom3.dcmread(temp_file.name) as ds:
+            with pydicom.dcmread(temp_file.name) as ds:
                 # TODO: this returns raw frame bytes... do we want to support transcoding to jpg?
                 frames = [
-                    pydicom3.encaps.get_frame(buffer=ds.PixelData, index=frame_index)
+                    pydicom.encaps.get_frame(buffer=ds.PixelData, index=frame_index)
                     for frame_index in frame_indices
                 ]
         return frames

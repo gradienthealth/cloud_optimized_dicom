@@ -26,7 +26,7 @@ dependencies = [
     "pylibjpeg==2.1.0",
     "pylibjpeg-libjpeg==2.4.0",
     "pylibjpeg-openjpeg==2.5.0",
-    "pydicom3>=3.1.0",
+    "pydicom>=3.0",
     "opencv-python-headless==4.13.0.92",
     "ffmpeg-python==0.2.0",
     "zstandard>=0.24.0",
@@ -39,7 +39,6 @@ beam = [
     "apache-beam[gcp]==2.73.0",
 ]
 test = [
-    "pydicom==2.3.0",
     "matplotlib",
     "pytest>=8.0.0",
     "pytest-mock>=3.12.0",
@@ -47,7 +46,6 @@ test = [
 ]
 dev = [
     "pre-commit>=3.0.0",
-    "pydicom==2.3.0",
     "matplotlib",
     "apache-beam[gcp]==2.73.0",
     "pytest>=8.0.0",

@@ -146,7 +146,7 @@ cloud_optimized_dicom/
 ### Dependencies
 
 **Core:**
-- `pydicom3`: Custom fork with namespace isolation (published package)
+- `pydicom>=3.0`: Upstream pydicom 3
 - `google-cloud-storage`: GCS operations
 - `ratarmountcore`: Efficient tar file access
 - `zstandard`: Metadata compression (v2.0)
@@ -156,7 +156,6 @@ cloud_optimized_dicom/
 - `apache-beam[gcp]`: Data processing; install with `pip install cloud-optimized-dicom[beam]`. Without Beam, metric counters silently no-op.
 
 **Test:**
-- `pydicom==2.3.0`: Original pydicom for validation
 - `matplotlib`: Visualization in tests
 
 ### Important Patterns
@@ -189,7 +188,7 @@ with CODObject(client=..., datastore_path=..., mode="a") as cod:
 with CODObject(client=..., datastore_path=..., mode="e") as cod:
     for instance in cod.get_instances().values():
         # instance.dicom_uri now points at a local .dcm the caller can rewrite
-        ds = pydicom3.dcmread(instance.dicom_uri)
+        ds = pydicom.dcmread(instance.dicom_uri)
         ds.PatientName = "REDACTED"
         ds.save_as(instance.dicom_uri)
 # sync() called automatically: tar repacked, metadata rebuilt, thumbnail regenerated if pixel data changed

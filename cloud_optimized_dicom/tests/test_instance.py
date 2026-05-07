@@ -2,7 +2,7 @@ import os
 import tarfile
 import tempfile
 
-import pydicom3
+import pydicom
 import pytest
 
 from cloud_optimized_dicom.instance import Instance
@@ -21,14 +21,14 @@ def test_remote_detection(local_instance_path: str):
 def test_local_open(local_instance_path: str, test_instance_uid: str):
     instance = Instance(local_instance_path)
     with instance.open() as f:
-        ds = pydicom3.dcmread(f)
+        ds = pydicom.dcmread(f)
         assert ds.SOPInstanceUID == test_instance_uid
 
 
 def test_remote_open(test_instance_uid: str):
     instance = Instance(REMOTE_DICOM_URI)
     with instance.open() as f:
-        ds = pydicom3.dcmread(f)
+        ds = pydicom.dcmread(f)
         assert ds.SOPInstanceUID == test_instance_uid
 
 
@@ -84,7 +84,7 @@ def test_extract_metadata(local_instance_path: str, test_instance_uid: str):
 
 def test_extract_metadata_backfills_invalid_uid(local_instance_path: str):
     """Non-conformant UIDs (e.g. leading-zero components, >64 chars) are
-    dropped by pydicom3 when `to_json_dict(suppress_invalid_tags=True)`
+    dropped by pydicom when `to_json_dict(suppress_invalid_tags=True)`
     serializes under strict_reading. _backfill_missing_uids must reinsert
     them from the cached Instance fields populated by validate()."""
     bad_study_uid = "1.2.840.01.2.3"  # leading zero component
@@ -92,7 +92,7 @@ def test_extract_metadata_backfills_invalid_uid(local_instance_path: str):
     bad_sop_uid = "1." + "2" * 70  # >64 chars
 
     with tempfile.NamedTemporaryFile(suffix=".dcm") as tmp:
-        ds = pydicom3.dcmread(local_instance_path)
+        ds = pydicom.dcmread(local_instance_path)
         ds.StudyInstanceUID = bad_study_uid
         ds.SeriesInstanceUID = bad_series_uid
         ds.SOPInstanceUID = bad_sop_uid
@@ -142,14 +142,14 @@ def test_compress(local_instance_path: str):
     """Test that we can compress an instance to the given syntax"""
     instance = Instance(dicom_uri=local_instance_path)
     with instance.open() as f:
-        ds = pydicom3.dcmread(f)
-        assert ds.file_meta.TransferSyntaxUID == pydicom3.uid.ImplicitVRLittleEndian
+        ds = pydicom.dcmread(f)
+        assert ds.file_meta.TransferSyntaxUID == pydicom.uid.ImplicitVRLittleEndian
     uncompressed_size = instance.size()
     instance.compress()
     assert instance.size() < uncompressed_size
     with instance.open() as f:
-        ds = pydicom3.dcmread(f)
-        assert ds.file_meta.TransferSyntaxUID == pydicom3.uid.JPEG2000Lossless
+        ds = pydicom.dcmread(f)
+        assert ds.file_meta.TransferSyntaxUID == pydicom.uid.JPEG2000Lossless
     # Should be pointing to the new temp file
     assert instance._temp_file_path == instance.dicom_uri
     assert instance.dicom_uri != local_instance_path
@@ -167,7 +167,7 @@ def test_temp_file_cleanup(test_data_dir: str, test_instance_uid: str):
     assert instance._temp_file_path is not None
     # make sure we can read the instance
     with instance.open() as f:
-        ds = pydicom3.dcmread(f)
+        ds = pydicom.dcmread(f)
         assert ds.SOPInstanceUID == test_instance_uid
     # delete the instance - this should clean up the temp file
     del instance

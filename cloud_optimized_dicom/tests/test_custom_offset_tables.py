@@ -2,9 +2,9 @@ import random
 from io import BytesIO
 
 import numpy as np
-import pydicom3
-import pydicom3.encaps
-import pydicom3.errors
+import pydicom
+import pydicom.encaps
+import pydicom.errors
 from pytest_mock import MockerFixture
 
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
@@ -29,7 +29,7 @@ def create_sample_dataset(
     is_pixeldata_encapsulated=True,
     include_eot=False,
     include_bot=False,
-) -> pydicom3.Dataset:
+) -> pydicom.Dataset:
     """
     Creates a sample DICOM dataset.
 
@@ -42,12 +42,12 @@ def create_sample_dataset(
     Returns:
         pydicom.Dataset: A sample DICOM dataset created using the given parameters.
     """
-    file_meta = pydicom3.FileMetaDataset()
+    file_meta = pydicom.FileMetaDataset()
     file_meta.MediaStorageSOPClassUID = _generate_uid()
     file_meta.MediaStorageSOPInstanceUID = _generate_uid()
     file_meta.TransferSyntaxUID = _generate_uid()
 
-    ds = pydicom3.Dataset()
+    ds = pydicom.Dataset()
     ds.file_meta = file_meta
 
     ds.PatientName = "Test^Patient"
@@ -60,7 +60,7 @@ def create_sample_dataset(
     raw_pixeldata = [_generate_random_pixel_data(200) for _ in range(number_of_frames)]
 
     if is_pixeldata_encapsulated:
-        pixelData = pydicom3.encaps.encapsulate(raw_pixeldata, has_bot=include_bot)
+        pixelData = pydicom.encaps.encapsulate(raw_pixeldata, has_bot=include_bot)
     else:
         pixelData = bytes([item for sublist in raw_pixeldata for item in sublist])
 
@@ -206,7 +206,7 @@ def test_multiframe_raise_invalid_dicom_error(mocker: MockerFixture):
         include_eot=False,
         include_bot=False,
     )
-    mock_generate.side_effect = pydicom3.errors.InvalidDicomError("Test error")
+    mock_generate.side_effect = pydicom.errors.InvalidDicomError("Test error")
 
     get_multiframe_offset_tables(dataset)
 

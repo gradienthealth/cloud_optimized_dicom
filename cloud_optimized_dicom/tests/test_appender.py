@@ -1,7 +1,7 @@
 import os
 from tempfile import NamedTemporaryFile
 
-import pydicom3
+import pydicom
 import pytest
 from google.cloud import storage
 
@@ -174,7 +174,7 @@ def test_append_diff_hash_dupe(
     )
     # make a diff hash dupe
     with NamedTemporaryFile(suffix=".dcm") as f:
-        with pydicom3.dcmread(local_instance_path) as ds:
+        with pydicom.dcmread(local_instance_path) as ds:
             ds.add_new((0x1234, 0x5678), "DS", "12345678")
             ds.save_as(f.name)
         assert os.path.exists(f.name)
@@ -382,7 +382,7 @@ def test_append_corrupt_dicom(
 
     # create a corrupt dicom (has proper header but then is garbage)
     with NamedTemporaryFile(suffix=".dcm") as f:
-        with pydicom3.FileDataset(
+        with pydicom.FileDataset(
             f.name, {}, is_little_endian=True, is_implicit_VR=False
         ) as ds:
             ds.StudyInstanceUID = (
@@ -465,14 +465,14 @@ def test_append_compress(
     )
     instance = Instance(dicom_uri=local_instance_path)
     with instance.open() as f:
-        ds = pydicom3.dcmread(f)
-        assert ds.file_meta.TransferSyntaxUID == pydicom3.uid.ImplicitVRLittleEndian
+        ds = pydicom.dcmread(f)
+        assert ds.file_meta.TransferSyntaxUID == pydicom.uid.ImplicitVRLittleEndian
     uncompressed_size = instance.size()
     new, same, conflict, errors = cod_obj.append([instance], compress=True)
     assert len(new) == 1
     assert len(same + conflict + errors) == 0
     assert instance.size() < uncompressed_size
     with instance.open() as f:
-        ds = pydicom3.dcmread(f)
-        assert ds.file_meta.TransferSyntaxUID == pydicom3.uid.JPEG2000Lossless
+        ds = pydicom.dcmread(f)
+        assert ds.file_meta.TransferSyntaxUID == pydicom.uid.JPEG2000Lossless
     assert instance.size() < uncompressed_size
