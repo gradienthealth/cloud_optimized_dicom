@@ -64,3 +64,7 @@ class _DecodeFrameExceptionFilter(logging.Filter):
 logging.getLogger("pydicom.pixels.decoders.base").addFilter(
     _DecodeFrameExceptionFilter()
 )
+
+
+# Silence ratarmountcore 0.10.x bare `print()` calls gated on `isEnabledFor(WARNING)`.
+logging.getLogger("ratarmountcore").setLevel(logging.ERROR)
