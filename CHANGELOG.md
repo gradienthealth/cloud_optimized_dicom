@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v2.0.1...v2.0.2) (2026-05-13)
+
+
+### Bug Fixes
+
+* **PROC-1688:** silence ratarmountcore print noise in logs ([#139](https://github.com/gradienthealth/cloud_optimized_dicom/issues/139)) ([1a9cff2](https://github.com/gradienthealth/cloud_optimized_dicom/commit/1a9cff261e4acae271b4983a82ed49f802ca662d))
+
 ## [2.0.1](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v2.0.0...v2.0.1) (2026-05-07)
 
 
