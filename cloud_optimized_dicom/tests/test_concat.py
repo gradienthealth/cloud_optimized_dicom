@@ -75,7 +75,7 @@ def concat_paths(gcs_client: storage.Client, worker_namespace: str) -> ConcatPat
                 f"{INSTANCE_UIDS[idx]}{name_suffix}.dcm"
             ),
             "size": FILE_SIZES[idx],
-            "crc32c": FILE_CRC32CS[idx],
+            "crc32c_hash": FILE_CRC32CS[idx],
             "instance_uid": INSTANCE_UIDS[idx],
         }
 

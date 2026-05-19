@@ -47,7 +47,7 @@ def query_result_to_instances(
             )
         hints = Hints(
             size=file.get("size"),
-            crc32c=file.get("crc32c"),
+            crc32c=file.get("crc32c_hash"),
             instance_uid=file.get("instance_uid"),
             study_uid=study_uid,
             series_uid=series_uid,
