@@ -476,3 +476,34 @@ def test_append_compress(
         ds = pydicom.dcmread(f)
         assert ds.file_meta.TransferSyntaxUID == pydicom.uid.JPEG2000Lossless
     assert instance.size() < uncompressed_size
+
+
+def test_append_no_compress(
+    gcs_client: storage.Client,
+    datastore_path: str,
+    local_instance_path: str,
+    test_study_uid: str,
+    test_series_uid: str,
+):
+    """test that compress=False preserves the original transfer syntax (PROC-1927)"""
+    cod_obj = CODObject(
+        client=gcs_client,
+        datastore_path=datastore_path,
+        study_uid=test_study_uid,
+        series_uid=test_series_uid,
+        mode="w",
+        sync_on_exit=False,
+    )
+    instance = Instance(dicom_uri=local_instance_path)
+    with instance.open() as f:
+        ds = pydicom.dcmread(f)
+        assert ds.file_meta.TransferSyntaxUID == pydicom.uid.ImplicitVRLittleEndian
+    uncompressed_size = instance.size()
+    new, same, conflict, errors = cod_obj.append([instance], compress=False)
+    assert len(new) == 1
+    assert len(same + conflict + errors) == 0
+    # uncompressed: transfer syntax and size are unchanged
+    assert instance.size() == uncompressed_size
+    with instance.open() as f:
+        ds = pydicom.dcmread(f)
+        assert ds.file_meta.TransferSyntaxUID == pydicom.uid.ImplicitVRLittleEndian
