@@ -457,7 +457,12 @@ def _handle_new(
         [new for new, _, _ in new_state_changes]
     )
     # Step 2: compress instances (if specified)
-    compressed_instances, compression_errors = _compress_instances(validated_instances)
+    if compress:
+        compressed_instances, compression_errors = _compress_instances(
+            validated_instances
+        )
+    else:
+        compressed_instances, compression_errors = validated_instances, []
 
     if not compressed_instances:
         logger.warning(
