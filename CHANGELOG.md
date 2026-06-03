@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.3](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v2.0.2...v2.0.3) (2026-06-03)
+
+
+### Bug Fixes
+
+* **PROC-1927:** respect compress flag in _handle_new ([#142](https://github.com/gradienthealth/cloud_optimized_dicom/issues/142)) ([e1d2a3b](https://github.com/gradienthealth/cloud_optimized_dicom/commit/e1d2a3b1ab308aa753b2158c155455c96c76c1ea))
+
 ## [2.0.2](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v2.0.1...v2.0.2) (2026-05-13)
 
 
