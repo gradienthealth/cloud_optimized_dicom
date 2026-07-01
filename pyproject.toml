@@ -18,7 +18,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "smart-open==7.6.1",
+    "smart-open==8.0.0",
     "ratarmountcore==0.11.1",
     "numpy",
     "google-cloud-storage>=2.18.2,<4",
