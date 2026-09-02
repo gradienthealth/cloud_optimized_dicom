@@ -116,9 +116,13 @@ Config lives in `release-please-config.json` and `.release-please-manifest.json`
 - Validated during ingestion to prevent datastore corruption
 
 **Pixel Data Compression** (`transcode.py`)
-- `Instance.compress()` re-encodes pixel data as JPEG 2000 Lossless during `append()`: uncompressed sources always, JPEG Lossless and RLE sources only when the result decodes back bit-exact and is smaller
-- Lossy, JPEG 2000 and JPEG-LS sources keep their bytes; `YBR_FULL` stays raw, RGB becomes `YBR_RCT`, `YBR_FULL_422` passes through
-- JPEG Lossless decodes with GDCM (pylibjpeg-libjpeg clamps instead of wrapping, PROC-1950); a codec failure keeps the original bytes and counts a `transcode_passthrough_*` metric
+- `Instance.compress()` re-encodes pixel data as JPEG 2000 Lossless during `append()`
+- Uncompressed sources are always re-encoded
+- JPEG Lossless and RLE sources are re-encoded only when the result decodes back bit-exact and is smaller
+- Lossy, JPEG 2000 and JPEG-LS sources keep their bytes
+- `YBR_FULL` stays raw, RGB becomes `YBR_RCT`, and `YBR_FULL_422` passes through
+- JPEG Lossless decodes with GDCM because pylibjpeg-libjpeg clamps instead of wrapping (gradient-beam PROC-1950)
+- A codec failure keeps the original bytes and counts a `transcode_passthrough_*` metric
 
 **Metadata Versions**
 - v1.0: Uncompressed DICOM JSON dict, UIDs parsed from metadata

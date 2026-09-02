@@ -1,10 +1,11 @@
 """Re-encodes legacy lossless pixel data as JPEG 2000 Lossless.
 
-Hospitals send instances in older lossless encodings that store the same
-pixels in several times the bytes JPEG 2000 needs. `pydicom.Dataset.compress`
-refuses a compressed source, so this module decodes each frame, encodes it
-again, and keeps the result only when it decodes back bit-exact and comes out
-smaller. An instance that cannot be re-encoded keeps its original bytes.
+Hospitals send instances in older lossless encodings that JPEG 2000 stores
+more compactly. `pydicom.Dataset.compress` refuses a compressed source, so
+this module decodes
+each frame, encodes it again, and keeps the result only when it decodes back
+bit-exact and comes out smaller. An instance that cannot be re-encoded keeps
+its original bytes.
 """
 
 import enum
@@ -24,9 +25,11 @@ from cloud_optimized_dicom.config import logger
 
 # The encodings worth re-encoding. Each is lossless, so the pixel values
 # survive, and each stores them less compactly than JPEG 2000. Lossy
-# encodings must never be re-encoded. JPEG 2000 is left alone too: lossless
-# .90 is already the target, and .91 mixes reversible and irreversible
-# codestreams and measured no gain when reversible.
+# encodings must never be re-encoded. JPEG 2000 Lossless (.90) is already the
+# target. JPEG-LS Lossless and the reversible half of JPEG 2000 (.91) stay
+# out because JPEG 2000 Lossless encodes them to about the same size (the
+# PROC-2531 compression study), and .91 mixes reversible and irreversible
+# codestreams under one transfer syntax.
 RECOMPRESS_SOURCE_SYNTAXES = frozenset(
     {
         pydicom.uid.JPEGLossless,
@@ -49,12 +52,6 @@ _GDCM_DECODED_SYNTAXES = frozenset(
 _RECOMPRESSIBLE_PHOTOMETRIC_INTERPRETATIONS = frozenset(
     {"MONOCHROME1", "MONOCHROME2", "PALETTE COLOR", "RGB", "YBR_FULL"}
 )
-
-# RGB is stored as YBR_RCT so the codec applies its reversible colour
-# transform, which openjpeg enables only for that interpretation and which
-# roughly halves the codestream. Every other interpretation keeps its samples
-# as decoded.
-_TARGET_PHOTOMETRIC_INTERPRETATION = {"RGB": "YBR_RCT"}
 
 
 class TranscodeOutcome(enum.Enum):
@@ -96,11 +93,14 @@ def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
     source_syntax = ds.file_meta.TransferSyntaxUID
     if source_syntax not in RECOMPRESS_SOURCE_SYNTAXES:
         return TranscodeOutcome.PASSTHROUGH_SYNTAX
-    source_photometric = str(ds.PhotometricInterpretation)
+    source_photometric = ds.get("PhotometricInterpretation")
     if source_photometric not in _RECOMPRESSIBLE_PHOTOMETRIC_INTERPRETATIONS:
         return TranscodeOutcome.PASSTHROUGH_PHOTOMETRIC
-    target_photometric = _TARGET_PHOTOMETRIC_INTERPRETATION.get(
-        source_photometric, source_photometric
+    # RGB is stored as YBR_RCT so the codec applies its reversible colour
+    # transform, which openjpeg enables only for that interpretation. Every
+    # other interpretation keeps its samples as decoded.
+    target_photometric = (
+        "YBR_RCT" if source_photometric == "RGB" else source_photometric
     )
 
     try:
@@ -193,6 +193,3 @@ def _replace_pixel_data(
     ds.PhotometricInterpretation = target_photometric
     if ds.SamplesPerPixel > 1:
         ds.PlanarConfiguration = 0
-    # Drop pydicom's decoded-pixel cache, which still describes the old bytes.
-    ds._pixel_array = None
-    ds._pixel_id = {}

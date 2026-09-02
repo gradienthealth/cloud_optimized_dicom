@@ -226,11 +226,12 @@ def synthetic_image(
 def write_encoded_image(path, syntax: pydicom.uid.UID, ds: pydicom.Dataset) -> str:
     """Writes `ds` to `path` in `syntax` and returns the path as a string.
 
-    JPEG Lossless comes from GDCM, the only encoder available for it; RLE and
-    JPEG 2000 come from pydicom. Uncompressed syntaxes are written as-is.
+    JPEG Lossless and RLE come from GDCM, which keeps the source's planar
+    configuration; JPEG 2000 comes from pydicom. Uncompressed syntaxes are
+    written as-is.
     """
     path = str(path)
-    if syntax in (pydicom.uid.JPEGLossless, pydicom.uid.JPEGLosslessSV1):
+    if syntax in _GDCM_SYNTAXES:
         uncompressed = path + ".explicit.dcm"
         ds.save_as(uncompressed, enforce_file_format=True)
         _gdcm_transcode(uncompressed, path, syntax)
@@ -245,6 +246,7 @@ def write_encoded_image(path, syntax: pydicom.uid.UID, ds: pydicom.Dataset) -> s
 _GDCM_SYNTAXES = {
     pydicom.uid.JPEGLossless: gdcm.TransferSyntax.JPEGLosslessProcess14,
     pydicom.uid.JPEGLosslessSV1: gdcm.TransferSyntax.JPEGLosslessProcess14_1,
+    pydicom.uid.RLELossless: gdcm.TransferSyntax.RLELossless,
 }
 
 

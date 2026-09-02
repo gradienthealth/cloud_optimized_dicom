@@ -355,7 +355,7 @@ class Instance:
                         return
                     size_before = self.size()
                     outcome = recompress_to_jpeg2000_lossless(ds)
-                    metrics.TRANSCODE_OUTCOME_COUNTERS[outcome.value].inc()
+                    metrics.TRANSCODE_OUTCOME_COUNTERS[outcome].inc()
                     if outcome is not TranscodeOutcome.RECOMPRESSED:
                         return
                     self._replace_local_file(ds)
