@@ -115,6 +115,11 @@ Config lives in `release-please-config.json` and `.release-please-manifest.json`
 - Enables duplicate detection without downloading files
 - Validated during ingestion to prevent datastore corruption
 
+**Pixel Data Compression** (`transcode.py`)
+- `Instance.compress()` re-encodes pixel data as JPEG 2000 Lossless during `append()`: uncompressed sources always, JPEG Lossless and RLE sources only when the result decodes back bit-exact and is smaller
+- Lossy, JPEG 2000 and JPEG-LS sources keep their bytes; `YBR_FULL` stays raw, RGB becomes `YBR_RCT`, `YBR_FULL_422` passes through
+- JPEG Lossless decodes with GDCM (pylibjpeg-libjpeg clamps instead of wrapping, PROC-1950); a codec failure keeps the original bytes and counts a `transcode_passthrough_*` metric
+
 **Metadata Versions**
 - v1.0: Uncompressed DICOM JSON dict, UIDs parsed from metadata
 - v2.0: Zstandard-compressed metadata, explicit UID/pixeldata indexing, ~5-10x size reduction
@@ -147,6 +152,7 @@ cloud_optimized_dicom/
 
 **Core:**
 - `pydicom>=3.0`: Upstream pydicom 3
+- `pylibjpeg-openjpeg`, `python-gdcm`: JPEG 2000 encoding and JPEG Lossless decoding for `Instance.compress()`
 - `google-cloud-storage`: GCS operations
 - `ratarmountcore`: Efficient tar file access
 - `zstandard`: Metadata compression (v2.0)

@@ -424,7 +424,7 @@ class CODObject:
             max_instance_size: float - The maximum size of an instance to append, in gb.
             max_series_size: float - The maximum size of the series to append, in gb.
             delete_local_origin: bool - If `True`, delete the local origin of the instances after appending.
-            compress: bool - If `True`, transcodes instances to JPEG2000Lossless during append to save space.
+            compress: bool - If `True`, re-encodes uncompressed and legacy lossless (JPEG Lossless, RLE) pixel data as JPEG2000Lossless during append; lossy and JPEG 2000 sources keep their encoding. See `Instance.compress`.
             dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
         """
         if self.mode == "e":

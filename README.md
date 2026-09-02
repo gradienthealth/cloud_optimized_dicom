@@ -58,6 +58,7 @@ SISKIN_ENV_ENABLED=1 python -m unittest discover -v cloud_optimized_dicom.tests
 
 The project uses `pyproject.toml` for package configuration and dependency management. Key dependencies include:
 - `pydicom`: DICOM parser/writer (upstream pydicom 3)
+- `pylibjpeg-openjpeg`, `python-gdcm`: JPEG 2000 encoding and JPEG Lossless decoding for pixel data re-encoding on ingest
 - `google-cloud-storage`: For cloud storage operations
 - `zstandard`: For metadata compression (v2.0)
 - `apache-beam[gcp]` (optional): For data processing pipelines — install with `pip install cloud-optimized-dicom[beam]`
@@ -199,6 +200,20 @@ However, there are more complex cases to consider. Intelerad data, for example, 
 In this case, `dicom_uri` is not meaningful in the context of deletion (it's likely a temp path on disk), and `dependencies` would be the `.dcm` and `.j2c` files.
 
 After ingestion, one can conveniently delete these files by calling `Instance.delete_dependencies()`.
+
+## Pixel data on ingest
+
+`CODObject.append` re-encodes pixel data as JPEG 2000 Lossless (`Instance.compress`), because it stores the same pixels in a fraction of the bytes most hospitals send:
+
+- Uncompressed pixel data is always re-encoded.
+- JPEG Lossless (`1.2.840.10008.1.2.4.57`, `.4.70`) and RLE Lossless are re-encoded frame by frame. Each frame is decoded back and compared to the source, and the result is kept only when every frame matches bit for bit and the encapsulated pixel data comes out smaller. Otherwise the instance keeps its original bytes.
+- Lossy encodings (JPEG Baseline and Extended, lossy JPEG 2000, JPEG-LS near-lossless) are never re-encoded. JPEG 2000 (`.4.90`, `.4.91`) and JPEG-LS Lossless pass through as well.
+
+The colour rules keep the decoded samples exact. `YBR_FULL` sources are decoded raw, without pydicom's YBR to RGB conversion, and stored as `YBR_FULL`. RGB sources are stored as `YBR_RCT` so the codec applies its reversible colour transform. `YBR_FULL_422` cannot be reproduced exactly, so it passes through. Multi-sample output is always colour-by-pixel (`PlanarConfiguration` 0). The SOP Instance UID and the `LossyImageCompression` tags are never changed.
+
+JPEG Lossless is decoded with GDCM rather than pylibjpeg, whose libjpeg clamps out-of-range predictor reconstructions instead of wrapping them, saturating ultrasound from some vendors ([pylibjpeg-libjpeg#90](https://github.com/pydicom/pylibjpeg-libjpeg/issues/90)).
+
+A codec failure never drops an instance: the original bytes are appended and the outcome is counted under the `cloud_optimized_dicom:append` metrics namespace (`transcode_recompressed`, `transcode_passthrough_*`, `transcode_bytes_saved`). `append(..., compress=False)` keeps every source encoding.
 
 # Metadata format
 

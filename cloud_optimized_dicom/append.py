@@ -58,7 +58,7 @@ def append(
         treat_metadata_diffs_as_same (bool): if True, when a diff hash dupe is found, compute & compare the hashes of JUST the pixel data. If they match, treat the dupe as same.
         max_instance_size (float): maximum size of an instance to append, in gb
         max_series_size (float): maximum size of the series to append, in gb
-        compress (bool): whether to transcode instances to JPEG2000Lossless syntax before appending to tar
+        compress (bool): whether to re-encode uncompressed and legacy lossless pixel data as JPEG2000Lossless before appending to tar (see `Instance.compress`)
     Returns: an AppendResult; a namedtuple with the following fields:
         new (list): list of new instances that were added successfully
         same (list): list of instances that were perfect duplicates of existing instances
