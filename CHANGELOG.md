@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v2.0.3...v2.1.0) (2026-09-02)
+
+
+### Features
+
+* **PROC-2531:** re-encode legacy lossless JPEG and RLE to JPEG 2000 on ingest ([#150](https://github.com/gradienthealth/cloud_optimized_dicom/issues/150)) ([d3f1ed7](https://github.com/gradienthealth/cloud_optimized_dicom/commit/d3f1ed7f06c101c9a41a9b50416467139bb6fad7))
+
 ## [2.0.3](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v2.0.2...v2.0.3) (2026-06-03)
 
 
