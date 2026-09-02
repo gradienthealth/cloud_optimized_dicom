@@ -16,6 +16,10 @@ from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.instance_metadata import DicomMetadata
+from cloud_optimized_dicom.transcode import (
+    TranscodeOutcome,
+    recompress_to_jpeg2000_lossless,
+)
 from cloud_optimized_dicom.utils import (
     DICOM_PREAMBLE,
     _delete_gcs_dep,
@@ -317,10 +321,22 @@ class Instance:
         return VirtualFile(master_file_pointer, start, stop)
 
     def compress(self, syntax: pydicom.uid.UID = pydicom.uid.JPEG2000Lossless):
-        """Compress the instance to the given syntax. Fails if used prior to fetching, or if the local instance is nested in a tar.
+        """Re-encodes the instance's pixel data as `syntax`, keeping every UID.
+
+        Uncompressed pixel data is always re-encoded. JPEG Lossless and RLE
+        pixel data is re-encoded only when `syntax` is JPEG 2000 Lossless. That
+        re-encode keeps its result only if it decodes back bit-exact and
+        smaller; `transcode.recompress_to_jpeg2000_lossless` holds the rules.
+        Lossy and JPEG 2000 sources keep their bytes. A re-encoded instance
+        lands in a new temp file, `dicom_uri` moves to it, and size and
+        `crc32c` are recomputed.
 
         Args:
-            syntax: pydicom.uid.UID to transcode to. Defaults to JPEG2000Lossless.
+            syntax: Transfer syntax to encode to. Defaults to
+                `JPEG2000Lossless`.
+
+        Raises:
+            ValueError: If the instance is remote or nested in a tar.
         """
         if self.is_nested_in_tar or is_remote(self.dicom_uri):
             raise ValueError(
@@ -330,35 +346,26 @@ class Instance:
             logger.info(f"Skipping transcode ({self} has no pixeldata to transcode)")
             return
 
-        # open the original instance
-        with self.open() as f:
-            # read the instance
-            with pydicom.dcmread(f, defer_size=1024) as ds:
-                if ds.file_meta.TransferSyntaxUID.is_compressed:
-                    logger.info(f"Skipping transcode ({self} is already compressed)")
+        with self.open() as f, pydicom.dcmread(f, defer_size=1024) as ds:
+            source_syntax = ds.file_meta.TransferSyntaxUID
+            if source_syntax == syntax:
+                return
+            if source_syntax.is_compressed:
+                if syntax != pydicom.uid.JPEG2000Lossless:
                     return
-                # generate_instance_uid=False keeps the SOPInstanceUID stable across the transcode;
-                # COD identifies instances by UID, so a regenerated UID would orphan the entry.
-                ds.compress(syntax, generate_instance_uid=False)
-                # make a new temp file to write the transcoded instance to
-                with tempfile.NamedTemporaryFile(
-                    suffix=".dcm", delete=False
-                ) as temp_file:
-                    ds.save_as(temp_file.name)
-                    # if we were tracking a temp file, delete it
-                    if self._temp_file_path:
-                        # delete the old temp file (obsolete)
-                        os.remove(self._temp_file_path)
-                    # both temp file and dicom_uri point to the new temp file
-                    self.dicom_uri = temp_file.name
-                    self._temp_file_path = temp_file.name
-                    # old size, crc32c (and hints) are now invalid
-                    self.hints.crc32c = None
-                    self.hints.size = None
-                    self._size = None
-                    self._crc32c = None
-                    # call validate to recalculate these fields
-                    self.validate()
+                size_before = self.size()
+                outcome = recompress_to_jpeg2000_lossless(ds)
+                metrics.TRANSCODE_OUTCOME_COUNTERS[outcome].inc()
+                if outcome is not TranscodeOutcome.RECOMPRESSED:
+                    return
+                self._replace_local_file(ds)
+                metrics.TRANSCODE_BYTES_SAVED.inc(size_before - self.size())
+                return
+            # generate_instance_uid=False keeps the SOPInstanceUID stable
+            # across the transcode; COD identifies instances by UID, so a
+            # regenerated UID would orphan the entry.
+            ds.compress(syntax, generate_instance_uid=False)
+            self._replace_local_file(ds)
 
     def append_to_series_tar(
         self,
@@ -720,3 +727,22 @@ class Instance:
             == other.study_uid(trust_hints_if_available=True)
             and self.uid_hash_func == other.uid_hash_func
         )
+
+    def _replace_local_file(self, ds: pydicom.Dataset) -> None:
+        """Writes `ds` to a new temp file and repoints the instance at it.
+
+        Size and `crc32c` are recomputed for the new file.
+        """
+        with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as temp_file:
+            ds.save_as(temp_file.name)
+        if self._temp_file_path:
+            os.remove(self._temp_file_path)
+        self.dicom_uri = temp_file.name
+        self._temp_file_path = temp_file.name
+        # The hints described the file just replaced; validate() would reject
+        # the new one against them.
+        self.hints.crc32c = None
+        self.hints.size = None
+        self._size = None
+        self._crc32c = None
+        self.validate()

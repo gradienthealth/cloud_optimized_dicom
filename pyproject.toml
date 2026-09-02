@@ -26,6 +26,8 @@ dependencies = [
     "pylibjpeg==2.1.0",
     "pylibjpeg-libjpeg==2.4.0",
     "pylibjpeg-openjpeg==2.5.0",
+    # GDCM decodes JPEG Lossless on re-encode; see transcode.py.
+    "python-gdcm==3.0.22",
     "pydicom>=3.0",
     "opencv-python-headless==4.13.0.92",
     "ffmpeg-python==0.2.0",

@@ -507,3 +507,25 @@ def test_append_no_compress(
     with instance.open() as f:
         ds = pydicom.dcmread(f)
         assert ds.file_meta.TransferSyntaxUID == pydicom.uid.ImplicitVRLittleEndian
+
+
+def test_append_records_recompressed_transfer_syntax(
+    gcs_client: storage.Client,
+    datastore_path: str,
+    jpeg_lossless_path: str,
+):
+    """Appended JPEG Lossless is recorded as JPEG 2000 Lossless."""
+    instance = Instance(dicom_uri=jpeg_lossless_path)
+    cod_obj = CODObject(
+        client=gcs_client,
+        datastore_path=datastore_path,
+        study_uid=instance.study_uid(),
+        series_uid=instance.series_uid(),
+        mode="w",
+        sync_on_exit=False,
+    )
+    new, same, conflict, errors = cod_obj.append([instance], compress=True)
+    assert len(new) == 1
+    assert len(same + conflict + errors) == 0
+    recorded = cod_obj._metadata.instances[instance.instance_uid()].metadata
+    assert recorded["00020010"]["Value"] == [pydicom.uid.JPEG2000Lossless]

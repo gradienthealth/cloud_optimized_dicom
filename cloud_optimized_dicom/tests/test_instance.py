@@ -172,3 +172,33 @@ def test_temp_file_cleanup(test_data_dir: str, test_instance_uid: str):
     # delete the instance - this should clean up the temp file
     del instance
     assert not os.path.exists(temp_file.name)
+
+
+def test_compress_recompresses_jpeg_lossless(jpeg_lossless_path: str):
+    instance = Instance(dicom_uri=jpeg_lossless_path)
+    source_size = instance.size()
+    source_uid = instance.instance_uid()
+
+    instance.compress()
+
+    assert instance.size() < source_size
+    assert instance.instance_uid() == source_uid
+    with instance.open() as f:
+        ds = pydicom.dcmread(f)
+        assert ds.file_meta.TransferSyntaxUID == pydicom.uid.JPEG2000Lossless
+    assert instance._temp_file_path == instance.dicom_uri
+    assert instance.dicom_uri != jpeg_lossless_path
+
+
+def test_compress_keeps_lossy_source(ybr_full_422_path: str):
+    instance = Instance(dicom_uri=ybr_full_422_path)
+    source_size = instance.size()
+
+    instance.compress()
+
+    assert instance.dicom_uri == ybr_full_422_path
+    assert instance._temp_file_path is None
+    assert instance.size() == source_size
+    with instance.open() as f:
+        ds = pydicom.dcmread(f)
+        assert ds.file_meta.TransferSyntaxUID == pydicom.uid.JPEGBaseline8Bit

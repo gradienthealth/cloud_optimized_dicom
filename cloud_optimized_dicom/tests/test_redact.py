@@ -59,25 +59,17 @@ def multiframe_seeded_series(
 
 
 @pytest.fixture
-def ybr_full_422_path() -> str:
-    """A YBR_FULL_422 JPEG Baseline (lossy) multiframe DICOM. Sourced from
-    pydicom's bundled example set rather than committed to this repo: pydicom
-    documents `examples.ybr_color` as part of the package itself (not the
-    on-demand download set), so it ships with every pydicom install."""
-    return str(pydicom.examples.get_path("ybr_color"))
-
-
-@pytest.fixture
 def ybr_full_422_seeded_series(
     gcs_client: storage.Client,
     datastore_path: str,
     ybr_full_422_path: str,
 ) -> SeriesHandle:
-    """A fresh series ingesting a YBR_FULL_422 JPEG Baseline (lossy) multiframe
-    fixture. instance.compress() in append.py skips re-encoding when the
-    source is already compressed, so the file lands in COD with its original
-    YBR_FULL_422 lossy TS, exercising the auto-convert path that redact.py
-    handles."""
+    """A fresh series holding the lossy YBR_FULL_422 multiframe fixture.
+
+    A lossy source is never re-encoded on append, so the instance keeps its
+    JPEG Baseline transfer syntax in COD. Redacting it exercises the path where
+    the decoder hands redact.py RGB for a header that still says YBR.
+    """
     probe = Instance(dicom_uri=ybr_full_422_path)
     handle = SeriesHandle(
         gcs_client, datastore_path, probe.study_uid(), probe.series_uid()

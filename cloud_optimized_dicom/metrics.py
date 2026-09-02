@@ -12,6 +12,8 @@ from google.cloud.storage.constants import (
     STANDARD_STORAGE_CLASS,
 )
 
+from cloud_optimized_dicom.transcode import TranscodeOutcome
+
 
 class _NoOpCounter:
     """Drop-in replacement for Beam counters when apache-beam is not installed."""
@@ -47,6 +49,14 @@ SERIES_DUPE_COUNTER = _counter(APPEND_NAMESPACE, "num_full_duplicate_series")
 TAR_SUCCESS_COUNTER = _counter(APPEND_NAMESPACE, "tar_success")
 TAR_BYTES_PROCESSED = _counter(APPEND_NAMESPACE, "tar_bytes_processed")
 TOTAL_FILES_PROCESSED = _counter(APPEND_NAMESPACE, "total_files_processed")
+# One counter per `TranscodeOutcome` for what `Instance.compress` did with
+# pixel data that arrived compressed. Bytes saved is the file-size drop across
+# the re-encoded instances.
+TRANSCODE_OUTCOME_COUNTERS = {
+    outcome: _counter(APPEND_NAMESPACE, f"transcode_{outcome.value}")
+    for outcome in TranscodeOutcome
+}
+TRANSCODE_BYTES_SAVED = _counter(APPEND_NAMESPACE, "transcode_bytes_saved")
 
 # Storage class counters
 STD_CREATE_COUNTER = _counter(__name__, "num_STANDARD_creates")
