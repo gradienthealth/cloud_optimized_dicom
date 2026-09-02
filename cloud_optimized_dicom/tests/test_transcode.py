@@ -17,32 +17,36 @@ from cloud_optimized_dicom.transcode import (
     recompress_to_jpeg2000_lossless,
 )
 
-MONO16 = dict(photometric="MONOCHROME2", bits_allocated=16, bits_stored=12)
-RGB8 = dict(photometric="RGB", bits_allocated=8, bits_stored=8)
-YBR8 = dict(photometric="YBR_FULL", bits_allocated=8, bits_stored=8)
+MONO16 = {"photometric": "MONOCHROME2", "bits_allocated": 16, "bits_stored": 12}
+RGB8 = {"photometric": "RGB", "bits_allocated": 8, "bits_stored": 8}
+YBR8 = {"photometric": "YBR_FULL", "bits_allocated": 8, "bits_stored": 8}
 
 
 @pytest.mark.parametrize(
-    "syntax, image, expected_photometric",
+    ("syntax", "image", "expected_photometric"),
     [
         (JPEGLosslessSV1, MONO16, "MONOCHROME2"),
         (JPEGLossless, MONO16, "MONOCHROME2"),
-        (JPEGLosslessSV1, dict(MONO16, bits_stored=16, is_signed=True), "MONOCHROME2"),
         (
             JPEGLosslessSV1,
-            dict(photometric="MONOCHROME1", bits_allocated=8, bits_stored=8),
+            {**MONO16, "bits_stored": 16, "is_signed": True},
+            "MONOCHROME2",
+        ),
+        (
+            JPEGLosslessSV1,
+            {"photometric": "MONOCHROME1", "bits_allocated": 8, "bits_stored": 8},
             "MONOCHROME1",
         ),
-        (JPEGLosslessSV1, dict(MONO16, number_of_frames=3), "MONOCHROME2"),
+        (JPEGLosslessSV1, {**MONO16, "number_of_frames": 3}, "MONOCHROME2"),
         (JPEGLosslessSV1, RGB8, "YBR_RCT"),
         (JPEGLosslessSV1, YBR8, "YBR_FULL"),
         (
             JPEGLosslessSV1,
-            dict(photometric="PALETTE COLOR", bits_allocated=8, bits_stored=8),
+            {"photometric": "PALETTE COLOR", "bits_allocated": 8, "bits_stored": 8},
             "PALETTE COLOR",
         ),
         (RLELossless, MONO16, "MONOCHROME2"),
-        (RLELossless, dict(RGB8, planar_configuration=1), "YBR_RCT"),
+        (RLELossless, {**RGB8, "planar_configuration": 1}, "YBR_RCT"),
         (RLELossless, YBR8, "YBR_FULL"),
     ],
     ids=[

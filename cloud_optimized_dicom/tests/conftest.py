@@ -154,6 +154,7 @@ def jpeg_lossless_path(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 
 def synthetic_image(
+    *,
     photometric: str = "MONOCHROME2",
     bits_allocated: int = 16,
     bits_stored: int = 12,
@@ -165,8 +166,8 @@ def synthetic_image(
 ) -> pydicom.Dataset:
     """Builds an uncompressed (Explicit VR Little Endian) image dataset.
 
-    The pixels are a smooth ramp with light noise, so every lossless codec
-    has redundancy to remove and a re-encode can come out smaller.
+    The pixels are a smooth ramp with light noise, so every lossless codec has
+    redundancy to remove and a re-encode can come out smaller.
     """
     rng = np.random.default_rng(seed=7)
     samples = 3 if photometric in ("RGB", "YBR_FULL") else 1

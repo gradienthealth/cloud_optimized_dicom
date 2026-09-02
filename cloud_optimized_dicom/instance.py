@@ -324,15 +324,16 @@ class Instance:
         """Re-encodes the instance's pixel data as `syntax`, keeping every UID.
 
         Uncompressed pixel data is always re-encoded. JPEG Lossless and RLE
-        pixel data is re-encoded only when `syntax` is JPEG 2000 Lossless.
-        That re-encode keeps its result only if it decodes back bit-exact and
+        pixel data is re-encoded only when `syntax` is JPEG 2000 Lossless. That
+        re-encode keeps its result only if it decodes back bit-exact and
         smaller; `transcode.recompress_to_jpeg2000_lossless` holds the rules.
         Lossy and JPEG 2000 sources keep their bytes. A re-encoded instance
-        lands in a new temp file, `dicom_uri` moves to it, and size and crc32c
-        are recomputed.
+        lands in a new temp file, `dicom_uri` moves to it, and size and
+        `crc32c` are recomputed.
 
         Args:
-            syntax: Transfer syntax to encode to. Defaults to JPEG2000Lossless.
+            syntax: Transfer syntax to encode to. Defaults to
+                `JPEG2000Lossless`.
 
         Raises:
             ValueError: If the instance is remote or nested in a tar.
@@ -345,42 +346,26 @@ class Instance:
             logger.info(f"Skipping transcode ({self} has no pixeldata to transcode)")
             return
 
-        with self.open() as f:
-            with pydicom.dcmread(f, defer_size=1024) as ds:
-                source_syntax = ds.file_meta.TransferSyntaxUID
-                if source_syntax == syntax:
+        with self.open() as f, pydicom.dcmread(f, defer_size=1024) as ds:
+            source_syntax = ds.file_meta.TransferSyntaxUID
+            if source_syntax == syntax:
+                return
+            if source_syntax.is_compressed:
+                if syntax != pydicom.uid.JPEG2000Lossless:
                     return
-                if source_syntax.is_compressed:
-                    if syntax != pydicom.uid.JPEG2000Lossless:
-                        return
-                    size_before = self.size()
-                    outcome = recompress_to_jpeg2000_lossless(ds)
-                    metrics.TRANSCODE_OUTCOME_COUNTERS[outcome].inc()
-                    if outcome is not TranscodeOutcome.RECOMPRESSED:
-                        return
-                    self._replace_local_file(ds)
-                    metrics.TRANSCODE_BYTES_SAVED.inc(size_before - self.size())
+                size_before = self.size()
+                outcome = recompress_to_jpeg2000_lossless(ds)
+                metrics.TRANSCODE_OUTCOME_COUNTERS[outcome].inc()
+                if outcome is not TranscodeOutcome.RECOMPRESSED:
                     return
-                # generate_instance_uid=False keeps the SOPInstanceUID stable across the transcode;
-                # COD identifies instances by UID, so a regenerated UID would orphan the entry.
-                ds.compress(syntax, generate_instance_uid=False)
                 self._replace_local_file(ds)
-
-    def _replace_local_file(self, ds: pydicom.Dataset) -> None:
-        """Writes `ds` to a new temp file the instance then points at, and recomputes size and crc32c."""
-        with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as temp_file:
-            ds.save_as(temp_file.name)
-        if self._temp_file_path:
-            os.remove(self._temp_file_path)
-        self.dicom_uri = temp_file.name
-        self._temp_file_path = temp_file.name
-        # The hints described the file just replaced; validate() would reject
-        # the new one against them.
-        self.hints.crc32c = None
-        self.hints.size = None
-        self._size = None
-        self._crc32c = None
-        self.validate()
+                metrics.TRANSCODE_BYTES_SAVED.inc(size_before - self.size())
+                return
+            # generate_instance_uid=False keeps the SOPInstanceUID stable
+            # across the transcode; COD identifies instances by UID, so a
+            # regenerated UID would orphan the entry.
+            ds.compress(syntax, generate_instance_uid=False)
+            self._replace_local_file(ds)
 
     def append_to_series_tar(
         self,
@@ -742,3 +727,22 @@ class Instance:
             == other.study_uid(trust_hints_if_available=True)
             and self.uid_hash_func == other.uid_hash_func
         )
+
+    def _replace_local_file(self, ds: pydicom.Dataset) -> None:
+        """Writes `ds` to a new temp file and repoints the instance at it.
+
+        Size and `crc32c` are recomputed for the new file.
+        """
+        with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as temp_file:
+            ds.save_as(temp_file.name)
+        if self._temp_file_path:
+            os.remove(self._temp_file_path)
+        self.dicom_uri = temp_file.name
+        self._temp_file_path = temp_file.name
+        # The hints described the file just replaced; validate() would reject
+        # the new one against them.
+        self.hints.crc32c = None
+        self.hints.size = None
+        self._size = None
+        self._crc32c = None
+        self.validate()

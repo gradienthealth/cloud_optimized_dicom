@@ -1,17 +1,15 @@
 """Re-encodes legacy lossless pixel data as JPEG 2000 Lossless.
 
-Hospitals send instances in older lossless encodings that JPEG 2000 stores
-more compactly. `pydicom.Dataset.compress` refuses a compressed source, so
-this module decodes
-each frame, encodes it again, and keeps the result only when it decodes back
-bit-exact and comes out smaller. An instance that cannot be re-encoded keeps
-its original bytes.
+Hospitals send instances in older lossless encodings that JPEG 2000 stores more
+compactly. `pydicom.Dataset.compress` refuses a compressed source, so this
+module decodes each frame, encodes it again, and keeps the result only when it
+decodes back bit-exact and comes out smaller. An instance that cannot be
+re-encoded keeps its original bytes.
 """
 
 import enum
 import io
 from itertools import islice
-from typing import Optional
 
 import numpy as np
 import pydicom
@@ -24,12 +22,12 @@ from pydicom.valuerep import VR
 from cloud_optimized_dicom.config import logger
 
 # The encodings worth re-encoding. Each is lossless, so the pixel values
-# survive, and each stores them less compactly than JPEG 2000. Lossy
-# encodings must never be re-encoded. JPEG 2000 Lossless (.90) is already the
-# target. JPEG-LS Lossless and the reversible half of JPEG 2000 (.91) stay
-# out because JPEG 2000 Lossless encodes them to about the same size (the
-# PROC-2531 compression study), and .91 mixes reversible and irreversible
-# codestreams under one transfer syntax.
+# survive, and each stores them less compactly than JPEG 2000. Lossy encodings
+# must never be re-encoded. JPEG 2000 Lossless (.90) is already the target.
+# JPEG-LS Lossless and the reversible half of JPEG 2000 (.91) stay out because
+# JPEG 2000 Lossless encodes them to about the same size (the PROC-2531
+# compression study), and .91 mixes reversible and irreversible codestreams
+# under one transfer syntax.
 RECOMPRESS_SOURCE_SYNTAXES = frozenset(
     {
         pydicom.uid.JPEGLossless,
@@ -54,19 +52,20 @@ _RECOMPRESSIBLE_PHOTOMETRIC_INTERPRETATIONS = frozenset(
 )
 
 
+# Offsets and lengths for an extended offset table, produced only when the
+# encapsulated frames outgrow the basic table's 32-bit offsets.
+_ExtendedOffsets = tuple[bytes, bytes]
+
+
 class TranscodeOutcome(enum.Enum):
     """What `recompress_to_jpeg2000_lossless` did with a dataset."""
 
-    RECOMPRESSED = "recompressed"
-    PASSTHROUGH_SYNTAX = "passthrough_syntax"
-    PASSTHROUGH_PHOTOMETRIC = "passthrough_photometric"
-    PASSTHROUGH_NOT_SMALLER = "passthrough_not_smaller"
-    PASSTHROUGH_VERIFY_MISMATCH = "passthrough_verify_mismatch"
     PASSTHROUGH_FAILED = "passthrough_failed"
-
-
-class _VerifyMismatchError(Exception):
-    """A re-encoded frame did not decode back to the source frame."""
+    PASSTHROUGH_NOT_SMALLER = "passthrough_not_smaller"
+    PASSTHROUGH_PHOTOMETRIC = "passthrough_photometric"
+    PASSTHROUGH_SYNTAX = "passthrough_syntax"
+    PASSTHROUGH_VERIFY_MISMATCH = "passthrough_verify_mismatch"
+    RECOMPRESSED = "recompressed"
 
 
 def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
@@ -76,13 +75,13 @@ def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
     interpretation the encoder reproduces exactly are re-encoded. Every frame
     is decoded back and compared to the source, and the result replaces the
     original only when every frame matches and the encapsulated pixel data is
-    smaller. On any other outcome, including an exception from a codec, `ds`
-    is left untouched.
+    smaller. On any other outcome, including an exception from a codec, `ds` is
+    left untouched.
 
     The SOP Instance UID and the lossy-compression tags are never changed. RGB
-    sources are stored as YBR_RCT; other photometric interpretations are kept.
-    Multi-sample sources are stored colour-by-pixel (`PlanarConfiguration` 0),
-    the order every frame is decoded in.
+    sources are stored as `YBR_RCT`; other photometric interpretations are
+    kept. Multi-sample sources are stored colour-by-pixel
+    (`PlanarConfiguration` 0), the order every frame is decoded in.
 
     Args:
         ds: Dataset with encapsulated `PixelData`.
@@ -125,8 +124,21 @@ def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
     return TranscodeOutcome.RECOMPRESSED
 
 
+def _encapsulate(
+    codestreams: list[bytes],
+) -> tuple[bytes, _ExtendedOffsets | None]:
+    """Encapsulates the frames; large totals get an extended offset table."""
+    basic_table_span = (len(codestreams) - 1) * 8 + sum(
+        len(codestream) for codestream in codestreams[:-1]
+    )
+    if basic_table_span > 2**32 - 1:
+        pixel_data, offsets, lengths = encapsulate_extended(codestreams)
+        return pixel_data, (offsets, lengths)
+    return encapsulate(codestreams), None
+
+
 def _encode_frames(ds: pydicom.Dataset, target_photometric: str) -> list[bytes]:
-    """Decodes each frame raw, encodes it, and verifies it decodes back exactly."""
+    """Decodes, re-encodes and verifies every frame."""
     encoder = get_encoder(pydicom.uid.JPEG2000Lossless)
     options = as_pixel_options(ds)
     options["photometric_interpretation"] = target_photometric
@@ -150,32 +162,10 @@ def _encode_frames(ds: pydicom.Dataset, target_photometric: str) -> list[bytes]:
     return codestreams
 
 
-def _verify_roundtrip(codestream: bytes, frame: np.ndarray) -> None:
-    decoded = decode_jpeg2000(io.BytesIO(codestream))
-    if decoded.shape != frame.shape or not np.array_equal(decoded, frame):
-        raise _VerifyMismatchError(
-            f"decoded frame {decoded.shape} {decoded.dtype} differs from source "
-            f"{frame.shape} {frame.dtype}"
-        )
-
-
-def _encapsulate(
-    codestreams: list[bytes],
-) -> tuple[bytes, Optional[tuple[bytes, bytes]]]:
-    """Encapsulates the frames, with an extended offset table past the basic one's 32-bit reach."""
-    basic_table_span = (len(codestreams) - 1) * 8 + sum(
-        len(codestream) for codestream in codestreams[:-1]
-    )
-    if basic_table_span > 2**32 - 1:
-        pixel_data, offsets, lengths = encapsulate_extended(codestreams)
-        return pixel_data, (offsets, lengths)
-    return encapsulate(codestreams), None
-
-
 def _replace_pixel_data(
     ds: pydicom.Dataset,
     pixel_data: bytes,
-    extended_offsets: Optional[tuple[bytes, bytes]],
+    extended_offsets: _ExtendedOffsets | None,
     target_photometric: str,
 ) -> None:
     ds.PixelData = pixel_data
@@ -193,3 +183,16 @@ def _replace_pixel_data(
     ds.PhotometricInterpretation = target_photometric
     if ds.SamplesPerPixel > 1:
         ds.PlanarConfiguration = 0
+
+
+def _verify_roundtrip(codestream: bytes, frame: np.ndarray) -> None:
+    decoded = decode_jpeg2000(io.BytesIO(codestream))
+    if decoded.shape != frame.shape or not np.array_equal(decoded, frame):
+        raise _VerifyMismatchError(
+            f"decoded frame {decoded.shape} {decoded.dtype} differs from source "
+            f"{frame.shape} {frame.dtype}"
+        )
+
+
+class _VerifyMismatchError(Exception):
+    """A re-encoded frame did not decode back to the source frame."""

@@ -514,7 +514,7 @@ def test_append_records_recompressed_transfer_syntax(
     datastore_path: str,
     jpeg_lossless_path: str,
 ):
-    """JPEG Lossless input lands in the series metadata as JPEG 2000 Lossless."""
+    """Appended JPEG Lossless is recorded as JPEG 2000 Lossless."""
     instance = Instance(dicom_uri=jpeg_lossless_path)
     cod_obj = CODObject(
         client=gcs_client,
