@@ -29,7 +29,7 @@ dependencies = [
     # GDCM decodes JPEG Lossless on re-encode; see transcode.py.
     "python-gdcm==3.0.22",
     "pydicom>=3.0",
-    "opencv-python-headless==4.13.0.92",
+    "opencv-python-headless==5.0.0.93",
     "ffmpeg-python==0.2.0",
     "zstandard>=0.24.0",
     # Floor ensures the urllib3 2.6+ Gzip/Brotli decoder fix from upstream PR #495 is installed.
