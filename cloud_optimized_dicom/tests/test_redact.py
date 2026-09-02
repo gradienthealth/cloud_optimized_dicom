@@ -64,10 +64,12 @@ def ybr_full_422_seeded_series(
     datastore_path: str,
     ybr_full_422_path: str,
 ) -> SeriesHandle:
-    """A fresh series ingesting a YBR_FULL_422 JPEG Baseline (lossy) multiframe
-    fixture. Instance.compress() never re-encodes a lossy source, so the file
-    lands in COD with its original YBR_FULL_422 lossy TS, exercising the
-    auto-convert path that redact.py handles."""
+    """A fresh series holding the lossy YBR_FULL_422 multiframe fixture.
+
+    A lossy source is never re-encoded on append, so the instance keeps its
+    JPEG Baseline transfer syntax in COD. Redacting it exercises the path
+    where the decoder hands redact.py RGB for a header that still says YBR.
+    """
     probe = Instance(dicom_uri=ybr_full_422_path)
     handle = SeriesHandle(
         gcs_client, datastore_path, probe.study_uid(), probe.series_uid()

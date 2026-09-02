@@ -323,13 +323,13 @@ class Instance:
     def compress(self, syntax: pydicom.uid.UID = pydicom.uid.JPEG2000Lossless):
         """Re-encodes the instance's pixel data as `syntax`, keeping every UID.
 
-        Uncompressed pixel data is always re-encoded. Pixel data that arrived
-        in a legacy lossless encoding (JPEG Lossless, RLE) is re-encoded when
-        `syntax` is JPEG 2000 Lossless and the result decodes back bit-exact
-        and smaller; `transcode.recompress_to_jpeg2000_lossless` holds the
-        rules. Lossy and JPEG 2000 sources keep their bytes. A re-encoded
-        instance is written to a new temp file that `dicom_uri` then points
-        at, with size and crc32c recomputed.
+        Uncompressed pixel data is always re-encoded. JPEG Lossless and RLE
+        pixel data is re-encoded only when `syntax` is JPEG 2000 Lossless.
+        That re-encode keeps its result only if it decodes back bit-exact and
+        smaller; `transcode.recompress_to_jpeg2000_lossless` holds the rules.
+        Lossy and JPEG 2000 sources keep their bytes. A re-encoded instance
+        lands in a new temp file, `dicom_uri` moves to it, and size and crc32c
+        are recomputed.
 
         Args:
             syntax: Transfer syntax to encode to. Defaults to JPEG2000Lossless.
@@ -370,12 +370,12 @@ class Instance:
         """Writes `ds` to a new temp file the instance then points at, and recomputes size and crc32c."""
         with tempfile.NamedTemporaryFile(suffix=".dcm", delete=False) as temp_file:
             ds.save_as(temp_file.name)
-        # the previous temp file, if any, is now obsolete
         if self._temp_file_path:
             os.remove(self._temp_file_path)
         self.dicom_uri = temp_file.name
         self._temp_file_path = temp_file.name
-        # old size, crc32c (and hints) are now invalid
+        # The hints described the file just replaced; validate() would reject
+        # the new one against them.
         self.hints.crc32c = None
         self.hints.size = None
         self._size = None

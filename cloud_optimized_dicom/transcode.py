@@ -22,11 +22,11 @@ from pydicom.valuerep import VR
 
 from cloud_optimized_dicom.config import logger
 
-# The encodings worth re-encoding: each is lossless, so the pixel values
-# survive, and each stores them less compactly than JPEG 2000. JPEG 2000
-# itself is left alone (lossless .90 is already the target; .91 mixes
-# reversible and irreversible codestreams and measured no gain when
-# reversible), and so is every lossy encoding, which must never be re-encoded.
+# The encodings worth re-encoding. Each is lossless, so the pixel values
+# survive, and each stores them less compactly than JPEG 2000. Lossy
+# encodings must never be re-encoded. JPEG 2000 is left alone too: lossless
+# .90 is already the target, and .91 mixes reversible and irreversible
+# codestreams and measured no gain when reversible.
 RECOMPRESS_SOURCE_SYNTAXES = frozenset(
     {
         pydicom.uid.JPEGLossless,
