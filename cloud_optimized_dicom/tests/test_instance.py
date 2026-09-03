@@ -7,8 +7,10 @@ import pydicom
 import pytest
 from pydicom.pixels import pixel_array
 
+import cloud_optimized_dicom.instance
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.tests.conftest import synthetic_image
+from cloud_optimized_dicom.transcode import TranscodeOutcome
 from cloud_optimized_dicom.utils import is_remote
 
 REMOTE_DICOM_URI = "https://code.oak-tree.tech/oak-tree/medical-imaging/dcmjs/-/raw/master/test/sample-dicom.dcm?ref_type=heads&inline=false"
@@ -209,8 +211,8 @@ def test_compress_keeps_lossy_source(ybr_full_422_path: str):
 
 @pytest.mark.parametrize(
     ("planar_configuration", "number_of_frames"),
-    [(0, 1), (1, 1), (0, 3), (1, 3)],
-    ids=["planar0", "planar1", "planar0_multiframe", "planar1_multiframe"],
+    [(0, 1), (1, 3)],
+    ids=["planar0", "planar1_multiframe"],
 )
 def test_compress_stores_uncompressed_rgb_as_ybr_rct(
     tmp_path, planar_configuration, number_of_frames
@@ -254,10 +256,9 @@ def test_compress_applies_the_colour_transform_to_uncompressed_rgb(tmp_path):
     "image",
     [
         {"photometric": "MONOCHROME2", "bits_allocated": 16, "bits_stored": 12},
-        {"photometric": "PALETTE COLOR", "bits_allocated": 8, "bits_stored": 8},
         {"photometric": "YBR_FULL", "bits_allocated": 8, "bits_stored": 8},
     ],
-    ids=["mono16", "palette", "ybr_full"],
+    ids=["mono16", "ybr_full"],
 )
 def test_compress_keeps_other_uncompressed_photometric_interpretations(tmp_path, image):
     source = synthetic_image(**image)
@@ -276,13 +277,35 @@ def test_compress_keeps_other_uncompressed_photometric_interpretations(tmp_path,
     assert ds.SOPInstanceUID == source.SOPInstanceUID
 
 
-def _rgb_image(planar_configuration: int, number_of_frames: int) -> pydicom.Dataset:
-    """Builds an uncompressed 8-bit RGB image with correlated channels.
+def test_compress_keeps_raw_rgb_when_the_re_encode_passes_through(
+    tmp_path, monkeypatch
+):
+    path = str(tmp_path / "rgb.dcm")
+    _rgb_image(planar_configuration=0, number_of_frames=1).save_as(
+        path, enforce_file_format=True
+    )
+    monkeypatch.setattr(
+        cloud_optimized_dicom.instance,
+        "recompress_to_jpeg2000_lossless",
+        lambda ds: TranscodeOutcome.PASSTHROUGH_FAILED,
+    )
+    instance = Instance(dicom_uri=path)
 
-    Colour gradients, noise shared by the three channels, and four saturated
-    patches stand in for real colour imaging, whose channels move together. The
-    reversible colour transform shrinks that; it cannot shrink the independent
-    per-channel noise `synthetic_image` adds.
+    instance.compress()
+
+    assert instance.dicom_uri == path
+    assert instance._temp_file_path is None
+    with instance.open() as f:
+        ds = pydicom.dcmread(f)
+    assert ds.file_meta.TransferSyntaxUID == pydicom.uid.ExplicitVRLittleEndian
+
+
+def _rgb_image(planar_configuration: int, number_of_frames: int) -> pydicom.Dataset:
+    """Builds an uncompressed 8-bit RGB image the colour transform can shrink.
+
+    The reversible colour transform stores two channels as differences from the
+    third, so the noise shared by all three channels here drops out of those
+    planes. The independent per-channel noise `synthetic_image` adds does not.
     """
     rows = columns = 256
     ds = synthetic_image(

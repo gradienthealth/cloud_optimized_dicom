@@ -325,15 +325,17 @@ class Instance:
 
         When `syntax` is JPEG 2000 Lossless, three kinds of source take the
         frame-by-frame re-encode of
-        `transcode.recompress_to_jpeg2000_lossless`, which keeps its result
-        only if it decodes back bit-exact and smaller:
+        `transcode.recompress_to_jpeg2000_lossless`:
 
         - JPEG Lossless
         - RLE Lossless
         - uncompressed RGB, which it stores as `YBR_RCT`
 
-        Any other uncompressed source is re-encoded directly, and lossy and
-        JPEG 2000 sources keep their bytes. A re-encoded instance lands in a
+        That re-encode keeps its result only if it decodes back bit-exact and
+        smaller; otherwise the instance keeps its bytes. Any other uncompressed
+        source is encoded directly with `Dataset.compress`, and so is
+        uncompressed RGB when `syntax` is anything else. Compressed sources
+        keep their bytes in every other case. A re-encoded instance lands in a
         new temp file, `dicom_uri` moves to it, and size and `crc32c` are
         recomputed.
 
@@ -357,11 +359,11 @@ class Instance:
             if source_syntax == syntax:
                 return
             # Uncompressed RGB joins the compressed sources in the frame
-            # re-encode so it is stored as YBR_RCT: openjpeg applies its
-            # reversible colour transform only to a frame declared YBR_RCT, and
-            # `Dataset.compress` declares whatever the header says. Other
-            # uncompressed sources gain nothing from the transform and take the
-            # direct encode.
+            # re-encode, which stores it as YBR_RCT. `Dataset.compress` would
+            # declare the header's RGB and encode without the colour transform.
+            # Other uncompressed sources gain nothing from the transform and
+            # keep the direct encode, which skips the frame path's decode-back
+            # verification.
             if syntax == pydicom.uid.JPEG2000Lossless and (
                 source_syntax.is_compressed
                 or ds.get("PhotometricInterpretation") == "RGB"

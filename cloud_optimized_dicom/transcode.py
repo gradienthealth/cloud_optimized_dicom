@@ -1,12 +1,13 @@
 """Re-encodes pixel data as JPEG 2000 Lossless, one verified frame at a time.
 
-Hospitals send instances in older lossless encodings that JPEG 2000 stores more
-compactly, and uncompressed RGB that shrinks further under the codec's
-reversible colour transform. `pydicom.Dataset.compress` refuses a compressed
-source and encodes RGB without that transform, so this module decodes each
-frame, encodes it again, and keeps the result only when it decodes back
-bit-exact and comes out smaller. An instance that cannot be re-encoded keeps
-its original bytes.
+Two kinds of source gain from this path: the legacy lossless encodings that
+JPEG 2000 stores more compactly, and uncompressed RGB, which shrinks further
+once the codec's reversible colour transform runs. Neither is within reach of
+`pydicom.Dataset.compress`, which refuses a compressed source and encodes RGB
+with the transform off. Each frame is decoded, encoded again, and decoded once
+more to prove it matches the source. The result is kept only when every frame
+matches and the pixel data comes out smaller; otherwise the instance keeps its
+original bytes.
 """
 
 import enum
@@ -73,20 +74,22 @@ class TranscodeOutcome(enum.Enum):
 def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
     """Re-encodes a dataset's pixel data as JPEG 2000 Lossless.
 
-    Uncompressed sources and the encodings in `RECOMPRESS_SOURCE_SYNTAXES` are
-    re-encoded when the encoder reproduces their photometric interpretation
-    exactly; every other source passes through. Every frame is decoded back and
-    compared to the source, and the result replaces the original only when
-    every frame matches and the encapsulated pixel data is smaller. On any
-    other outcome, including an exception from a codec, `ds` is left untouched.
+    Two kinds of source are accepted: uncompressed pixel data, and the
+    encodings in `RECOMPRESS_SOURCE_SYNTAXES`. Either must carry a photometric
+    interpretation the encoder reproduces exactly; anything else passes
+    through. Each frame is decoded, encoded, and decoded again to compare with
+    the source. The re-encode replaces the original only when every frame
+    matches and the encapsulated pixel data is smaller. Any other outcome,
+    including an exception from a codec, leaves `ds` untouched.
 
-    The SOP Instance UID and the lossy-compression tags are never changed. RGB
-    sources are stored as `YBR_RCT`; other photometric interpretations are
-    kept. Multi-sample sources are stored colour-by-pixel
-    (`PlanarConfiguration` 0), the order every frame is decoded in.
+    RGB is stored as `YBR_RCT`, the interpretation under which the codec
+    applies its reversible colour transform; every other interpretation is
+    kept. Multi-sample output is colour-by-pixel (`PlanarConfiguration` 0),
+    whatever the source's layout. The SOP Instance UID and the
+    lossy-compression tags never change.
 
     Args:
-        ds: Dataset with `PixelData`.
+        ds: Dataset with `PixelData`, uncompressed or encapsulated.
 
     Returns:
         The outcome. `ds` is modified only for `TranscodeOutcome.RECOMPRESSED`.
