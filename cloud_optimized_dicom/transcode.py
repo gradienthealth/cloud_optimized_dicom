@@ -74,13 +74,13 @@ class TranscodeOutcome(enum.Enum):
 def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
     """Re-encodes a dataset's pixel data as JPEG 2000 Lossless.
 
-    Two kinds of source are accepted: uncompressed pixel data, and the
-    encodings in `RECOMPRESS_SOURCE_SYNTAXES`. Either must carry a photometric
-    interpretation the encoder reproduces exactly; anything else passes
-    through. Each frame is decoded, encoded, and decoded again to compare with
-    the source. The re-encode replaces the original only when every frame
-    matches and the encapsulated pixel data is smaller. Any other outcome,
-    including an exception from a codec, leaves `ds` untouched.
+    Uncompressed pixel data and the encodings in `RECOMPRESS_SOURCE_SYNTAXES`
+    are accepted. Either must carry a photometric interpretation the encoder
+    reproduces exactly; anything else passes through. Each frame is decoded,
+    encoded, and decoded again to compare with the source. The re-encode
+    replaces the original only when every frame matches and the encapsulated
+    pixel data is smaller. Any other outcome, including an exception from a
+    codec, leaves `ds` untouched.
 
     RGB is stored as `YBR_RCT`, the interpretation under which the codec
     applies its reversible colour transform; every other interpretation is

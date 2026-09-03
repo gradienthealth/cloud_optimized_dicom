@@ -323,21 +323,17 @@ class Instance:
     def compress(self, syntax: pydicom.uid.UID = pydicom.uid.JPEG2000Lossless):
         """Re-encodes the instance's pixel data as `syntax`, keeping every UID.
 
-        When `syntax` is JPEG 2000 Lossless, three kinds of source take the
-        frame-by-frame re-encode of
-        `transcode.recompress_to_jpeg2000_lossless`:
-
-        - JPEG Lossless
-        - RLE Lossless
-        - uncompressed RGB, which it stores as `YBR_RCT`
+        When `syntax` is JPEG 2000 Lossless, JPEG Lossless, RLE Lossless and
+        uncompressed RGB sources take the frame-by-frame re-encode of
+        `transcode.recompress_to_jpeg2000_lossless`, which stores RGB as
+        `YBR_RCT`.
 
         That re-encode keeps its result only if it decodes back bit-exact and
         smaller; otherwise the instance keeps its bytes. Any other uncompressed
-        source is encoded directly with `Dataset.compress`, and so is
-        uncompressed RGB when `syntax` is anything else. Compressed sources
-        keep their bytes in every other case. A re-encoded instance lands in a
-        new temp file, `dicom_uri` moves to it, and size and `crc32c` are
-        recomputed.
+        source is encoded directly with `Dataset.compress`. So is uncompressed
+        RGB when `syntax` is anything else. Compressed sources keep their bytes
+        in every other case. A re-encoded instance lands in a new temp file,
+        and `dicom_uri` moves to it. Size and `crc32c` are recomputed.
 
         Args:
             syntax: Transfer syntax to encode to. Defaults to
