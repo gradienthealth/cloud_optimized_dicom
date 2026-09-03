@@ -3,6 +3,7 @@ import pydicom.uid
 import pytest
 from pydicom.pixels import pixel_array
 from pydicom.uid import (
+    ExplicitVRLittleEndian,
     JPEG2000Lossless,
     JPEGBaseline8Bit,
     JPEGLossless,
@@ -48,6 +49,13 @@ YBR8 = {"photometric": "YBR_FULL", "bits_allocated": 8, "bits_stored": 8}
         (RLELossless, MONO16, "MONOCHROME2"),
         (RLELossless, {**RGB8, "planar_configuration": 1}, "YBR_RCT"),
         (RLELossless, YBR8, "YBR_FULL"),
+        (ExplicitVRLittleEndian, RGB8, "YBR_RCT"),
+        (
+            ExplicitVRLittleEndian,
+            {**RGB8, "planar_configuration": 1, "number_of_frames": 3},
+            "YBR_RCT",
+        ),
+        (ExplicitVRLittleEndian, MONO16, "MONOCHROME2"),
     ],
     ids=[
         "sv1_mono16",
@@ -61,9 +69,12 @@ YBR8 = {"photometric": "YBR_FULL", "bits_allocated": 8, "bits_stored": 8}
         "rle_mono16",
         "rle_rgb_planar",
         "rle_ybr_full",
+        "uncompressed_rgb",
+        "uncompressed_rgb_planar_multiframe",
+        "uncompressed_mono16",
     ],
 )
-def test_recompresses_legacy_lossless_bit_exact(
+def test_recompresses_accepted_sources_bit_exact(
     tmp_path, syntax, image, expected_photometric
 ):
     source = synthetic_image(**image)
