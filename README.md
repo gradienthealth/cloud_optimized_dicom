@@ -205,11 +205,11 @@ After ingestion, one can conveniently delete these files by calling `Instance.de
 
 `CODObject.append` re-encodes pixel data as JPEG 2000 Lossless through `Instance.compress`. JPEG 2000 Lossless stores the same pixels in fewer bytes than the encodings most hospitals send, as measured in the [PROC-2531](https://linear.app/gradienthealth/issue/PROC-2531) compression study:
 
-- Uncompressed pixel data is always re-encoded.
-- JPEG Lossless (`1.2.840.10008.1.2.4.57`, `.4.70`) and RLE Lossless are re-encoded frame by frame, and each frame is decoded back and compared to the source. The result is kept only when every frame matches bit for bit and the encapsulated pixel data comes out smaller; otherwise the instance keeps its original bytes.
+- Uncompressed pixel data is encoded directly, except RGB, which takes the frame-by-frame path below.
+- JPEG Lossless (`1.2.840.10008.1.2.4.57`, `.4.70`), RLE Lossless and uncompressed RGB are re-encoded frame by frame, and each frame is decoded back and compared to the source. The result is kept only when every frame matches bit for bit and the encapsulated pixel data comes out smaller; otherwise the instance keeps its original bytes, raw RGB included.
 - Lossy encodings (JPEG Baseline and Extended, lossy JPEG 2000, JPEG-LS near-lossless) are never re-encoded. JPEG 2000 (`.4.90`, `.4.91`) and JPEG-LS Lossless pass through because re-encoding them does not shrink them.
 
-The colour rules keep the decoded samples exact. `YBR_FULL` sources are decoded raw, without pydicom's YBR to RGB conversion, and stored as `YBR_FULL`. RGB sources are stored as `YBR_RCT` so the codec applies its reversible colour transform. `YBR_FULL_422` cannot be reproduced exactly, so it passes through. Multi-sample output is always colour-by-pixel (`PlanarConfiguration` 0). The SOP Instance UID and the `LossyImageCompression` tags are never changed.
+The colour rules keep the decoded samples exact. `YBR_FULL` sources are decoded raw, without pydicom's YBR to RGB conversion, and stored as `YBR_FULL`. RGB sources are stored as `YBR_RCT`, the one interpretation the codec applies its reversible colour transform to. `YBR_FULL_422` cannot be reproduced exactly, so it passes through. Multi-sample output is always colour-by-pixel (`PlanarConfiguration` 0). The SOP Instance UID and the `LossyImageCompression` tags are never changed.
 
 JPEG Lossless is decoded with GDCM rather than pylibjpeg, whose libjpeg clamps out-of-range predictor reconstructions instead of wrapping them, saturating ultrasound from some vendors ([pylibjpeg-libjpeg#90](https://github.com/pydicom/pylibjpeg-libjpeg/issues/90)).
 

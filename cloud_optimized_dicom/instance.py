@@ -323,13 +323,17 @@ class Instance:
     def compress(self, syntax: pydicom.uid.UID = pydicom.uid.JPEG2000Lossless):
         """Re-encodes the instance's pixel data as `syntax`, keeping every UID.
 
-        Uncompressed pixel data is always re-encoded. JPEG Lossless and RLE
-        pixel data is re-encoded only when `syntax` is JPEG 2000 Lossless. That
-        re-encode keeps its result only if it decodes back bit-exact and
-        smaller; `transcode.recompress_to_jpeg2000_lossless` holds the rules.
-        Lossy and JPEG 2000 sources keep their bytes. A re-encoded instance
-        lands in a new temp file, `dicom_uri` moves to it, and size and
-        `crc32c` are recomputed.
+        When `syntax` is JPEG 2000 Lossless, JPEG Lossless, RLE Lossless and
+        uncompressed RGB sources take the frame-by-frame re-encode of
+        `transcode.recompress_to_jpeg2000_lossless`, which stores RGB as
+        `YBR_RCT`.
+
+        That re-encode keeps its result only if it decodes back bit-exact and
+        smaller; otherwise the instance keeps its bytes. Any other uncompressed
+        source is encoded directly with `Dataset.compress`. So is uncompressed
+        RGB when `syntax` is anything else. Compressed sources keep their bytes
+        in every other case. A re-encoded instance lands in a new temp file,
+        and `dicom_uri` moves to it. Size and `crc32c` are recomputed.
 
         Args:
             syntax: Transfer syntax to encode to. Defaults to
@@ -350,9 +354,16 @@ class Instance:
             source_syntax = ds.file_meta.TransferSyntaxUID
             if source_syntax == syntax:
                 return
-            if source_syntax.is_compressed:
-                if syntax != pydicom.uid.JPEG2000Lossless:
-                    return
+            # Uncompressed RGB joins the compressed sources in the frame
+            # re-encode, which stores it as YBR_RCT. `Dataset.compress` would
+            # declare the header's RGB and encode without the colour transform.
+            # Other uncompressed sources gain nothing from the transform and
+            # keep the direct encode, which skips the frame path's decode-back
+            # verification.
+            if syntax == pydicom.uid.JPEG2000Lossless and (
+                source_syntax.is_compressed
+                or ds.get("PhotometricInterpretation") == "RGB"
+            ):
                 size_before = self.size()
                 outcome = recompress_to_jpeg2000_lossless(ds)
                 metrics.TRANSCODE_OUTCOME_COUNTERS[outcome].inc()
@@ -360,6 +371,8 @@ class Instance:
                     return
                 self._replace_local_file(ds)
                 metrics.TRANSCODE_BYTES_SAVED.inc(size_before - self.size())
+                return
+            if source_syntax.is_compressed:
                 return
             # generate_instance_uid=False keeps the SOPInstanceUID stable
             # across the transcode; COD identifies instances by UID, so a

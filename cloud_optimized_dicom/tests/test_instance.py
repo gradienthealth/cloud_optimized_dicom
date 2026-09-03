@@ -2,10 +2,15 @@ import os
 import tarfile
 import tempfile
 
+import numpy as np
 import pydicom
 import pytest
+from pydicom.pixels import pixel_array
 
+import cloud_optimized_dicom.instance
 from cloud_optimized_dicom.instance import Instance
+from cloud_optimized_dicom.tests.conftest import synthetic_image
+from cloud_optimized_dicom.transcode import TranscodeOutcome
 from cloud_optimized_dicom.utils import is_remote
 
 REMOTE_DICOM_URI = "https://code.oak-tree.tech/oak-tree/medical-imaging/dcmjs/-/raw/master/test/sample-dicom.dcm?ref_type=heads&inline=false"
@@ -202,3 +207,130 @@ def test_compress_keeps_lossy_source(ybr_full_422_path: str):
     with instance.open() as f:
         ds = pydicom.dcmread(f)
         assert ds.file_meta.TransferSyntaxUID == pydicom.uid.JPEGBaseline8Bit
+
+
+@pytest.mark.parametrize(
+    ("planar_configuration", "number_of_frames"),
+    [(0, 1), (1, 3)],
+    ids=["planar0", "planar1_multiframe"],
+)
+def test_compress_stores_uncompressed_rgb_as_ybr_rct(
+    tmp_path, planar_configuration, number_of_frames
+):
+    source = _rgb_image(planar_configuration, number_of_frames)
+    source_pixels = pixel_array(source, raw=True)
+    path = str(tmp_path / "rgb.dcm")
+    source.save_as(path, enforce_file_format=True)
+    instance = Instance(dicom_uri=path)
+
+    instance.compress()
+
+    with instance.open() as f:
+        ds = pydicom.dcmread(f)
+    assert ds.file_meta.TransferSyntaxUID == pydicom.uid.JPEG2000Lossless
+    assert ds.PhotometricInterpretation == "YBR_RCT"
+    assert ds.PlanarConfiguration == 0
+    assert (pixel_array(ds) == source_pixels).all()
+    assert ds.SOPInstanceUID == source.SOPInstanceUID
+    assert int(ds.get("NumberOfFrames", 1)) == number_of_frames
+
+
+def test_compress_applies_the_colour_transform_to_uncompressed_rgb(tmp_path):
+    """Guards the byte win: an RGB-declared encode leaves the transform off."""
+    path = str(tmp_path / "rgb.dcm")
+    _rgb_image(planar_configuration=0, number_of_frames=1).save_as(
+        path, enforce_file_format=True
+    )
+    rgb_declared = pydicom.dcmread(path)
+    rgb_declared.compress(pydicom.uid.JPEG2000Lossless, generate_instance_uid=False)
+    instance = Instance(dicom_uri=path)
+
+    instance.compress()
+
+    with instance.open() as f:
+        ds = pydicom.dcmread(f)
+    assert len(ds.PixelData) < len(rgb_declared.PixelData)
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        {"photometric": "MONOCHROME2", "bits_allocated": 16, "bits_stored": 12},
+        {"photometric": "YBR_FULL", "bits_allocated": 8, "bits_stored": 8},
+    ],
+    ids=["mono16", "ybr_full"],
+)
+def test_compress_keeps_other_uncompressed_photometric_interpretations(tmp_path, image):
+    source = synthetic_image(**image)
+    source_pixels = pixel_array(source, raw=True)
+    path = str(tmp_path / "source.dcm")
+    source.save_as(path, enforce_file_format=True)
+    instance = Instance(dicom_uri=path)
+
+    instance.compress()
+
+    with instance.open() as f:
+        ds = pydicom.dcmread(f)
+    assert ds.file_meta.TransferSyntaxUID == pydicom.uid.JPEG2000Lossless
+    assert ds.PhotometricInterpretation == image["photometric"]
+    assert (pixel_array(ds, raw=True) == source_pixels).all()
+    assert ds.SOPInstanceUID == source.SOPInstanceUID
+
+
+def test_compress_keeps_raw_rgb_when_the_re_encode_passes_through(
+    tmp_path, monkeypatch
+):
+    path = str(tmp_path / "rgb.dcm")
+    _rgb_image(planar_configuration=0, number_of_frames=1).save_as(
+        path, enforce_file_format=True
+    )
+    monkeypatch.setattr(
+        cloud_optimized_dicom.instance,
+        "recompress_to_jpeg2000_lossless",
+        lambda ds: TranscodeOutcome.PASSTHROUGH_FAILED,
+    )
+    instance = Instance(dicom_uri=path)
+
+    instance.compress()
+
+    assert instance.dicom_uri == path
+    assert instance._temp_file_path is None
+    with instance.open() as f:
+        ds = pydicom.dcmread(f)
+    assert ds.file_meta.TransferSyntaxUID == pydicom.uid.ExplicitVRLittleEndian
+
+
+def _rgb_image(planar_configuration: int, number_of_frames: int) -> pydicom.Dataset:
+    """Builds an uncompressed 8-bit RGB image the colour transform can shrink.
+
+    The reversible colour transform stores two channels as differences from the
+    third, so the noise shared by all three channels here drops out of those
+    planes. The independent per-channel noise `synthetic_image` adds does not.
+    """
+    rows = columns = 256
+    ds = synthetic_image(
+        photometric="RGB",
+        bits_allocated=8,
+        bits_stored=8,
+        planar_configuration=planar_configuration,
+        number_of_frames=number_of_frames,
+        rows=rows,
+        columns=columns,
+    )
+    red = np.linspace(0, 255, rows)[:, None]
+    green = np.linspace(0, 255, columns)[None, :]
+    frame = np.stack(np.broadcast_arrays(red, green, (red + green) / 2), axis=-1)
+    pixels = np.broadcast_to(frame, (number_of_frames, rows, columns, 3)).copy()
+    rng = np.random.default_rng(seed=7)
+    pixels += rng.integers(0, 4, size=(number_of_frames, rows, columns, 1))
+    pixels = np.clip(pixels, 0, 255).astype(np.uint8)
+    patch = rows // 4
+    for index, colour in enumerate(
+        [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
+    ):
+        span = slice(index * patch, (index + 1) * patch)
+        pixels[:, span, span] = colour
+    if planar_configuration == 1:
+        pixels = np.ascontiguousarray(np.moveaxis(pixels, -1, 1))
+    ds.PixelData = pixels.tobytes()
+    return ds

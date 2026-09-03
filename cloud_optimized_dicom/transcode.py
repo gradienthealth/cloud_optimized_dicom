@@ -1,10 +1,13 @@
-"""Re-encodes legacy lossless pixel data as JPEG 2000 Lossless.
+"""Re-encodes pixel data as JPEG 2000 Lossless, one verified frame at a time.
 
-Hospitals send instances in older lossless encodings that JPEG 2000 stores more
-compactly. `pydicom.Dataset.compress` refuses a compressed source, so this
-module decodes each frame, encodes it again, and keeps the result only when it
-decodes back bit-exact and comes out smaller. An instance that cannot be
-re-encoded keeps its original bytes.
+Two kinds of source gain from this path: the legacy lossless encodings that
+JPEG 2000 stores more compactly, and uncompressed RGB, which shrinks further
+once the codec's reversible colour transform runs. Neither is within reach of
+`pydicom.Dataset.compress`, which refuses a compressed source and encodes RGB
+with the transform off. Each frame is decoded, encoded again, and decoded once
+more to prove it matches the source. The result is kept only when every frame
+matches and the pixel data comes out smaller; otherwise the instance keeps its
+original bytes.
 """
 
 import enum
@@ -21,11 +24,11 @@ from pydicom.valuerep import VR
 
 from cloud_optimized_dicom.config import logger
 
-# The encodings worth re-encoding. Each is lossless, so the pixel values
-# survive, and each stores them less compactly than JPEG 2000. Lossy encodings
-# must never be re-encoded. JPEG 2000 Lossless (.90) is already the target.
-# JPEG-LS Lossless and the reversible half of JPEG 2000 (.91) stay out because
-# JPEG 2000 Lossless encodes them to about the same size (the PROC-2531
+# The compressed encodings worth re-encoding. Each is lossless, so the pixel
+# values survive, and each stores them less compactly than JPEG 2000. Lossy
+# encodings must never be re-encoded. JPEG 2000 Lossless (.90) is already the
+# target. JPEG-LS Lossless and the reversible half of JPEG 2000 (.91) stay out
+# because JPEG 2000 Lossless encodes them to about the same size (the PROC-2531
 # compression study), and .91 mixes reversible and irreversible codestreams
 # under one transfer syntax.
 RECOMPRESS_SOURCE_SYNTAXES = frozenset(
@@ -69,28 +72,30 @@ class TranscodeOutcome(enum.Enum):
 
 
 def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
-    """Re-encodes a compressed dataset's pixel data as JPEG 2000 Lossless.
+    """Re-encodes a dataset's pixel data as JPEG 2000 Lossless.
 
-    Only the encodings in `RECOMPRESS_SOURCE_SYNTAXES` whose photometric
-    interpretation the encoder reproduces exactly are re-encoded. Every frame
-    is decoded back and compared to the source, and the result replaces the
-    original only when every frame matches and the encapsulated pixel data is
-    smaller. On any other outcome, including an exception from a codec, `ds` is
-    left untouched.
+    Uncompressed pixel data and the encodings in `RECOMPRESS_SOURCE_SYNTAXES`
+    are accepted. Either must carry a photometric interpretation the encoder
+    reproduces exactly; anything else passes through. Each frame is decoded,
+    encoded, and decoded again to compare with the source. The re-encode
+    replaces the original only when every frame matches and the encapsulated
+    pixel data is smaller. Any other outcome, including an exception from a
+    codec, leaves `ds` untouched.
 
-    The SOP Instance UID and the lossy-compression tags are never changed. RGB
-    sources are stored as `YBR_RCT`; other photometric interpretations are
-    kept. Multi-sample sources are stored colour-by-pixel
-    (`PlanarConfiguration` 0), the order every frame is decoded in.
+    RGB is stored as `YBR_RCT`, the interpretation under which the codec
+    applies its reversible colour transform; every other interpretation is
+    kept. Multi-sample output is colour-by-pixel (`PlanarConfiguration` 0),
+    whatever the source's layout. The SOP Instance UID and the
+    lossy-compression tags never change.
 
     Args:
-        ds: Dataset with encapsulated `PixelData`.
+        ds: Dataset with `PixelData`, uncompressed or encapsulated.
 
     Returns:
         The outcome. `ds` is modified only for `TranscodeOutcome.RECOMPRESSED`.
     """
     source_syntax = ds.file_meta.TransferSyntaxUID
-    if source_syntax not in RECOMPRESS_SOURCE_SYNTAXES:
+    if source_syntax.is_compressed and source_syntax not in RECOMPRESS_SOURCE_SYNTAXES:
         return TranscodeOutcome.PASSTHROUGH_SYNTAX
     source_photometric = ds.get("PhotometricInterpretation")
     if source_photometric not in _RECOMPRESSIBLE_PHOTOMETRIC_INTERPRETATIONS:
