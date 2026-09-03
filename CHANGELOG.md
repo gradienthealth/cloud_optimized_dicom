@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v2.1.0...v2.2.0) (2026-09-03)
+
+
+### Features
+
+* **PROC-2531:** store uncompressed RGB as YBR_RCT JPEG 2000 on ingest ([#152](https://github.com/gradienthealth/cloud_optimized_dicom/issues/152)) ([78e41dc](https://github.com/gradienthealth/cloud_optimized_dicom/commit/78e41dc28e612a4cc72bd4f585aca9014cdb377b))
+
 ## [2.1.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v2.0.3...v2.1.0) (2026-09-02)
 
 
