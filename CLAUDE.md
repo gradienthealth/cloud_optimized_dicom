@@ -165,9 +165,6 @@ cloud_optimized_dicom/
 **Optional:**
 - `apache-beam[gcp]`: Data processing; install with `pip install cloud-optimized-dicom[beam]`. Without Beam, metric counters silently no-op.
 
-**Test:**
-- `matplotlib`: Visualization in tests
-
 ### Important Patterns
 
 **Instance URI Lifecycle:**

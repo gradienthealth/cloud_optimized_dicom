@@ -43,9 +43,9 @@ def gcs_client() -> storage.Client:
 
 @pytest.fixture(scope="session")
 def worker_namespace() -> str:
-    """Per-(run, worker) path segment so concurrent CI runs and parallel
-    xdist workers don't collide on the same GCS prefix."""
-    run_id = os.environ.get("GITHUB_RUN_ID", "local")
+    """Per-(run, worker) path segment so concurrent CI runs, matrix jobs, and
+    parallel xdist workers don't collide on the same GCS prefix."""
+    run_id = os.environ.get("COD_TEST_RUN_ID", "local")
     worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
     return f"{run_id}/{worker}"
 
