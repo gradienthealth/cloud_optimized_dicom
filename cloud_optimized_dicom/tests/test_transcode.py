@@ -1,6 +1,10 @@
+import struct
+
+import numpy as np
 import pydicom
 import pydicom.uid
 import pytest
+from pydicom.encaps import encapsulate
 from pydicom.pixels import pixel_array
 from pydicom.uid import (
     ExplicitVRLittleEndian,
@@ -109,6 +113,22 @@ def test_recompressed_dataset_survives_a_save_and_reread(tmp_path):
     assert (pixel_array(reread) == source_pixels).all()
 
 
+def test_recompress_wraps_out_of_range_jpeg_lossless_predictions(tmp_path):
+    """A decoder that clamps instead of wrapping saturates these pixels, and the
+    re-encode then stores the saturated frame."""
+    source = synthetic_image(bits_allocated=8, bits_stored=8)
+    source_pixels = pixel_array(source, raw=True)
+    source.file_meta.TransferSyntaxUID = JPEGLosslessSV1
+    source.PixelData = encapsulate([_encode_sv1_with_wrapping_diffs(source_pixels)])
+    source.save_as(tmp_path / "source.dcm", enforce_file_format=True)
+    ds = pydicom.dcmread(tmp_path / "source.dcm")
+
+    outcome = recompress_to_jpeg2000_lossless(ds)
+
+    assert outcome is TranscodeOutcome.RECOMPRESSED
+    assert (pixel_array(ds, raw=True) == source_pixels).all()
+
+
 @pytest.mark.parametrize(
     "syntax", [JPEGBaseline8Bit, JPEG2000Lossless], ids=["lossy", "jpeg2000"]
 )
@@ -211,6 +231,62 @@ def _jpeg_lossless_dataset(tmp_path, **image) -> pydicom.Dataset:
         tmp_path / "source.dcm", JPEGLosslessSV1, synthetic_image(**image)
     )
     return pydicom.dcmread(path)
+
+
+def _encode_sv1_with_wrapping_diffs(pixels: np.ndarray) -> bytes:
+    """Returns `pixels`, an 8-bit 2D array, as a JPEG Lossless SV1 codestream.
+
+    Every positive difference is written as its modulo-256 negative, as Philips
+    and Samsung ultrasound encoders do. Prediction plus difference then falls
+    below zero, so only a decoder that wraps per T.81 H.2.1 recovers `pixels`.
+    """
+    rows, columns = pixels.shape
+    samples = pixels.astype(int)
+    # Predictor 1 takes the left neighbour; the first column takes the sample
+    # above, and the first sample takes 2^(P-1).
+    predictions = np.empty_like(samples)
+    predictions[:, 1:] = samples[:, :-1]
+    predictions[1:, 0] = samples[:-1, 0]
+    predictions[0, 0] = 128
+    diffs = samples - predictions
+    diffs[diffs > 0] -= 256
+
+    categories = [abs(int(diff)).bit_length() for diff in diffs.flat]
+    huffman_values = sorted(set(categories))
+    # A canonical table with one code per length gives the n-th category the
+    # code of n-1 ones followed by a zero.
+    codes = {
+        category: ((1 << length) - 2, length)
+        for length, category in enumerate(huffman_values, start=1)
+    }
+    bits = []
+    for diff, category in zip(diffs.flat, categories):
+        bits += _bits(*codes[category])
+        # Every non-zero difference is negative, written as its one's complement.
+        bits += _bits(int(diff) + (1 << category) - 1, category)
+    bits += [1] * (-len(bits) % 8)
+    scan = bytes(np.packbits(bits)).replace(b"\xff", b"\xff\x00")
+
+    frame_header = struct.pack(">BHHB", 8, rows, columns, 1) + bytes([1, 0x11, 0])
+    huffman_counts = [1] * len(huffman_values) + [0] * (16 - len(huffman_values))
+    huffman_table = bytes([0, *huffman_counts, *huffman_values])
+    scan_header = bytes([1, 1, 0x00, 1, 0, 0])
+    return (
+        b"\xff\xd8"
+        + _segment(0xFFC3, frame_header)
+        + _segment(0xFFC4, huffman_table)
+        + _segment(0xFFDA, scan_header)
+        + scan
+        + b"\xff\xd9"
+    )
+
+
+def _bits(value: int, length: int) -> list[int]:
+    return [(value >> shift) & 1 for shift in range(length - 1, -1, -1)]
+
+
+def _segment(marker: int, body: bytes) -> bytes:
+    return struct.pack(">HH", marker, len(body) + 2) + body
 
 
 def _snapshot(ds: pydicom.Dataset) -> tuple:

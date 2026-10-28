@@ -12,6 +12,9 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # COD is a library: only propose a change when a release falls outside
+    # the declared range, rather than raising floors to every new version.
+    versioning-strategy: increase-if-necessary
     commit-message:
       prefix: chore
       include: scope
