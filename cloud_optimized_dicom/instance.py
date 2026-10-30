@@ -1,3 +1,4 @@
+import io
 import os
 import shutil
 import tarfile
@@ -152,7 +153,9 @@ class Instance:
                 self._instance_uid = getattr(ds, "SOPInstanceUID")
                 self._series_uid = getattr(ds, "SeriesInstanceUID")
                 self._study_uid = getattr(ds, "StudyInstanceUID")
-                self._has_pixeldata = hasattr(ds, "PixelData")
+                # `in` checks for the element without the deferred read that
+                # attribute access would trigger.
+                self._has_pixeldata = "PixelData" in ds
             # seek back to beginning of file to calculate crc32c
             f.seek(0)
             self._crc32c = generate_ptr_crc32c(f)
@@ -488,15 +491,10 @@ class Instance:
                 ds_dict[tag] = {"vr": "UI", "Value": [cached_value]}
 
     def get_pixeldata_hash(self) -> str:
-        """Compute the crc32c hash of just the pixeldata"""
-        with tempfile.NamedTemporaryFile(suffix="_pixeldata") as temp_file:
-            with self.open() as ptr:
-                ds = pydicom.dcmread(ptr, defer_size=1024)
-                # write ds.pixelData to temp_file
-                temp_file.write(ds.PixelData)
-                temp_file.flush()
-                temp_file.seek(0)
-                return generate_ptr_crc32c(temp_file)
+        """Returns the CRC32C of the `PixelData` value pydicom loads."""
+        with self.open() as ptr:
+            ds = pydicom.dcmread(ptr, specific_tags=["PixelData"])
+            return generate_ptr_crc32c(io.BytesIO(ds.PixelData))
 
     def __str__(self):
         """
