@@ -218,6 +218,8 @@ The colour rules keep the decoded samples exact. `YBR_FULL` sources are decoded 
 
 The check compares against the decoded source, so it cannot detect a decoder misreading the source.
 
+Decoding discards the bits above `BitsStored`, which some older images use for overlays, and no decode-back check can see that loss. At every verification level, an uncompressed or RLE instance that sets any of those bits keeps its original bytes (`transcode_passthrough_high_bits`). Signed samples whose high bits only extend the sign are re-encoded as usual. JPEG Lossless decodes with those bits already masked, so the check reads the sample precision each frame is coded with instead: a JPEG Lossless instance with any frame coded with more precision than `BitsStored`, or whose precision cannot be read, keeps its original bytes unchecked (`transcode_passthrough_high_bits_unchecked`).
+
 Ingest works on one instance at a time. The re-encode holds the instance's pixel data plus its compressed frames, so peak memory follows `max_instance_size`.
 
 JPEG Lossless is decoded with GDCM rather than pylibjpeg, whose libjpeg clamps out-of-range predictor reconstructions instead of wrapping them, saturating ultrasound from some vendors ([pylibjpeg-libjpeg#90](https://github.com/pydicom/pylibjpeg-libjpeg/issues/90)).
