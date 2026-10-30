@@ -1,4 +1,5 @@
 import os
+import shutil
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
@@ -33,6 +34,8 @@ from cloud_optimized_dicom.virtual_file import VirtualFile
 
 TAR_IDENTIFIER = ".tar://"
 ZIP_IDENTIFIER = ".zip://"
+# Buffer size for streamed copies, so no instance is held whole
+_COPY_BUFFER_SIZE = 2**20
 
 _STUDY_INSTANCE_UID_TAG = f"{tag_for_keyword('StudyInstanceUID'):08X}"
 _SERIES_INSTANCE_UID_TAG = f"{tag_for_keyword('SeriesInstanceUID'):08X}"
@@ -110,7 +113,7 @@ class Instance:
             with smart_open(
                 uri=self.dicom_uri, mode="rb", transport_params=self.transport_params
             ) as source:
-                local_file.write(source.read())
+                shutil.copyfileobj(source, local_file, _COPY_BUFFER_SIZE)
         # after writing, dicom_uri is now local
         self.dicom_uri = self._temp_file_path
         self.validate()
@@ -128,7 +131,7 @@ class Instance:
         # read the instance from the tar into the temp file
         with self.open() as f_in:
             with open(self._temp_file_path, "wb") as f_out:
-                f_out.write(f_in.read())
+                shutil.copyfileobj(f_in, f_out, _COPY_BUFFER_SIZE)
         # after writing, dicom_uri is now local
         self.dicom_uri = self._temp_file_path
         self.validate()
