@@ -496,6 +496,27 @@ def tmp_path_url(tmp_path) -> Iterator[str]:
     server.server_close()
 
 
+def test_compress_keeps_overlay_bits_above_bits_stored_byte_identical(tmp_path):
+    source = synthetic_image(bits_allocated=16, bits_stored=12)
+    words = np.frombuffer(source.PixelData, dtype="<u2").copy()
+    words[::7] |= 0x8000
+    source.PixelData = words.tobytes()
+    path = str(tmp_path / "overlay.dcm")
+    source.save_as(path, enforce_file_format=True)
+    with open(path, "rb") as f:
+        original = f.read()
+    instance = Instance(dicom_uri=path)
+
+    outcome = instance.compress(
+        verification_tracker=VerificationTracker(Verification.OFF)
+    )
+
+    assert outcome is TranscodeOutcome.PASSTHROUGH_HIGH_BITS
+    assert instance.dicom_uri == path
+    with open(instance.dicom_uri, "rb") as f:
+        assert f.read() == original
+
+
 def test_compress_keeps_bytes_when_its_parameters_failed_verification(tmp_path):
     path = write_encoded_image(
         tmp_path / "source.dcm", pydicom.uid.ExplicitVRLittleEndian, synthetic_image()

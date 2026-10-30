@@ -118,6 +118,7 @@ Config lives in `release-please-config.json` and `.release-please-manifest.json`
 **Pixel Data Compression** (`transcode.py`)
 - `Instance.compress()` re-encodes pixel data as JPEG 2000 Lossless during `append()`
 - JPEG Lossless, RLE and uncompressed sources take the frame path, which re-encodes one frame at a time and keeps the result only when it is smaller and passes `append(verification=...)` (`"per-series"` by default, `"full"`, `"off"`)
+- Sources that set bits above BitsStored keep their bytes at every verification level (`PASSTHROUGH_HIGH_BITS`); JPEG Lossless coded with more precision than BitsStored keeps its bytes unchecked (`PASSTHROUGH_HIGH_BITS_UNCHECKED`)
 - Uncompressed sources the frame path cannot reproduce exactly (e.g. `YBR_FULL_422`) keep their bytes
 - Lossy, JPEG 2000 and JPEG-LS sources keep their bytes
 - `YBR_FULL` stays raw, RGB becomes `YBR_RCT`, and `YBR_FULL_422` passes through
