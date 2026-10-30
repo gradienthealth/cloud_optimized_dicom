@@ -228,10 +228,12 @@ def write_encoded_image(path, syntax: pydicom.uid.UID, ds: pydicom.Dataset) -> s
     """Writes `ds` to `path` in `syntax` and returns the path as a string.
 
     JPEG Lossless and RLE come from GDCM, which keeps the source's planar
-    configuration; JPEG 2000 comes from pydicom. Uncompressed syntaxes are
-    written as-is.
+    configuration; JPEG 2000 comes from pydicom. Uncompressed syntaxes,
+    Deflated included, are written as-is under `syntax`.
     """
     path = str(path)
+    if not syntax.is_compressed:
+        ds.file_meta.TransferSyntaxUID = syntax
     if syntax in _GDCM_SYNTAXES:
         uncompressed = path + ".explicit.dcm"
         ds.save_as(uncompressed, enforce_file_format=True)
