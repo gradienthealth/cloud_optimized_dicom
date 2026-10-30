@@ -1,6 +1,11 @@
+import functools
+import http.server
 import os
+import shutil
 import tarfile
 import tempfile
+import threading
+from typing import Iterator
 
 import numpy as np
 import pydicom
@@ -334,3 +339,54 @@ def _rgb_image(planar_configuration: int, number_of_frames: int) -> pydicom.Data
         pixels = np.ascontiguousarray(np.moveaxis(pixels, -1, 1))
     ds.PixelData = pixels.tobytes()
     return ds
+
+
+def test_fetch_copies_the_remote_file_byte_for_byte(
+    local_instance_path: str, tmp_path, tmp_path_url: str
+):
+    shutil.copy(local_instance_path, tmp_path / "remote.dcm")
+    instance = Instance(dicom_uri=f"{tmp_path_url}/remote.dcm")
+
+    instance.fetch()
+
+    assert not is_remote(instance.dicom_uri)
+    with (
+        open(instance.dicom_uri, "rb") as fetched,
+        open(local_instance_path, "rb") as original,
+    ):
+        assert fetched.read() == original.read()
+
+
+def test_extract_from_local_tar_copies_the_instance_byte_for_byte(
+    local_instance_path: str, tmp_path
+):
+    instance = _tar_nested_instance(local_instance_path, tmp_path)
+
+    instance._extract_from_local_tar()
+
+    with (
+        open(instance.dicom_uri, "rb") as extracted,
+        open(local_instance_path, "rb") as original,
+    ):
+        assert extracted.read() == original.read()
+
+
+@pytest.fixture
+def tmp_path_url(tmp_path) -> Iterator[str]:
+    """Serves `tmp_path` over HTTP on localhost and yields its base URL."""
+    handler = functools.partial(
+        http.server.SimpleHTTPRequestHandler, directory=str(tmp_path)
+    )
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    host, port = server.server_address[:2]
+    yield f"http://{host}:{port}"
+    server.shutdown()
+    server.server_close()
+
+
+def _tar_nested_instance(path: str, tmp_path) -> Instance:
+    tar_path = tmp_path / "series.tar"
+    with tarfile.open(tar_path, "w") as tar:
+        tar.add(path, arcname="instances/nested.dcm")
+    return Instance(dicom_uri=f"{tmp_path / 'series'}.tar://instances/nested.dcm")
