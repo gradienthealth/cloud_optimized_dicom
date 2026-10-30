@@ -37,6 +37,7 @@ from cloud_optimized_dicom.thumbnail import (
     get_instance_by_thumbnail_index,
     get_instance_thumbnail_slice,
 )
+from cloud_optimized_dicom.transcode import Verification
 from cloud_optimized_dicom.utils import (
     generate_ptr_crc32c,
     is_remote,
@@ -415,6 +416,7 @@ class CODObject:
         delete_local_origin: bool = False,
         compress: bool = True,
         dirty: bool = False,
+        verification: Verification | str = Verification.PER_SERIES,
     ):
         """Append a list of instances to the COD object.
 
@@ -426,6 +428,7 @@ class CODObject:
             delete_local_origin: bool - If `True`, delete the local origin of the instances after appending.
             compress: bool - If `True`, re-encodes uncompressed and legacy lossless (JPEG Lossless, RLE) pixel data as JPEG2000Lossless during append; lossy and JPEG 2000 sources keep their encoding. See `Instance.compress`.
             dirty: bool - Must be `True` if the CODObject is "dirty" (i.e. `lock=False`).
+            verification: Verification | str - How much of the re-encode is decoded back and checked: "off", "per-series" (default) or "full". See `transcode.Verification`.
         """
         if self.mode == "e":
             raise ValueError(
@@ -441,6 +444,7 @@ class CODObject:
             max_instance_size=max_instance_size,
             max_series_size=max_series_size,
             compress=compress,
+            verification=verification,
         )
 
     @public_method(write_only=True)

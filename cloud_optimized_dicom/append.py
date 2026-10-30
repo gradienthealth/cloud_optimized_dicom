@@ -9,6 +9,7 @@ from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import HintMismatchError
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
+from cloud_optimized_dicom.transcode import Verification, VerificationTracker
 from cloud_optimized_dicom.utils import is_remote
 
 if TYPE_CHECKING:
@@ -48,6 +49,7 @@ def append(
     max_instance_size: float = None,
     max_series_size: float = None,
     compress: bool = True,
+    verification: Verification | str = Verification.PER_SERIES,
 ) -> AppendResult:
     """Append a list of instances to the COD object.
 
@@ -59,12 +61,15 @@ def append(
         max_instance_size (float): maximum size of an instance to append, in gb
         max_series_size (float): maximum size of the series to append, in gb
         compress (bool): whether `Instance.compress` runs on each new instance before it joins the tar
+        verification (Verification | str): how much of the re-encode is
+            decoded back and checked; see `transcode.Verification`.
     Returns: an AppendResult; a namedtuple with the following fields:
         new (list): list of new instances that were added successfully
         same (list): list of instances that were perfect duplicates of existing instances
         conflict (list): list of instances that were the same instance UID but different hashes
         errors (list): list of instance, error tuples that occurred during the append process
     """
+    verification = Verification(verification)
     append_result = AppendResult(new=[], same=[], conflict=[], errors=[])
     # remove overlarge instances
     instances, append_result = _assert_not_too_large(
@@ -94,7 +99,11 @@ def append(
         return append_result
     # handle new
     append_result = _handle_new(
-        cod_object, state_change.new, append_result, compress=compress
+        cod_object,
+        state_change.new,
+        append_result,
+        compress=compress,
+        verification=verification,
     )
     # increment metrics
     metrics.APPEND_CONFLICTS.inc(len(append_result.conflict))
@@ -425,13 +434,24 @@ def _validate_new_instances(instances: list[Instance]):
     return validated_instances, errors
 
 
-def _compress_instances(instances: list[Instance]):
-    """Attempt to compress instances and record any errors"""
+# Each instance that failed, with the exception it raised
+_InstanceErrors = list[tuple[Instance, Exception]]
+
+
+def _compress_instances(
+    instances: list[Instance], verification: Verification = Verification.PER_SERIES
+) -> tuple[list[Instance], _InstanceErrors]:
+    """Attempts to compress instances and records any errors.
+
+    One `VerificationTracker` spans the instances, so `PER_SERIES` decides per
+    set of codec parameters across them.
+    """
     compressed_instances: list[Instance] = []
-    errors: list[tuple[Instance, Exception]] = []
+    errors: _InstanceErrors = []
+    verification_tracker = VerificationTracker(verification)
     for instance in instances:
         try:
-            instance.compress()
+            instance.compress(verification_tracker=verification_tracker)
             compressed_instances.append(instance)
         except Exception as e:
             logger.exception(
@@ -446,6 +466,7 @@ def _handle_new(
     new_state_changes: list[tuple[Instance, Optional[SeriesMetadata], Optional[str]]],
     append_result: AppendResult,
     compress: bool = True,
+    verification: Verification = Verification.PER_SERIES,
 ) -> AppendResult:
     """
     Compress instances if specified; create/append to tar & upload; add to series metadata & upload.
@@ -459,7 +480,7 @@ def _handle_new(
     # Step 2: compress instances (if specified)
     if compress:
         compressed_instances, compression_errors = _compress_instances(
-            validated_instances
+            validated_instances, verification
         )
     else:
         compressed_instances, compression_errors = validated_instances, []

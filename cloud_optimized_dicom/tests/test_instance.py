@@ -13,9 +13,16 @@ import pytest
 from pydicom.pixels import pixel_array
 
 import cloud_optimized_dicom.instance
+from cloud_optimized_dicom.append import _compress_instances, append
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.tests.conftest import synthetic_image, write_encoded_image
-from cloud_optimized_dicom.transcode import TranscodeOutcome
+from cloud_optimized_dicom.transcode import (
+    CodecParameters,
+    TranscodeOutcome,
+    Verification,
+    VerificationDecision,
+    VerificationTracker,
+)
 from cloud_optimized_dicom.utils import is_remote
 
 REMOTE_DICOM_URI = "https://code.oak-tree.tech/oak-tree/medical-imaging/dcmjs/-/raw/master/test/sample-dicom.dcm?ref_type=heads&inline=false"
@@ -396,7 +403,7 @@ def test_compress_keeps_raw_rgb_when_the_re_encode_passes_through(
     monkeypatch.setattr(
         cloud_optimized_dicom.instance,
         "recompress_to_jpeg2000_lossless",
-        lambda ds: TranscodeOutcome.PASSTHROUGH_FAILED,
+        lambda ds, should_verify=True: TranscodeOutcome.PASSTHROUGH_FAILED,
     )
     instance = Instance(dicom_uri=path)
 
@@ -487,6 +494,72 @@ def tmp_path_url(tmp_path) -> Iterator[str]:
     yield f"http://{host}:{port}"
     server.shutdown()
     server.server_close()
+
+
+def test_compress_keeps_bytes_when_its_parameters_failed_verification(tmp_path):
+    path = write_encoded_image(
+        tmp_path / "source.dcm", pydicom.uid.ExplicitVRLittleEndian, synthetic_image()
+    )
+    verification_tracker = VerificationTracker(Verification.PER_SERIES)
+    verification_tracker.record(
+        CodecParameters.from_dataset(pydicom.dcmread(path)),
+        TranscodeOutcome.PASSTHROUGH_VERIFY_MISMATCH,
+    )
+    instance = Instance(dicom_uri=path)
+
+    outcome = instance.compress(verification_tracker=verification_tracker)
+
+    assert outcome is TranscodeOutcome.PASSTHROUGH_SERIES_VERIFY_MISMATCH
+    assert instance.dicom_uri == path
+
+
+def test_compress_tells_the_tracker_its_parameters_were_verified(tmp_path):
+    path = write_encoded_image(
+        tmp_path / "source.dcm", pydicom.uid.ExplicitVRLittleEndian, synthetic_image()
+    )
+    parameters = CodecParameters.from_dataset(pydicom.dcmread(path))
+    verification_tracker = VerificationTracker(Verification.PER_SERIES)
+
+    outcome = Instance(dicom_uri=path).compress(
+        verification_tracker=verification_tracker
+    )
+
+    assert outcome is TranscodeOutcome.RECOMPRESSED
+    assert verification_tracker.decide(parameters) is VerificationDecision.TRUST
+
+
+def test_compress_instances_appends_an_instance_without_pixel_data(tmp_path):
+    """An SR-like file without a transfer syntax is still kept."""
+    path = str(tmp_path / "report.dcm")
+    _report_without_transfer_syntax().save_as(
+        path, implicit_vr=False, little_endian=True
+    )
+    instance = Instance(dicom_uri=path)
+
+    compressed, errors = _compress_instances([instance], Verification.PER_SERIES)
+
+    assert errors == []
+    assert compressed == [instance]
+
+
+def test_append_rejects_an_unknown_verification_level():
+    with pytest.raises(ValueError):
+        append(cod_object=None, instances=[], verification="sometimes")
+
+
+def _report_without_transfer_syntax() -> pydicom.Dataset:
+    file_meta = pydicom.dataset.FileMetaDataset()
+    file_meta.MediaStorageSOPClassUID = pydicom.uid.BasicTextSRStorage
+    file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
+    ds = pydicom.dataset.FileDataset(
+        None, {}, file_meta=file_meta, preamble=b"\0" * 128
+    )
+    ds.SOPClassUID = file_meta.MediaStorageSOPClassUID
+    ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+    ds.StudyInstanceUID = pydicom.uid.generate_uid()
+    ds.SeriesInstanceUID = pydicom.uid.generate_uid()
+    ds.Modality = "SR"
+    return ds
 
 
 def _tar_nested_instance(path: str, tmp_path) -> Instance:

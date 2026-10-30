@@ -1,4 +1,4 @@
-"""Re-encodes pixel data as JPEG 2000 Lossless, one verified frame at a time.
+"""Re-encodes pixel data as JPEG 2000 Lossless, one frame at a time.
 
 The re-encode takes these sources:
 
@@ -9,14 +9,15 @@ The re-encode takes these sources:
 - every other uncompressed photometric interpretation the encoder reproduces
   exactly.
 
-Each frame is decoded, encoded again, and decoded once more to prove it matches
-the source. The result is kept only when every frame matches and the pixel data
-comes out smaller; otherwise the instance keeps its original bytes.
+Each frame is decoded and encoded again, and can be decoded once more to prove
+it matches the source. The result is kept only when it comes out smaller and
+every checked frame matches; otherwise the instance keeps its original bytes.
 """
 
 import enum
 import io
 from itertools import islice
+from typing import Callable, NamedTuple
 
 import numpy as np
 import pydicom
@@ -64,30 +65,135 @@ _RECOMPRESSIBLE_PHOTOMETRIC_INTERPRETATIONS = frozenset(
 _ExtendedOffsets = tuple[bytes, bytes]
 
 
+# A function that decodes a JPEG 2000 codestream to its pixel array
+_Decoder = Callable[[io.BytesIO], np.ndarray]
+
+
+class CodecParameters(NamedTuple):
+    """The header values that drive the JPEG 2000 encoder, as strings.
+
+    Missing or malformed values become strings too, so any header gives a key.
+    """
+
+    transfer_syntax: str
+    photometric_interpretation: str
+    samples_per_pixel: str
+    planar_configuration: str
+    bits_allocated: str
+    bits_stored: str
+    pixel_representation: str
+
+    @classmethod
+    def from_dataset(cls, ds: pydicom.Dataset) -> "CodecParameters":
+        """Reads the parameters from the header of `ds`."""
+        return cls(
+            transfer_syntax=str(ds.file_meta.get("TransferSyntaxUID", "")),
+            photometric_interpretation=str(ds.get("PhotometricInterpretation", "")),
+            samples_per_pixel=str(ds.get("SamplesPerPixel", "")),
+            planar_configuration=str(ds.get("PlanarConfiguration", "")),
+            bits_allocated=str(ds.get("BitsAllocated", "")),
+            bits_stored=str(ds.get("BitsStored", "")),
+            pixel_representation=str(ds.get("PixelRepresentation", "")),
+        )
+
+
 class TranscodeOutcome(enum.Enum):
     """What `recompress_to_jpeg2000_lossless` did with a dataset."""
 
     PASSTHROUGH_FAILED = "passthrough_failed"
     PASSTHROUGH_NOT_SMALLER = "passthrough_not_smaller"
     PASSTHROUGH_PHOTOMETRIC = "passthrough_photometric"
+    PASSTHROUGH_SERIES_VERIFY_MISMATCH = "passthrough_series_verify_mismatch"
     PASSTHROUGH_SYNTAX = "passthrough_syntax"
     PASSTHROUGH_VERIFY_MISMATCH = "passthrough_verify_mismatch"
     RECOMPRESSED = "recompressed"
 
 
-def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
+class Verification(enum.StrEnum):
+    """How much of the re-encode `CODObject.append` decodes back to check.
+
+    A checked frame is decoded from the new JPEG 2000 codestream and compared
+    with the frame decoded from the source, so the check catches an encoder
+    that loses data but not a decoder that misreads the source. Each checked
+    frame costs one extra JPEG 2000 decode.
+
+    - `FULL` checks every frame of every re-encoded instance.
+    - `PER_SERIES` checks every frame of the first instance in each append
+      whose re-encode completes, separately for each set of `CodecParameters`.
+      If that instance does not round-trip, the later instances with its
+      parameters keep their original bytes; once it passes, they are encoded
+      without the check.
+    - `OFF` checks nothing.
+
+    Every level keeps the other safeguards: the rule that a re-encode not
+    smaller than the source is discarded, and the fallback to the original
+    bytes when a codec raises.
+    """
+
+    FULL = "full"
+    OFF = "off"
+    PER_SERIES = "per-series"
+
+
+class VerificationDecision(enum.Enum):
+    """What `VerificationTracker.decide` asks of the next re-encode."""
+
+    SKIP = "skip"
+    TRUST = "trust"
+    VERIFY = "verify"
+
+
+class VerificationTracker:
+    """Decides how to re-encode each instance under one `Verification` level.
+
+    Under `PER_SERIES` it remembers, for each set of `CodecParameters`, whether
+    a verified re-encode completed or failed to round-trip.
+    """
+
+    def __init__(self, verification: Verification) -> None:
+        self._verification = verification
+        self._verified: set[CodecParameters] = set()
+        self._failed: set[CodecParameters] = set()
+
+    def decide(self, parameters: CodecParameters) -> VerificationDecision:
+        """Returns whether to skip, verify or trust a re-encode."""
+        if parameters in self._failed:
+            return VerificationDecision.SKIP
+        if self._verification is Verification.FULL or (
+            self._verification is Verification.PER_SERIES
+            and parameters not in self._verified
+        ):
+            return VerificationDecision.VERIFY
+        return VerificationDecision.TRUST
+
+    def record(self, parameters: CodecParameters, outcome: TranscodeOutcome) -> None:
+        """Records the outcome of a re-encode with `parameters`."""
+        if self._verification is not Verification.PER_SERIES:
+            return
+        if outcome is TranscodeOutcome.RECOMPRESSED:
+            self._verified.add(parameters)
+        elif outcome is TranscodeOutcome.PASSTHROUGH_VERIFY_MISMATCH:
+            self._failed.add(parameters)
+
+
+def recompress_to_jpeg2000_lossless(
+    ds: pydicom.Dataset,
+    *,
+    should_verify: bool = True,
+    decoder: _Decoder | None = None,
+) -> TranscodeOutcome:
     """Re-encodes a dataset's pixel data as JPEG 2000 Lossless.
 
     The source must be uncompressed or in `RECOMPRESS_SOURCE_SYNTAXES`, and
     carry a photometric interpretation the encoder reproduces exactly; anything
-    else passes through. Each frame is decoded and encoded, and the new
-    codestream is decoded again and compared with the decoded source frame. The
-    comparison catches an encoder that loses data, not a decoder that misreads
-    the source. The re-encode replaces the original only when every frame
-    matches and the encapsulated pixel data is smaller. Any other outcome,
-    including an exception from a codec, leaves `ds` untouched, so
-    incompressible data and pixels the codec cannot encode, such as 1-bit and
-    32-bit samples, keep their bytes.
+    else passes through. Each frame is decoded and encoded. With
+    `should_verify`, the new codestream is decoded again and compared with the
+    decoded source frame; the comparison catches an encoder that loses data,
+    not a decoder that misreads the source. The re-encode replaces the original
+    only when every checked frame matches and the encapsulated pixel data is
+    smaller. Any other outcome, including an exception from a codec, leaves
+    `ds` untouched, so incompressible data and pixels the codec cannot encode,
+    such as 1-bit and 32-bit samples, keep their bytes.
 
     RGB is stored as `YBR_RCT`, the interpretation under which the codec
     applies its reversible colour transform; every other interpretation is
@@ -97,6 +203,10 @@ def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
 
     Args:
         ds: Dataset with `PixelData`, uncompressed or encapsulated.
+        should_verify: Whether to decode every re-encoded frame back and
+            compare it.
+        decoder: Decodes a JPEG 2000 codestream for the check. Defaults to
+            openjpeg's decoder.
 
     Returns:
         The outcome. `ds` is modified only for `TranscodeOutcome.RECOMPRESSED`.
@@ -115,7 +225,8 @@ def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
     )
 
     try:
-        encoded = _encode_frames(ds, target_photometric)
+        checking_decoder = (decoder or decode_jpeg2000) if should_verify else None
+        encoded = _encode_frames(ds, target_photometric, decoder=checking_decoder)
     # Any codec or pydicom failure means the original bytes stay, so every
     # exception type ends in the same place.
     except Exception as error:
@@ -147,9 +258,11 @@ def _encapsulate(
 
 
 def _encode_frames(
-    ds: pydicom.Dataset, target_photometric: str
+    ds: pydicom.Dataset, target_photometric: str, *, decoder: _Decoder | None
 ) -> list[bytes] | TranscodeOutcome:
-    """Decodes, re-encodes and verifies every frame.
+    """Decodes and re-encodes every frame, checking each with `decoder`.
+
+    A `decoder` of `None` skips the check.
 
     Returns the codestreams, or the outcome that stopped the loop:
     `PASSTHROUGH_VERIFY_MISMATCH` at a frame that does not decode back, or
@@ -176,7 +289,7 @@ def _encode_frames(
     items_length = 0
     for frame in islice(frames, number_of_frames):
         codestream = encoder.encode(frame, encoding_plugin="pylibjpeg", **options)
-        if not _round_trips(codestream, frame):
+        if decoder is not None and not _round_trips(codestream, frame, decoder):
             return TranscodeOutcome.PASSTHROUGH_VERIFY_MISMATCH
         codestreams.append(codestream)
         # An 8-byte item header plus the codestream, padded to an even length
@@ -209,9 +322,9 @@ def _replace_pixel_data(
         ds.PlanarConfiguration = 0
 
 
-def _round_trips(codestream: bytes, frame: np.ndarray) -> bool:
+def _round_trips(codestream: bytes, frame: np.ndarray, decoder: _Decoder) -> bool:
     """Whether `codestream` decodes back to exactly `frame`."""
-    decoded = decode_jpeg2000(io.BytesIO(codestream))
+    decoded = decoder(io.BytesIO(codestream))
     if decoded.shape == frame.shape and np.array_equal(decoded, frame):
         return True
     logger.warning(
