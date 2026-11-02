@@ -1,4 +1,4 @@
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Union
 
 from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
@@ -105,3 +105,10 @@ class GcsBlobStore(BlobStore):
             bucket_name, prefix=object_prefix, retry=DEFAULT_RETRY
         ):
             yield f"{_GCS_SCHEME}{bucket_name}/{blob.name}"
+
+
+def as_blob_store(client: Union[storage.Client, BlobStore]) -> BlobStore:
+    """Returns `client` if it is already a `BlobStore`, or a `GcsBlobStore` wrapping it."""
+    if isinstance(client, BlobStore):
+        return client
+    return GcsBlobStore(client)

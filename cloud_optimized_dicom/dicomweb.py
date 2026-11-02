@@ -2,12 +2,12 @@ import dataclasses
 import os
 import re
 from tempfile import NamedTemporaryFile
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Union
 
 import pydicom.encaps
 from google.cloud import storage
 
-from cloud_optimized_dicom.blob_store import BlobStore, GcsBlobStore
+from cloud_optimized_dicom.blob_store import BlobStore, as_blob_store
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import TAR_IDENTIFIER, Instance
 
@@ -125,7 +125,7 @@ class DicomwebRequest:
                 self.instance_uid
             ), f"Invalid instance UID: {self.instance_uid}"
 
-    def handle(self, client: storage.Client):
+    def handle(self, client: Union[storage.Client, BlobStore]):
         """
         Handle the request and return the response.
         """
@@ -137,7 +137,7 @@ class DicomwebRequest:
             return self._handle_series_level_request(client)
         return self._handle_study_level_request(client)
 
-    def _handle_frame_level_request(self, client: storage.Client):
+    def _handle_frame_level_request(self, client: Union[storage.Client, BlobStore]):
         cod_obj = CODObject(
             datastore_path=self.datastore_uri,
             client=client,
@@ -164,7 +164,7 @@ class DicomwebRequest:
                 ]
         return frames
 
-    def _handle_instance_level_request(self, client: storage.Client):
+    def _handle_instance_level_request(self, client: Union[storage.Client, BlobStore]):
         """For an instance-level request, return the metadata for the instance"""
         cod_obj = CODObject(
             datastore_path=self.datastore_uri,
@@ -177,7 +177,7 @@ class DicomwebRequest:
         instance = cod_obj._get_instance(self.instance_uid)
         return instance.metadata
 
-    def _handle_series_level_request(self, client: storage.Client):
+    def _handle_series_level_request(self, client: Union[storage.Client, BlobStore]):
         """For a series-level request, return a list of metadata for each instance"""
         cod_obj = CODObject(
             datastore_path=self.datastore_uri,
@@ -190,9 +190,9 @@ class DicomwebRequest:
         instances = cod_obj._get_instances(strict_sorting=False)
         return [instance.metadata for instance in instances.values()]
 
-    def _handle_study_level_request(self, client: storage.Client):
+    def _handle_study_level_request(self, client: Union[storage.Client, BlobStore]):
         series_uid = _get_series_uid_for_study(
-            self.datastore_uri, self.study_uid, GcsBlobStore(client)
+            self.datastore_uri, self.study_uid, as_blob_store(client)
         )
         cod_obj = CODObject(
             datastore_path=self.datastore_uri,
@@ -256,7 +256,7 @@ class DicomwebRequest:
 
 
 # public method to expose (really the only thing that should be used/imported)
-def handle_request(request: str, client: storage.Client) -> dict:
+def handle_request(request: str, client: Union[storage.Client, BlobStore]) -> dict:
     """
     Handle a dicomweb request and return the response.
     """

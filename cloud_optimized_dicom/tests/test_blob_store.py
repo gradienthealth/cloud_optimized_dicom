@@ -1,4 +1,8 @@
-"""Contract tests for `BlobStore`: the behaviour COD relies on from every store."""
+"""Contract tests for `BlobStore`: the behaviour COD relies on from every store.
+
+Running them against `GcsBlobStore` and `FakeBlobStore` alike keeps the fake
+faithful to GCS.
+"""
 
 import gzip
 import io
@@ -6,23 +10,25 @@ import os
 
 import pytest
 from google.api_core.exceptions import NotFound, PreconditionFailed
-from google.cloud import storage
 from google.cloud.storage.constants import NEARLINE_STORAGE_CLASS
 
-from cloud_optimized_dicom.blob_store import BlobStore, GcsBlobStore
+from cloud_optimized_dicom.blob_store import BlobStore, FakeBlobStore, GcsBlobStore
 from cloud_optimized_dicom.tests.conftest import DATASTORE_BASE
 from cloud_optimized_dicom.utils import delete_uploaded_blobs, generate_ptr_crc32c
 
 
-@pytest.fixture
-def store(gcs_client: storage.Client) -> BlobStore:
-    return GcsBlobStore(gcs_client)
+@pytest.fixture(params=["fake", "gcs"])
+def store(request: pytest.FixtureRequest) -> BlobStore:
+    if request.param == "fake":
+        return FakeBlobStore()
+    return GcsBlobStore(request.getfixturevalue("gcs_client"))
 
 
 @pytest.fixture
-def prefix(gcs_client: storage.Client, worker_namespace: str) -> str:
+def prefix(store: BlobStore, worker_namespace: str) -> str:
     path = f"{DATASTORE_BASE}/{worker_namespace}/blob_store"
-    delete_uploaded_blobs(gcs_client, [path])
+    if isinstance(store, GcsBlobStore):
+        delete_uploaded_blobs(store.client, [path])
     return path
 
 
