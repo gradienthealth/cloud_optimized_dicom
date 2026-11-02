@@ -1,13 +1,17 @@
 """Re-encodes pixel data as JPEG 2000 Lossless, one verified frame at a time.
 
-Two kinds of source gain from this path: the legacy lossless encodings that
-JPEG 2000 stores more compactly, and uncompressed RGB, which shrinks further
-once the codec's reversible colour transform runs. Neither is within reach of
-`pydicom.Dataset.compress`, which refuses a compressed source and encodes RGB
-with the transform off. Each frame is decoded, encoded again, and decoded once
-more to prove it matches the source. The result is kept only when every frame
-matches and the pixel data comes out smaller; otherwise the instance keeps its
-original bytes.
+The re-encode takes these sources:
+
+- the legacy lossless encodings in `RECOMPRESS_SOURCE_SYNTAXES`, which JPEG
+  2000 stores more compactly;
+- uncompressed RGB, which shrinks further once the codec's reversible colour
+  transform runs;
+- every other uncompressed photometric interpretation the encoder reproduces
+  exactly.
+
+Each frame is decoded, encoded again, and decoded once more to prove it matches
+the source. The result is kept only when every frame matches and the pixel data
+comes out smaller; otherwise the instance keeps its original bytes.
 """
 
 import enum
@@ -74,13 +78,16 @@ class TranscodeOutcome(enum.Enum):
 def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
     """Re-encodes a dataset's pixel data as JPEG 2000 Lossless.
 
-    Uncompressed pixel data and the encodings in `RECOMPRESS_SOURCE_SYNTAXES`
-    are accepted. Either must carry a photometric interpretation the encoder
-    reproduces exactly; anything else passes through. Each frame is decoded,
-    encoded, and decoded again to compare with the source. The re-encode
-    replaces the original only when every frame matches and the encapsulated
-    pixel data is smaller. Any other outcome, including an exception from a
-    codec, leaves `ds` untouched.
+    The source must be uncompressed or in `RECOMPRESS_SOURCE_SYNTAXES`, and
+    carry a photometric interpretation the encoder reproduces exactly; anything
+    else passes through. Each frame is decoded and encoded, and the new
+    codestream is decoded again and compared with the decoded source frame. The
+    comparison catches an encoder that loses data, not a decoder that misreads
+    the source. The re-encode replaces the original only when every frame
+    matches and the encapsulated pixel data is smaller. Any other outcome,
+    including an exception from a codec, leaves `ds` untouched, so
+    incompressible data and pixels the codec cannot encode, such as 1-bit and
+    32-bit samples, keep their bytes.
 
     RGB is stored as `YBR_RCT`, the interpretation under which the codec
     applies its reversible colour transform; every other interpretation is
@@ -108,12 +115,7 @@ def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
     )
 
     try:
-        codestreams = _encode_frames(ds, target_photometric)
-    except _VerifyMismatchError as error:
-        logger.warning(
-            f"Keeping {source_syntax.name} pixel data; re-encode did not round-trip: {error}"
-        )
-        return TranscodeOutcome.PASSTHROUGH_VERIFY_MISMATCH
+        encoded = _encode_frames(ds, target_photometric)
     # Any codec or pydicom failure means the original bytes stay, so every
     # exception type ends in the same place.
     except Exception as error:
@@ -122,7 +124,9 @@ def recompress_to_jpeg2000_lossless(ds: pydicom.Dataset) -> TranscodeOutcome:
         )
         return TranscodeOutcome.PASSTHROUGH_FAILED
 
-    pixel_data, extended_offsets = _encapsulate(codestreams)
+    if isinstance(encoded, TranscodeOutcome):
+        return encoded
+    pixel_data, extended_offsets = _encapsulate(encoded)
     if len(pixel_data) >= len(ds.PixelData):
         return TranscodeOutcome.PASSTHROUGH_NOT_SMALLER
     _replace_pixel_data(ds, pixel_data, extended_offsets, target_photometric)
@@ -142,8 +146,16 @@ def _encapsulate(
     return encapsulate(codestreams), None
 
 
-def _encode_frames(ds: pydicom.Dataset, target_photometric: str) -> list[bytes]:
-    """Decodes, re-encodes and verifies every frame."""
+def _encode_frames(
+    ds: pydicom.Dataset, target_photometric: str
+) -> list[bytes] | TranscodeOutcome:
+    """Decodes, re-encodes and verifies every frame.
+
+    Returns the codestreams, or the outcome that stopped the loop:
+    `PASSTHROUGH_VERIFY_MISMATCH` at a frame that does not decode back, or
+    `PASSTHROUGH_NOT_SMALLER` once the encapsulated items reach the size of the
+    source pixel data.
+    """
     encoder = get_encoder(pydicom.uid.JPEG2000Lossless)
     options = as_pixel_options(ds)
     options["photometric_interpretation"] = target_photometric
@@ -154,16 +166,23 @@ def _encode_frames(ds: pydicom.Dataset, target_photometric: str) -> list[bytes]:
         "gdcm" if ds.file_meta.TransferSyntaxUID in _GDCM_DECODED_SYNTAXES else ""
     )
     # `raw=True` returns the stored samples without pydicom's YBR to RGB
-    # conversion, which rounds. The clamp to NumberOfFrames drops the extra
+    # conversion, which rounds. The clamp to `NumberOfFrames` drops the extra
     # fragment groups pydicom otherwise yields for producers that write more
     # items than frames.
     frames = iter_pixels(ds, raw=True, decoding_plugin=decoding_plugin)
     number_of_frames = int(ds.get("NumberOfFrames", 1) or 1)
+    source_length = len(ds.PixelData)
     codestreams = []
+    items_length = 0
     for frame in islice(frames, number_of_frames):
         codestream = encoder.encode(frame, encoding_plugin="pylibjpeg", **options)
-        _verify_roundtrip(codestream, frame)
+        if not _round_trips(codestream, frame):
+            return TranscodeOutcome.PASSTHROUGH_VERIFY_MISMATCH
         codestreams.append(codestream)
+        # An 8-byte item header plus the codestream, padded to an even length
+        items_length += 8 + len(codestream) + len(codestream) % 2
+        if items_length >= source_length:
+            return TranscodeOutcome.PASSTHROUGH_NOT_SMALLER
     return codestreams
 
 
@@ -190,14 +209,13 @@ def _replace_pixel_data(
         ds.PlanarConfiguration = 0
 
 
-def _verify_roundtrip(codestream: bytes, frame: np.ndarray) -> None:
+def _round_trips(codestream: bytes, frame: np.ndarray) -> bool:
+    """Whether `codestream` decodes back to exactly `frame`."""
     decoded = decode_jpeg2000(io.BytesIO(codestream))
-    if decoded.shape != frame.shape or not np.array_equal(decoded, frame):
-        raise _VerifyMismatchError(
-            f"decoded frame {decoded.shape} {decoded.dtype} differs from source "
-            f"{frame.shape} {frame.dtype}"
-        )
-
-
-class _VerifyMismatchError(Exception):
-    """A re-encoded frame did not decode back to the source frame."""
+    if decoded.shape == frame.shape and np.array_equal(decoded, frame):
+        return True
+    logger.warning(
+        f"Keeping pixel data; decoded frame {decoded.shape} {decoded.dtype} "
+        f"differs from source {frame.shape} {frame.dtype}"
+    )
+    return False

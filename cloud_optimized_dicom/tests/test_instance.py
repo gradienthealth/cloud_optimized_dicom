@@ -14,7 +14,7 @@ from pydicom.pixels import pixel_array
 
 import cloud_optimized_dicom.instance
 from cloud_optimized_dicom.instance import Instance
-from cloud_optimized_dicom.tests.conftest import synthetic_image
+from cloud_optimized_dicom.tests.conftest import synthetic_image, write_encoded_image
 from cloud_optimized_dicom.transcode import TranscodeOutcome
 from cloud_optimized_dicom.utils import is_remote
 
@@ -261,9 +261,53 @@ def test_compress_applies_the_colour_transform_to_uncompressed_rgb(tmp_path):
     "image",
     [
         {"photometric": "MONOCHROME2", "bits_allocated": 16, "bits_stored": 12},
+        {"photometric": "MONOCHROME2", "bits_allocated": 16, "bits_stored": 16},
+        {
+            "photometric": "MONOCHROME2",
+            "bits_allocated": 16,
+            "bits_stored": 12,
+            "is_signed": True,
+        },
+        {
+            "photometric": "MONOCHROME2",
+            "bits_allocated": 16,
+            "bits_stored": 16,
+            "is_signed": True,
+        },
+        {"photometric": "MONOCHROME1", "bits_allocated": 8, "bits_stored": 8},
+        {
+            "photometric": "MONOCHROME2",
+            "bits_allocated": 8,
+            "bits_stored": 8,
+            "rows": 63,
+            "columns": 61,
+            "number_of_frames": 3,
+        },
+        {"photometric": "MONOCHROME2", "number_of_frames": 5},
+        {"photometric": "PALETTE COLOR", "bits_allocated": 8, "bits_stored": 8},
+        {"photometric": "PALETTE COLOR", "bits_allocated": 16, "bits_stored": 12},
         {"photometric": "YBR_FULL", "bits_allocated": 8, "bits_stored": 8},
+        {
+            "photometric": "YBR_FULL",
+            "bits_allocated": 8,
+            "bits_stored": 8,
+            "planar_configuration": 1,
+            "number_of_frames": 2,
+        },
     ],
-    ids=["mono16", "ybr_full"],
+    ids=[
+        "mono2_16_12",
+        "mono2_16_16",
+        "mono2_signed_12",
+        "mono2_signed_16",
+        "mono1_8",
+        "mono2_8_odd_multiframe",
+        "mono2_multiframe",
+        "palette_8",
+        "palette_16",
+        "ybr_full",
+        "ybr_full_planar1_multiframe",
+    ],
 )
 def test_compress_keeps_other_uncompressed_photometric_interpretations(tmp_path, image):
     source = synthetic_image(**image)
@@ -278,8 +322,68 @@ def test_compress_keeps_other_uncompressed_photometric_interpretations(tmp_path,
         ds = pydicom.dcmread(f)
     assert ds.file_meta.TransferSyntaxUID == pydicom.uid.JPEG2000Lossless
     assert ds.PhotometricInterpretation == image["photometric"]
+    assert ds.get("PlanarConfiguration", 0) == 0
+    assert int(ds.NumberOfFrames) == image.get("number_of_frames", 1)
     assert (pixel_array(ds, raw=True) == source_pixels).all()
     assert ds.SOPInstanceUID == source.SOPInstanceUID
+
+
+def test_compress_keeps_uncompressed_pixels_the_re_encode_cannot_shrink(tmp_path):
+    source = synthetic_image(bits_allocated=8, bits_stored=8, rows=128, columns=128)
+    noise = np.random.default_rng(seed=7).integers(0, 256, 128 * 128, dtype=np.uint8)
+    source.PixelData = noise.tobytes()
+    path = str(tmp_path / "noise.dcm")
+    source.save_as(path, enforce_file_format=True)
+    instance = Instance(dicom_uri=path)
+
+    instance.compress()
+
+    assert instance.dicom_uri == path
+
+
+def test_compress_keeps_uncompressed_ybr_full_422(tmp_path):
+    source = synthetic_image(photometric="YBR_FULL", bits_allocated=8, bits_stored=8)
+    source.PhotometricInterpretation = "YBR_FULL_422"
+    source.PixelData = source.PixelData[: 64 * 64 * 2]
+    path = str(tmp_path / "ybr_full_422.dcm")
+    source.save_as(path, enforce_file_format=True)
+    instance = Instance(dicom_uri=path)
+
+    instance.compress()
+
+    assert instance.dicom_uri == path
+
+
+def test_compress_recompresses_deflated_pixels_bit_exact(tmp_path):
+    source = synthetic_image(number_of_frames=3)
+    source_pixels = pixel_array(source, raw=True)
+    path = write_encoded_image(
+        tmp_path / "deflated.dcm", pydicom.uid.DeflatedExplicitVRLittleEndian, source
+    )
+    instance = Instance(dicom_uri=path)
+
+    instance.compress()
+
+    with instance.open() as f:
+        ds = pydicom.dcmread(f)
+    assert ds.file_meta.TransferSyntaxUID == pydicom.uid.JPEG2000Lossless
+    assert (pixel_array(ds, raw=True) == source_pixels).all()
+
+
+def test_compress_keeps_uncompressed_pixels_the_encoder_rejects(tmp_path):
+    """JPEG 2000 cannot encode 1-bit pixels; the instance keeps its bytes."""
+    source = synthetic_image(bits_allocated=8, bits_stored=8)
+    source.BitsAllocated = source.BitsStored = 1
+    source.HighBit = 0
+    bits = np.random.default_rng(seed=7).integers(0, 2, 64 * 64, dtype=np.uint8)
+    source.PixelData = np.packbits(bits, bitorder="little").tobytes()
+    path = str(tmp_path / "one_bit.dcm")
+    source.save_as(path, enforce_file_format=True)
+    instance = Instance(dicom_uri=path)
+
+    instance.compress()
+
+    assert instance.dicom_uri == path
 
 
 def test_compress_keeps_raw_rgb_when_the_re_encode_passes_through(

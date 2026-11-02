@@ -329,16 +329,11 @@ class Instance:
     def compress(self, syntax: pydicom.uid.UID = pydicom.uid.JPEG2000Lossless):
         """Re-encodes the instance's pixel data as `syntax`, keeping every UID.
 
-        When `syntax` is JPEG 2000 Lossless, JPEG Lossless, RLE Lossless and
-        uncompressed RGB sources take the frame-by-frame re-encode of
-        `transcode.recompress_to_jpeg2000_lossless`, which stores RGB as
-        `YBR_RCT`.
-
-        That re-encode keeps its result only if it decodes back bit-exact and
-        smaller; otherwise the instance keeps its bytes. Any other uncompressed
-        source is encoded directly with `Dataset.compress`. So is uncompressed
-        RGB when `syntax` is anything else. Compressed sources keep their bytes
-        in every other case. A re-encoded instance lands in a new temp file,
+        For JPEG 2000 Lossless, `transcode.recompress_to_jpeg2000_lossless`
+        re-encodes the pixel data frame by frame, and any source it cannot
+        safely re-encode keeps its bytes. For any other `syntax`, an
+        uncompressed source is encoded with `Dataset.compress` and a compressed
+        one keeps its bytes. A re-encoded instance lands in a new temp file,
         and `dicom_uri` moves to it. Size and `crc32c` are recomputed.
 
         Args:
@@ -360,16 +355,7 @@ class Instance:
             source_syntax = ds.file_meta.TransferSyntaxUID
             if source_syntax == syntax:
                 return
-            # Uncompressed RGB joins the compressed sources in the frame
-            # re-encode, which stores it as YBR_RCT. `Dataset.compress` would
-            # declare the header's RGB and encode without the colour transform.
-            # Other uncompressed sources gain nothing from the transform and
-            # keep the direct encode, which skips the frame path's decode-back
-            # verification.
-            if syntax == pydicom.uid.JPEG2000Lossless and (
-                source_syntax.is_compressed
-                or ds.get("PhotometricInterpretation") == "RGB"
-            ):
+            if syntax == pydicom.uid.JPEG2000Lossless:
                 size_before = self.size()
                 outcome = recompress_to_jpeg2000_lossless(ds)
                 metrics.TRANSCODE_OUTCOME_COUNTERS[outcome].inc()

@@ -205,15 +205,18 @@ After ingestion, one can conveniently delete these files by calling `Instance.de
 
 `CODObject.append` re-encodes pixel data as JPEG 2000 Lossless through `Instance.compress`. JPEG 2000 Lossless stores the same pixels in fewer bytes than the encodings most hospitals send, as measured in the [PROC-2531](https://linear.app/gradienthealth/issue/PROC-2531) compression study:
 
-- Uncompressed pixel data is encoded directly, except RGB, which takes the frame-by-frame path below.
-- JPEG Lossless (`1.2.840.10008.1.2.4.57`, `.4.70`), RLE Lossless and uncompressed RGB are re-encoded frame by frame, and each frame is decoded back and compared to the source. The result is kept only when every frame matches bit for bit and the encapsulated pixel data comes out smaller; otherwise the instance keeps its original bytes, raw RGB included.
+- JPEG Lossless (`1.2.840.10008.1.2.4.57`, `.4.70`), RLE Lossless and uncompressed pixel data are re-encoded frame by frame. Each frame is decoded back and compared with the decoded source frame, and the result is kept only when every frame matches bit for bit and it comes out smaller; otherwise the instance keeps its original bytes. Incompressible data, and 1-bit or 32-bit pixels the codec cannot encode, keep their original bytes.
 - Lossy encodings (JPEG Baseline and Extended, lossy JPEG 2000, JPEG-LS near-lossless) are never re-encoded. JPEG 2000 (`.4.90`, `.4.91`) and JPEG-LS Lossless pass through because re-encoding them does not shrink them.
 
 The colour rules keep the decoded samples exact. `YBR_FULL` sources are decoded raw, without pydicom's YBR to RGB conversion, and stored as `YBR_FULL`. RGB sources are stored as `YBR_RCT`, the one interpretation the codec applies its reversible colour transform to. `YBR_FULL_422` cannot be reproduced exactly, so it passes through. Multi-sample output is always colour-by-pixel (`PlanarConfiguration` 0). The SOP Instance UID and the `LossyImageCompression` tags are never changed.
 
+The check compares against the decoded source, so it cannot detect a decoder misreading the source.
+
+Ingest works on one instance at a time. The re-encode holds the instance's pixel data plus its compressed frames, so peak memory follows `max_instance_size`.
+
 JPEG Lossless is decoded with GDCM rather than pylibjpeg, whose libjpeg clamps out-of-range predictor reconstructions instead of wrapping them, saturating ultrasound from some vendors ([pylibjpeg-libjpeg#90](https://github.com/pydicom/pylibjpeg-libjpeg/issues/90)).
 
-A codec failure never drops an instance: the original bytes are appended and the outcome is counted under the `cloud_optimized_dicom:append` metrics namespace (`transcode_recompressed`, `transcode_passthrough_*`, `transcode_bytes_saved`). `append(..., compress=False)` keeps every source encoding.
+A codec failure in the re-encode never drops an instance: the original bytes are appended and the outcome is counted under the `cloud_optimized_dicom:append` metrics namespace (`transcode_recompressed`, `transcode_passthrough_*`, `transcode_bytes_saved`). `append(..., compress=False)` keeps every source encoding.
 
 # Metadata format
 
