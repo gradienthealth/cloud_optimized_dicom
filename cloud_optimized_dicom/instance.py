@@ -19,7 +19,11 @@ from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tab
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.instance_metadata import DicomMetadata
 from cloud_optimized_dicom.transcode import (
+    CodecParameters,
     TranscodeOutcome,
+    Verification,
+    VerificationDecision,
+    VerificationTracker,
     recompress_to_jpeg2000_lossless,
 )
 from cloud_optimized_dicom.utils import (
@@ -326,7 +330,12 @@ class Instance:
         start, stop = self._byte_offsets[0], self._byte_offsets[1] + 1
         return VirtualFile(master_file_pointer, start, stop)
 
-    def compress(self, syntax: pydicom.uid.UID = pydicom.uid.JPEG2000Lossless):
+    def compress(
+        self,
+        syntax: pydicom.uid.UID = pydicom.uid.JPEG2000Lossless,
+        *,
+        verification_tracker: VerificationTracker | None = None,
+    ) -> TranscodeOutcome | None:
         """Re-encodes the instance's pixel data as `syntax`, keeping every UID.
 
         For JPEG 2000 Lossless, `transcode.recompress_to_jpeg2000_lossless`
@@ -339,6 +348,11 @@ class Instance:
         Args:
             syntax: Transfer syntax to encode to. Defaults to
                 `JPEG2000Lossless`.
+            verification_tracker: Decides whether to verify the re-encode and
+                learns from its outcome. Without one, every frame is verified.
+
+        Returns:
+            The JPEG 2000 re-encode's outcome, or `None` when there was none.
 
         Raises:
             ValueError: If the instance is remote or nested in a tar.
@@ -356,14 +370,9 @@ class Instance:
             if source_syntax == syntax:
                 return
             if syntax == pydicom.uid.JPEG2000Lossless:
-                size_before = self.size()
-                outcome = recompress_to_jpeg2000_lossless(ds)
-                metrics.TRANSCODE_OUTCOME_COUNTERS[outcome].inc()
-                if outcome is not TranscodeOutcome.RECOMPRESSED:
-                    return
-                self._replace_local_file(ds)
-                metrics.TRANSCODE_BYTES_SAVED.inc(size_before - self.size())
-                return
+                return self._recompress_to_jpeg2000_lossless(
+                    ds, verification_tracker or VerificationTracker(Verification.FULL)
+                )
             if source_syntax.is_compressed:
                 return
             # generate_instance_uid=False keeps the SOPInstanceUID stable
@@ -727,6 +736,26 @@ class Instance:
             == other.study_uid(trust_hints_if_available=True)
             and self.uid_hash_func == other.uid_hash_func
         )
+
+    def _recompress_to_jpeg2000_lossless(
+        self, ds: pydicom.Dataset, verification_tracker: VerificationTracker
+    ) -> TranscodeOutcome:
+        """Re-encodes `ds` as `verification_tracker` decides."""
+        parameters = CodecParameters.from_dataset(ds)
+        decision = verification_tracker.decide(parameters)
+        size_before = self.size()
+        if decision is VerificationDecision.SKIP:
+            outcome = TranscodeOutcome.PASSTHROUGH_SERIES_VERIFY_MISMATCH
+        else:
+            outcome = recompress_to_jpeg2000_lossless(
+                ds, should_verify=decision is VerificationDecision.VERIFY
+            )
+        verification_tracker.record(parameters, outcome)
+        metrics.TRANSCODE_OUTCOME_COUNTERS[outcome].inc()
+        if outcome is TranscodeOutcome.RECOMPRESSED:
+            self._replace_local_file(ds)
+            metrics.TRANSCODE_BYTES_SAVED.inc(size_before - self.size())
+        return outcome
 
     def _replace_local_file(self, ds: pydicom.Dataset) -> None:
         """Writes `ds` to a new temp file and repoints the instance at it.

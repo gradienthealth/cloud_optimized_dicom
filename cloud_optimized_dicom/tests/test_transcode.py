@@ -1,3 +1,4 @@
+import numpy as np
 import pydicom
 import pydicom.uid
 import pytest
@@ -14,8 +15,22 @@ from pydicom.uid import (
 import cloud_optimized_dicom.transcode as transcode
 from cloud_optimized_dicom.tests.conftest import synthetic_image, write_encoded_image
 from cloud_optimized_dicom.transcode import (
+    CodecParameters,
     TranscodeOutcome,
+    Verification,
+    VerificationDecision,
+    VerificationTracker,
     recompress_to_jpeg2000_lossless,
+)
+
+_PARAMETERS = CodecParameters(
+    transfer_syntax=ExplicitVRLittleEndian,
+    photometric_interpretation="RGB",
+    samples_per_pixel="3",
+    planar_configuration="0",
+    bits_allocated="8",
+    bits_stored="8",
+    pixel_representation="0",
 )
 
 MONO16 = {"photometric": "MONOCHROME2", "bits_allocated": 16, "bits_stored": 12}
@@ -173,6 +188,88 @@ def test_keeps_original_on_verify_mismatch(tmp_path, monkeypatch):
     assert _snapshot(ds) == before
 
 
+@pytest.mark.parametrize(
+    ("should_verify", "expected"),
+    [
+        (True, TranscodeOutcome.PASSTHROUGH_VERIFY_MISMATCH),
+        (False, TranscodeOutcome.RECOMPRESSED),
+    ],
+    ids=["verify", "off"],
+)
+def test_checks_frames_with_the_injected_decoder(tmp_path, should_verify, expected):
+    ds = _jpeg_lossless_dataset(tmp_path, **MONO16)
+
+    outcome = recompress_to_jpeg2000_lossless(
+        ds, should_verify=should_verify, decoder=_corrupting_decode
+    )
+
+    assert outcome is expected
+
+
+@pytest.mark.parametrize(
+    ("verification", "expected_before", "expected_after"),
+    [
+        (Verification.OFF, VerificationDecision.TRUST, VerificationDecision.TRUST),
+        (
+            Verification.PER_SERIES,
+            VerificationDecision.VERIFY,
+            VerificationDecision.TRUST,
+        ),
+        (Verification.FULL, VerificationDecision.VERIFY, VerificationDecision.VERIFY),
+    ],
+    ids=["off", "per_series", "full"],
+)
+def test_tracker_stops_verifying_once_a_verified_re_encode_completes(
+    verification, expected_before, expected_after
+):
+    verification_tracker = VerificationTracker(verification)
+    before = verification_tracker.decide(_PARAMETERS)
+
+    verification_tracker.record(_PARAMETERS, TranscodeOutcome.RECOMPRESSED)
+
+    assert before is expected_before
+    assert verification_tracker.decide(_PARAMETERS) is expected_after
+
+
+@pytest.mark.parametrize(
+    ("verification", "expected"),
+    [
+        (Verification.OFF, VerificationDecision.TRUST),
+        (Verification.PER_SERIES, VerificationDecision.SKIP),
+        (Verification.FULL, VerificationDecision.VERIFY),
+    ],
+    ids=["off", "per_series", "full"],
+)
+def test_tracker_skips_after_a_failure_under_per_series_only(verification, expected):
+    verification_tracker = VerificationTracker(verification)
+
+    verification_tracker.record(
+        _PARAMETERS, TranscodeOutcome.PASSTHROUGH_VERIFY_MISMATCH
+    )
+
+    assert verification_tracker.decide(_PARAMETERS) is expected
+
+
+def test_tracker_keeps_each_set_of_codec_parameters_apart():
+    """A failed RGB capture leaves the signed slices to their own check."""
+    signed_slices = _PARAMETERS._replace(pixel_representation="1")
+    verification_tracker = VerificationTracker(Verification.PER_SERIES)
+
+    verification_tracker.record(
+        _PARAMETERS, TranscodeOutcome.PASSTHROUGH_VERIFY_MISMATCH
+    )
+
+    assert verification_tracker.decide(_PARAMETERS) is VerificationDecision.SKIP
+    assert verification_tracker.decide(signed_slices) is VerificationDecision.VERIFY
+
+
+def test_codec_parameters_tolerate_a_header_without_them():
+    ds = pydicom.Dataset()
+    ds.file_meta = pydicom.dataset.FileMetaDataset()
+
+    assert CodecParameters.from_dataset(ds) == CodecParameters(*[""] * 7)
+
+
 def test_keeps_original_when_encoder_fails(tmp_path, monkeypatch):
     ds = _jpeg_lossless_dataset(tmp_path, **MONO16)
     before = _snapshot(ds)
@@ -196,6 +293,11 @@ class _StubEncoder:
         if isinstance(self._result, Exception):
             raise self._result
         return self._result
+
+
+def _corrupting_decode(stream) -> np.ndarray:
+    """Stands in for the JPEG 2000 decoder with a frame that never matches."""
+    return np.zeros((1, 1), dtype=np.uint16)
 
 
 def _dataset_in(tmp_path, syntax, lossy_path: str) -> pydicom.Dataset:

@@ -205,10 +205,16 @@ After ingestion, one can conveniently delete these files by calling `Instance.de
 
 `CODObject.append` re-encodes pixel data as JPEG 2000 Lossless through `Instance.compress`. JPEG 2000 Lossless stores the same pixels in fewer bytes than the encodings most hospitals send, as measured in the [PROC-2531](https://linear.app/gradienthealth/issue/PROC-2531) compression study:
 
-- JPEG Lossless (`1.2.840.10008.1.2.4.57`, `.4.70`), RLE Lossless and uncompressed pixel data are re-encoded frame by frame. Each frame is decoded back and compared with the decoded source frame, and the result is kept only when every frame matches bit for bit and it comes out smaller; otherwise the instance keeps its original bytes. Incompressible data, and 1-bit or 32-bit pixels the codec cannot encode, keep their original bytes.
+- JPEG Lossless (`1.2.840.10008.1.2.4.57`, `.4.70`), RLE Lossless and uncompressed pixel data are re-encoded frame by frame. The result is kept only when it comes out smaller and passes the verification below; otherwise the instance keeps its original bytes. Incompressible data, and 1-bit or 32-bit pixels the codec cannot encode, keep their original bytes.
 - Lossy encodings (JPEG Baseline and Extended, lossy JPEG 2000, JPEG-LS near-lossless) are never re-encoded. JPEG 2000 (`.4.90`, `.4.91`) and JPEG-LS Lossless pass through because re-encoding them does not shrink them.
 
 The colour rules keep the decoded samples exact. `YBR_FULL` sources are decoded raw, without pydicom's YBR to RGB conversion, and stored as `YBR_FULL`. RGB sources are stored as `YBR_RCT`, the one interpretation the codec applies its reversible colour transform to. `YBR_FULL_422` cannot be reproduced exactly, so it passes through. Multi-sample output is always colour-by-pixel (`PlanarConfiguration` 0). The SOP Instance UID and the `LossyImageCompression` tags are never changed.
+
+`append(..., verification=...)` sets how much of the re-encode is decoded back and compared with the decoded source frames:
+
+- `"per-series"` (default) checks every frame of the first instance in each append whose re-encode completes, separately for each combination of transfer syntax, photometric interpretation, samples per pixel, planar configuration, bits allocated, bits stored and pixel representation. If it does not round-trip, the later instances with those parameters keep their original bytes; once it passes, they are encoded without the check.
+- `"full"` checks every frame of every instance, at the cost of one extra JPEG 2000 decode per frame.
+- `"off"` checks nothing.
 
 The check compares against the decoded source, so it cannot detect a decoder misreading the source.
 
