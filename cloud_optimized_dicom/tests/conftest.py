@@ -145,11 +145,16 @@ def ybr_full_422_path() -> str:
 
 @pytest.fixture(scope="session")
 def jpeg_lossless_path(tmp_path_factory: pytest.TempPathFactory) -> str:
-    """A 16-bit MONOCHROME2 instance encoded as JPEG Lossless SV1 (.4.70)."""
+    """A 16-bit `MONOCHROME2` instance encoded as JPEG Lossless SV1 (.4.70).
+
+    All 16 bits are stored: GDCM codes every frame with 16 bits of precision,
+    and the re-encode keeps a frame coded with more precision than `BitsStored`
+    unchecked.
+    """
     return write_encoded_image(
         tmp_path_factory.mktemp("jpeg_lossless") / "mono16_sv1.dcm",
         pydicom.uid.JPEGLosslessSV1,
-        synthetic_image(),
+        synthetic_image(bits_stored=16),
     )
 
 
@@ -228,10 +233,12 @@ def write_encoded_image(path, syntax: pydicom.uid.UID, ds: pydicom.Dataset) -> s
     """Writes `ds` to `path` in `syntax` and returns the path as a string.
 
     JPEG Lossless and RLE come from GDCM, which keeps the source's planar
-    configuration; JPEG 2000 comes from pydicom. Uncompressed syntaxes are
-    written as-is.
+    configuration; JPEG 2000 comes from pydicom. Uncompressed syntaxes,
+    Deflated included, are written as-is under `syntax`.
     """
     path = str(path)
+    if not syntax.is_compressed:
+        ds.file_meta.TransferSyntaxUID = syntax
     if syntax in _GDCM_SYNTAXES:
         uncompressed = path + ".explicit.dcm"
         ds.save_as(uncompressed, enforce_file_format=True)

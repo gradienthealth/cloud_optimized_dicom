@@ -1,4 +1,6 @@
+import io
 import os
+import shutil
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
@@ -17,7 +19,11 @@ from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tab
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.instance_metadata import DicomMetadata
 from cloud_optimized_dicom.transcode import (
+    CodecParameters,
     TranscodeOutcome,
+    Verification,
+    VerificationDecision,
+    VerificationTracker,
     recompress_to_jpeg2000_lossless,
 )
 from cloud_optimized_dicom.utils import (
@@ -33,6 +39,8 @@ from cloud_optimized_dicom.virtual_file import VirtualFile
 
 TAR_IDENTIFIER = ".tar://"
 ZIP_IDENTIFIER = ".zip://"
+# Buffer size for streamed copies, so no instance is held whole
+_COPY_BUFFER_SIZE = 2**20
 
 _STUDY_INSTANCE_UID_TAG = f"{tag_for_keyword('StudyInstanceUID'):08X}"
 _SERIES_INSTANCE_UID_TAG = f"{tag_for_keyword('SeriesInstanceUID'):08X}"
@@ -110,7 +118,7 @@ class Instance:
             with smart_open(
                 uri=self.dicom_uri, mode="rb", transport_params=self.transport_params
             ) as source:
-                local_file.write(source.read())
+                shutil.copyfileobj(source, local_file, _COPY_BUFFER_SIZE)
         # after writing, dicom_uri is now local
         self.dicom_uri = self._temp_file_path
         self.validate()
@@ -128,7 +136,7 @@ class Instance:
         # read the instance from the tar into the temp file
         with self.open() as f_in:
             with open(self._temp_file_path, "wb") as f_out:
-                f_out.write(f_in.read())
+                shutil.copyfileobj(f_in, f_out, _COPY_BUFFER_SIZE)
         # after writing, dicom_uri is now local
         self.dicom_uri = self._temp_file_path
         self.validate()
@@ -149,7 +157,9 @@ class Instance:
                 self._instance_uid = getattr(ds, "SOPInstanceUID")
                 self._series_uid = getattr(ds, "SeriesInstanceUID")
                 self._study_uid = getattr(ds, "StudyInstanceUID")
-                self._has_pixeldata = hasattr(ds, "PixelData")
+                # `in` checks for the element without the deferred read that
+                # attribute access would trigger.
+                self._has_pixeldata = "PixelData" in ds
             # seek back to beginning of file to calculate crc32c
             f.seek(0)
             self._crc32c = generate_ptr_crc32c(f)
@@ -320,24 +330,29 @@ class Instance:
         start, stop = self._byte_offsets[0], self._byte_offsets[1] + 1
         return VirtualFile(master_file_pointer, start, stop)
 
-    def compress(self, syntax: pydicom.uid.UID = pydicom.uid.JPEG2000Lossless):
+    def compress(
+        self,
+        syntax: pydicom.uid.UID = pydicom.uid.JPEG2000Lossless,
+        *,
+        verification_tracker: VerificationTracker | None = None,
+    ) -> TranscodeOutcome | None:
         """Re-encodes the instance's pixel data as `syntax`, keeping every UID.
 
-        When `syntax` is JPEG 2000 Lossless, JPEG Lossless, RLE Lossless and
-        uncompressed RGB sources take the frame-by-frame re-encode of
-        `transcode.recompress_to_jpeg2000_lossless`, which stores RGB as
-        `YBR_RCT`.
-
-        That re-encode keeps its result only if it decodes back bit-exact and
-        smaller; otherwise the instance keeps its bytes. Any other uncompressed
-        source is encoded directly with `Dataset.compress`. So is uncompressed
-        RGB when `syntax` is anything else. Compressed sources keep their bytes
-        in every other case. A re-encoded instance lands in a new temp file,
+        For JPEG 2000 Lossless, `transcode.recompress_to_jpeg2000_lossless`
+        re-encodes the pixel data frame by frame, and any source it cannot
+        safely re-encode keeps its bytes. For any other `syntax`, an
+        uncompressed source is encoded with `Dataset.compress` and a compressed
+        one keeps its bytes. A re-encoded instance lands in a new temp file,
         and `dicom_uri` moves to it. Size and `crc32c` are recomputed.
 
         Args:
             syntax: Transfer syntax to encode to. Defaults to
                 `JPEG2000Lossless`.
+            verification_tracker: Decides whether to verify the re-encode and
+                learns from its outcome. Without one, every frame is verified.
+
+        Returns:
+            The JPEG 2000 re-encode's outcome, or `None` when there was none.
 
         Raises:
             ValueError: If the instance is remote or nested in a tar.
@@ -354,24 +369,10 @@ class Instance:
             source_syntax = ds.file_meta.TransferSyntaxUID
             if source_syntax == syntax:
                 return
-            # Uncompressed RGB joins the compressed sources in the frame
-            # re-encode, which stores it as YBR_RCT. `Dataset.compress` would
-            # declare the header's RGB and encode without the colour transform.
-            # Other uncompressed sources gain nothing from the transform and
-            # keep the direct encode, which skips the frame path's decode-back
-            # verification.
-            if syntax == pydicom.uid.JPEG2000Lossless and (
-                source_syntax.is_compressed
-                or ds.get("PhotometricInterpretation") == "RGB"
-            ):
-                size_before = self.size()
-                outcome = recompress_to_jpeg2000_lossless(ds)
-                metrics.TRANSCODE_OUTCOME_COUNTERS[outcome].inc()
-                if outcome is not TranscodeOutcome.RECOMPRESSED:
-                    return
-                self._replace_local_file(ds)
-                metrics.TRANSCODE_BYTES_SAVED.inc(size_before - self.size())
-                return
+            if syntax == pydicom.uid.JPEG2000Lossless:
+                return self._recompress_to_jpeg2000_lossless(
+                    ds, verification_tracker or VerificationTracker(Verification.FULL)
+                )
             if source_syntax.is_compressed:
                 return
             # generate_instance_uid=False keeps the SOPInstanceUID stable
@@ -485,15 +486,10 @@ class Instance:
                 ds_dict[tag] = {"vr": "UI", "Value": [cached_value]}
 
     def get_pixeldata_hash(self) -> str:
-        """Compute the crc32c hash of just the pixeldata"""
-        with tempfile.NamedTemporaryFile(suffix="_pixeldata") as temp_file:
-            with self.open() as ptr:
-                ds = pydicom.dcmread(ptr, defer_size=1024)
-                # write ds.pixelData to temp_file
-                temp_file.write(ds.PixelData)
-                temp_file.flush()
-                temp_file.seek(0)
-                return generate_ptr_crc32c(temp_file)
+        """Returns the CRC32C of the `PixelData` value pydicom loads."""
+        with self.open() as ptr:
+            ds = pydicom.dcmread(ptr, specific_tags=["PixelData"])
+            return generate_ptr_crc32c(io.BytesIO(ds.PixelData))
 
     def __str__(self):
         """
@@ -740,6 +736,26 @@ class Instance:
             == other.study_uid(trust_hints_if_available=True)
             and self.uid_hash_func == other.uid_hash_func
         )
+
+    def _recompress_to_jpeg2000_lossless(
+        self, ds: pydicom.Dataset, verification_tracker: VerificationTracker
+    ) -> TranscodeOutcome:
+        """Re-encodes `ds` as `verification_tracker` decides."""
+        parameters = CodecParameters.from_dataset(ds)
+        decision = verification_tracker.decide(parameters)
+        size_before = self.size()
+        if decision is VerificationDecision.SKIP:
+            outcome = TranscodeOutcome.PASSTHROUGH_SERIES_VERIFY_MISMATCH
+        else:
+            outcome = recompress_to_jpeg2000_lossless(
+                ds, should_verify=decision is VerificationDecision.VERIFY
+            )
+        verification_tracker.record(parameters, outcome)
+        metrics.TRANSCODE_OUTCOME_COUNTERS[outcome].inc()
+        if outcome is TranscodeOutcome.RECOMPRESSED:
+            self._replace_local_file(ds)
+            metrics.TRANSCODE_BYTES_SAVED.inc(size_before - self.size())
+        return outcome
 
     def _replace_local_file(self, ds: pydicom.Dataset) -> None:
         """Writes `ds` to a new temp file and repoints the instance at it.

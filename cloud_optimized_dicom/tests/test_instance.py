@@ -1,6 +1,11 @@
+import functools
+import http.server
 import os
+import shutil
 import tarfile
 import tempfile
+import threading
+from typing import Iterator
 
 import numpy as np
 import pydicom
@@ -8,9 +13,16 @@ import pytest
 from pydicom.pixels import pixel_array
 
 import cloud_optimized_dicom.instance
+from cloud_optimized_dicom.append import _compress_instances, append
 from cloud_optimized_dicom.instance import Instance
-from cloud_optimized_dicom.tests.conftest import synthetic_image
-from cloud_optimized_dicom.transcode import TranscodeOutcome
+from cloud_optimized_dicom.tests.conftest import synthetic_image, write_encoded_image
+from cloud_optimized_dicom.transcode import (
+    CodecParameters,
+    TranscodeOutcome,
+    Verification,
+    VerificationDecision,
+    VerificationTracker,
+)
 from cloud_optimized_dicom.utils import is_remote
 
 REMOTE_DICOM_URI = "https://code.oak-tree.tech/oak-tree/medical-imaging/dcmjs/-/raw/master/test/sample-dicom.dcm?ref_type=heads&inline=false"
@@ -256,9 +268,53 @@ def test_compress_applies_the_colour_transform_to_uncompressed_rgb(tmp_path):
     "image",
     [
         {"photometric": "MONOCHROME2", "bits_allocated": 16, "bits_stored": 12},
+        {"photometric": "MONOCHROME2", "bits_allocated": 16, "bits_stored": 16},
+        {
+            "photometric": "MONOCHROME2",
+            "bits_allocated": 16,
+            "bits_stored": 12,
+            "is_signed": True,
+        },
+        {
+            "photometric": "MONOCHROME2",
+            "bits_allocated": 16,
+            "bits_stored": 16,
+            "is_signed": True,
+        },
+        {"photometric": "MONOCHROME1", "bits_allocated": 8, "bits_stored": 8},
+        {
+            "photometric": "MONOCHROME2",
+            "bits_allocated": 8,
+            "bits_stored": 8,
+            "rows": 63,
+            "columns": 61,
+            "number_of_frames": 3,
+        },
+        {"photometric": "MONOCHROME2", "number_of_frames": 5},
+        {"photometric": "PALETTE COLOR", "bits_allocated": 8, "bits_stored": 8},
+        {"photometric": "PALETTE COLOR", "bits_allocated": 16, "bits_stored": 12},
         {"photometric": "YBR_FULL", "bits_allocated": 8, "bits_stored": 8},
+        {
+            "photometric": "YBR_FULL",
+            "bits_allocated": 8,
+            "bits_stored": 8,
+            "planar_configuration": 1,
+            "number_of_frames": 2,
+        },
     ],
-    ids=["mono16", "ybr_full"],
+    ids=[
+        "mono2_16_12",
+        "mono2_16_16",
+        "mono2_signed_12",
+        "mono2_signed_16",
+        "mono1_8",
+        "mono2_8_odd_multiframe",
+        "mono2_multiframe",
+        "palette_8",
+        "palette_16",
+        "ybr_full",
+        "ybr_full_planar1_multiframe",
+    ],
 )
 def test_compress_keeps_other_uncompressed_photometric_interpretations(tmp_path, image):
     source = synthetic_image(**image)
@@ -273,8 +329,68 @@ def test_compress_keeps_other_uncompressed_photometric_interpretations(tmp_path,
         ds = pydicom.dcmread(f)
     assert ds.file_meta.TransferSyntaxUID == pydicom.uid.JPEG2000Lossless
     assert ds.PhotometricInterpretation == image["photometric"]
+    assert ds.get("PlanarConfiguration", 0) == 0
+    assert int(ds.NumberOfFrames) == image.get("number_of_frames", 1)
     assert (pixel_array(ds, raw=True) == source_pixels).all()
     assert ds.SOPInstanceUID == source.SOPInstanceUID
+
+
+def test_compress_keeps_uncompressed_pixels_the_re_encode_cannot_shrink(tmp_path):
+    source = synthetic_image(bits_allocated=8, bits_stored=8, rows=128, columns=128)
+    noise = np.random.default_rng(seed=7).integers(0, 256, 128 * 128, dtype=np.uint8)
+    source.PixelData = noise.tobytes()
+    path = str(tmp_path / "noise.dcm")
+    source.save_as(path, enforce_file_format=True)
+    instance = Instance(dicom_uri=path)
+
+    instance.compress()
+
+    assert instance.dicom_uri == path
+
+
+def test_compress_keeps_uncompressed_ybr_full_422(tmp_path):
+    source = synthetic_image(photometric="YBR_FULL", bits_allocated=8, bits_stored=8)
+    source.PhotometricInterpretation = "YBR_FULL_422"
+    source.PixelData = source.PixelData[: 64 * 64 * 2]
+    path = str(tmp_path / "ybr_full_422.dcm")
+    source.save_as(path, enforce_file_format=True)
+    instance = Instance(dicom_uri=path)
+
+    instance.compress()
+
+    assert instance.dicom_uri == path
+
+
+def test_compress_recompresses_deflated_pixels_bit_exact(tmp_path):
+    source = synthetic_image(number_of_frames=3)
+    source_pixels = pixel_array(source, raw=True)
+    path = write_encoded_image(
+        tmp_path / "deflated.dcm", pydicom.uid.DeflatedExplicitVRLittleEndian, source
+    )
+    instance = Instance(dicom_uri=path)
+
+    instance.compress()
+
+    with instance.open() as f:
+        ds = pydicom.dcmread(f)
+    assert ds.file_meta.TransferSyntaxUID == pydicom.uid.JPEG2000Lossless
+    assert (pixel_array(ds, raw=True) == source_pixels).all()
+
+
+def test_compress_keeps_uncompressed_pixels_the_encoder_rejects(tmp_path):
+    """JPEG 2000 cannot encode 1-bit pixels; the instance keeps its bytes."""
+    source = synthetic_image(bits_allocated=8, bits_stored=8)
+    source.BitsAllocated = source.BitsStored = 1
+    source.HighBit = 0
+    bits = np.random.default_rng(seed=7).integers(0, 2, 64 * 64, dtype=np.uint8)
+    source.PixelData = np.packbits(bits, bitorder="little").tobytes()
+    path = str(tmp_path / "one_bit.dcm")
+    source.save_as(path, enforce_file_format=True)
+    instance = Instance(dicom_uri=path)
+
+    instance.compress()
+
+    assert instance.dicom_uri == path
 
 
 def test_compress_keeps_raw_rgb_when_the_re_encode_passes_through(
@@ -287,7 +403,7 @@ def test_compress_keeps_raw_rgb_when_the_re_encode_passes_through(
     monkeypatch.setattr(
         cloud_optimized_dicom.instance,
         "recompress_to_jpeg2000_lossless",
-        lambda ds: TranscodeOutcome.PASSTHROUGH_FAILED,
+        lambda ds, should_verify=True: TranscodeOutcome.PASSTHROUGH_FAILED,
     )
     instance = Instance(dicom_uri=path)
 
@@ -334,3 +450,141 @@ def _rgb_image(planar_configuration: int, number_of_frames: int) -> pydicom.Data
         pixels = np.ascontiguousarray(np.moveaxis(pixels, -1, 1))
     ds.PixelData = pixels.tobytes()
     return ds
+
+
+def test_fetch_copies_the_remote_file_byte_for_byte(
+    local_instance_path: str, tmp_path, tmp_path_url: str
+):
+    shutil.copy(local_instance_path, tmp_path / "remote.dcm")
+    instance = Instance(dicom_uri=f"{tmp_path_url}/remote.dcm")
+
+    instance.fetch()
+
+    assert not is_remote(instance.dicom_uri)
+    with (
+        open(instance.dicom_uri, "rb") as fetched,
+        open(local_instance_path, "rb") as original,
+    ):
+        assert fetched.read() == original.read()
+
+
+def test_extract_from_local_tar_copies_the_instance_byte_for_byte(
+    local_instance_path: str, tmp_path
+):
+    instance = _tar_nested_instance(local_instance_path, tmp_path)
+
+    instance._extract_from_local_tar()
+
+    with (
+        open(instance.dicom_uri, "rb") as extracted,
+        open(local_instance_path, "rb") as original,
+    ):
+        assert extracted.read() == original.read()
+
+
+@pytest.fixture
+def tmp_path_url(tmp_path) -> Iterator[str]:
+    """Serves `tmp_path` over HTTP on localhost and yields its base URL."""
+    handler = functools.partial(
+        http.server.SimpleHTTPRequestHandler, directory=str(tmp_path)
+    )
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    host, port = server.server_address[:2]
+    yield f"http://{host}:{port}"
+    server.shutdown()
+    server.server_close()
+
+
+def test_compress_keeps_overlay_bits_above_bits_stored_byte_identical(tmp_path):
+    source = synthetic_image(bits_allocated=16, bits_stored=12)
+    words = np.frombuffer(source.PixelData, dtype="<u2").copy()
+    words[::7] |= 0x8000
+    source.PixelData = words.tobytes()
+    path = str(tmp_path / "overlay.dcm")
+    source.save_as(path, enforce_file_format=True)
+    with open(path, "rb") as f:
+        original = f.read()
+    instance = Instance(dicom_uri=path)
+
+    outcome = instance.compress(
+        verification_tracker=VerificationTracker(Verification.OFF)
+    )
+
+    assert outcome is TranscodeOutcome.PASSTHROUGH_HIGH_BITS
+    assert instance.dicom_uri == path
+    with open(instance.dicom_uri, "rb") as f:
+        assert f.read() == original
+
+
+def test_compress_keeps_bytes_when_its_parameters_failed_verification(tmp_path):
+    path = write_encoded_image(
+        tmp_path / "source.dcm", pydicom.uid.ExplicitVRLittleEndian, synthetic_image()
+    )
+    verification_tracker = VerificationTracker(Verification.PER_SERIES)
+    verification_tracker.record(
+        CodecParameters.from_dataset(pydicom.dcmread(path)),
+        TranscodeOutcome.PASSTHROUGH_VERIFY_MISMATCH,
+    )
+    instance = Instance(dicom_uri=path)
+
+    outcome = instance.compress(verification_tracker=verification_tracker)
+
+    assert outcome is TranscodeOutcome.PASSTHROUGH_SERIES_VERIFY_MISMATCH
+    assert instance.dicom_uri == path
+
+
+def test_compress_tells_the_tracker_its_parameters_were_verified(tmp_path):
+    path = write_encoded_image(
+        tmp_path / "source.dcm", pydicom.uid.ExplicitVRLittleEndian, synthetic_image()
+    )
+    parameters = CodecParameters.from_dataset(pydicom.dcmread(path))
+    verification_tracker = VerificationTracker(Verification.PER_SERIES)
+
+    outcome = Instance(dicom_uri=path).compress(
+        verification_tracker=verification_tracker
+    )
+
+    assert outcome is TranscodeOutcome.RECOMPRESSED
+    assert verification_tracker.decide(parameters) is VerificationDecision.TRUST
+
+
+def test_compress_instances_appends_an_instance_without_pixel_data(tmp_path):
+    """An SR-like file without a transfer syntax is still kept."""
+    path = str(tmp_path / "report.dcm")
+    _report_without_transfer_syntax().save_as(
+        path, implicit_vr=False, little_endian=True
+    )
+    instance = Instance(dicom_uri=path)
+
+    compressed, errors = _compress_instances([instance], Verification.PER_SERIES)
+
+    assert errors == []
+    assert compressed == [instance]
+
+
+def test_append_rejects_an_unknown_verification_level():
+    with pytest.raises(ValueError):
+        append(cod_object=None, instances=[], verification="sometimes")
+
+
+def _report_without_transfer_syntax() -> pydicom.Dataset:
+    file_meta = pydicom.dataset.FileMetaDataset()
+    file_meta.MediaStorageSOPClassUID = pydicom.uid.BasicTextSRStorage
+    file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
+    ds = pydicom.dataset.FileDataset(
+        None, {}, file_meta=file_meta, preamble=b"\0" * 128
+    )
+    ds.SOPClassUID = file_meta.MediaStorageSOPClassUID
+    ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+    ds.StudyInstanceUID = pydicom.uid.generate_uid()
+    ds.SeriesInstanceUID = pydicom.uid.generate_uid()
+    ds.Modality = "SR"
+    return ds
+
+
+def _tar_nested_instance(path: str, tmp_path) -> Instance:
+    tar_path = tmp_path / "series.tar"
+    with tarfile.open(tar_path, "w") as tar:
+        tar.add(path, arcname="instances/nested.dcm")
+    return Instance(dicom_uri=f"{tmp_path / 'series'}.tar://instances/nested.dcm")
