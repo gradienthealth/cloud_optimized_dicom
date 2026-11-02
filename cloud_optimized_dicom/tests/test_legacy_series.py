@@ -87,9 +87,15 @@ def test_legacy_metadata_loads(legacy_series: LegacySeries):
 
 def test_legacy_tar_matches_metadata_through_old_index(legacy_series: LegacySeries):
     """integrity_check opens the tar through the old index and compares every
-    instance's crc32c with the v1.0 metadata."""
+    instance's crc32c with the v1.0 metadata. ratarmountcore deletes an index it
+    cannot load and rebuilds one in memory, so the downloaded index must still be
+    the committed one afterwards."""
     with legacy_series.open() as cod:
         cod.integrity_check()
+        with open(cod.index_file_path, "rb") as f:
+            index_after_check = f.read()
+    with open(os.path.join(LEGACY_DIR, "index.sqlite"), "rb") as f:
+        assert index_after_check == f.read()
 
 
 def test_open_legacy_instance(legacy_series: LegacySeries):

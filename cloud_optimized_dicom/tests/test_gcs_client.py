@@ -120,7 +120,7 @@ def test_append_missing_remote_instance_without_store(
         sync_on_exit=False,
     ) as cod:
         result = cod.append(
-            [Instance(dicom_uri="gs://some-hospital/that/does/not/exist.dcm")]
+            [Instance(dicom_uri=f"{datastore_path}/source/missing.dcm")]
         )
     assert len(result.errors) == 1
     assert isinstance(result.errors[0][1], NotFound)

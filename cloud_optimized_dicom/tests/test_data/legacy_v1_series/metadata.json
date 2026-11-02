@@ -150,7 +150,7 @@
           "7FE00010": {
             "vr": "OB",
             "BulkDataURI": {
-              "uri": "gs://siskin-172863-temp/cod_fixture_gen/7c82944c-2460-4da9-a4bf-6524b6024e15/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.25249138499397901449112452045843232933.dcm",
+              "uri": "gs://siskin-172863-temp/cod_fixture_gen/91731b50-b846-4781-a3b2-9d0e12e044fd/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.25249138499397901449112452045843232933.dcm",
               "head": "\ufffd\ufffd\u0000\ufffd\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000\ufffd\ufffd\u0000\ufffd\ufffd\u0005\u0000\u0000\u0002\u0000\u0000\u0000@\u0000\u0000\u0000x\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\u0000\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\u0000\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\u0000\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\u0000\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\u0000\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\u0000\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\u0000\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\u0000\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\u001f\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u001f @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000\u001f@`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 \u001f`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @"
             }
           },
@@ -173,10 +173,10 @@
             ]
           }
         },
-        "uri": "gs://siskin-172863-temp/cod_fixture_gen/7c82944c-2460-4da9-a4bf-6524b6024e15/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.25249138499397901449112452045843232933.dcm",
+        "uri": "gs://siskin-172863-temp/cod_fixture_gen/91731b50-b846-4781-a3b2-9d0e12e044fd/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.25249138499397901449112452045843232933.dcm",
         "headers": {
-          "start_byte": 1536,
-          "end_byte": 3818
+          "start_byte": 512,
+          "end_byte": 2794
         },
         "offset_tables": {},
         "crc32c": "oHuhQw==",
@@ -185,7 +185,7 @@
         "dependencies": [],
         "diff_hash_dupe_paths": [],
         "version": "1.0",
-        "modified_datetime": "2026-11-02T16:22:24.924462"
+        "modified_datetime": "2026-11-02T16:33:59.465358"
       },
       "1.2.826.0.1.3680043.8.498.87426828860226687295223846515813945582": {
         "metadata": {
@@ -334,7 +334,7 @@
           "7FE00010": {
             "vr": "OB",
             "BulkDataURI": {
-              "uri": "gs://siskin-172863-temp/cod_fixture_gen/7c82944c-2460-4da9-a4bf-6524b6024e15/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.87426828860226687295223846515813945582.dcm",
+              "uri": "gs://siskin-172863-temp/cod_fixture_gen/91731b50-b846-4781-a3b2-9d0e12e044fd/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.87426828860226687295223846515813945582.dcm",
               "head": "\ufffd\ufffd\u0000\ufffd\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000\ufffd\ufffd\u0000\ufffd\ufffd\u0005\u0000\u0000\u0002\u0000\u0000\u0000@\u0000\u0000\u0000x\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\u0000\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\u0000\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\u0000\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\u0000\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\u0000\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\u0000\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\u0000\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\u0000\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\u001f\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u001f!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001\u001fAa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!\u001fa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!A"
             }
           },
@@ -357,10 +357,10 @@
             ]
           }
         },
-        "uri": "gs://siskin-172863-temp/cod_fixture_gen/7c82944c-2460-4da9-a4bf-6524b6024e15/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.87426828860226687295223846515813945582.dcm",
+        "uri": "gs://siskin-172863-temp/cod_fixture_gen/91731b50-b846-4781-a3b2-9d0e12e044fd/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.87426828860226687295223846515813945582.dcm",
         "headers": {
-          "start_byte": 5632,
-          "end_byte": 7914
+          "start_byte": 3584,
+          "end_byte": 5866
         },
         "offset_tables": {},
         "crc32c": "h30j0A==",
@@ -369,7 +369,7 @@
         "dependencies": [],
         "diff_hash_dupe_paths": [],
         "version": "1.0",
-        "modified_datetime": "2026-11-02T16:22:24.924462"
+        "modified_datetime": "2026-11-02T16:33:59.465358"
       },
       "1.2.826.0.1.3680043.8.498.57857798435719771631396806296746810866": {
         "metadata": {
@@ -518,7 +518,7 @@
           "7FE00010": {
             "vr": "OB",
             "BulkDataURI": {
-              "uri": "gs://siskin-172863-temp/cod_fixture_gen/7c82944c-2460-4da9-a4bf-6524b6024e15/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.57857798435719771631396806296746810866.dcm",
+              "uri": "gs://siskin-172863-temp/cod_fixture_gen/91731b50-b846-4781-a3b2-9d0e12e044fd/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.57857798435719771631396806296746810866.dcm",
               "head": "\ufffd\ufffd\u0000\ufffd\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000\ufffd\ufffd\u0000\ufffd\ufffd\u0005\u0000\u0000\u0002\u0000\u0000\u0000@\u0000\u0000\u0000x\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\u0000\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\u0000\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\u0000\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\u0000\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\u0000\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\u0000\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\u0000\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\u0000\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\u001f\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u001f\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\u001fBb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"\u001fb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"B"
             }
           },
@@ -541,10 +541,10 @@
             ]
           }
         },
-        "uri": "gs://siskin-172863-temp/cod_fixture_gen/7c82944c-2460-4da9-a4bf-6524b6024e15/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.57857798435719771631396806296746810866.dcm",
+        "uri": "gs://siskin-172863-temp/cod_fixture_gen/91731b50-b846-4781-a3b2-9d0e12e044fd/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.57857798435719771631396806296746810866.dcm",
         "headers": {
-          "start_byte": 9728,
-          "end_byte": 12010
+          "start_byte": 6656,
+          "end_byte": 8938
         },
         "offset_tables": {},
         "crc32c": "SB1EPQ==",
@@ -553,7 +553,7 @@
         "dependencies": [],
         "diff_hash_dupe_paths": [],
         "version": "1.0",
-        "modified_datetime": "2026-11-02T16:22:24.924462"
+        "modified_datetime": "2026-11-02T16:33:59.465358"
       }
     }
   }

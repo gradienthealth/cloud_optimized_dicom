@@ -2,7 +2,9 @@
 
 The fixture is a de-identified (hashed-UID) series of three synthetic images,
 written by COD as it was before metadata v2 (commit 9bc029d). Every pixel and
-tag is made up here; no real study goes into it.
+tag is made up here; no real study goes into it. Tar headers and the index's
+record of the tar's file stats are normalized, so nothing about the machine or
+person that ran it goes in either.
 
 Run it with a checkout of that commit on `PYTHONPATH`, the commit's
 `requirements.txt` installed, and GCP credentials that can write to the
@@ -12,7 +14,9 @@ tar, index and metadata next to this file, and deletes the prefix.
 
 import json
 import os
+import sqlite3
 import sys
+import tarfile
 import tempfile
 import types
 import uuid
@@ -38,6 +42,20 @@ except ImportError:
     _metrics.Metrics = _Metrics
     sys.modules["apache_beam"] = types.ModuleType("apache_beam")
     sys.modules["apache_beam.metrics"] = _metrics
+
+_gettarinfo = tarfile.TarFile.gettarinfo
+
+
+def _anonymous_tarinfo(self, *args, **kwargs):
+    info = _gettarinfo(self, *args, **kwargs)
+    info.uid = info.gid = 0
+    info.uname = info.gname = "cod"
+    info.mtime = 0
+    return info
+
+
+# COD adds each instance with tar.add, which takes owner and mtime from the file
+tarfile.TarFile.gettarinfo = _anonymous_tarinfo
 
 from cloud_optimized_dicom.cod_object import CODObject  # noqa: E402
 from cloud_optimized_dicom.instance import Instance  # noqa: E402
@@ -95,35 +113,49 @@ def _synthetic_instance(index: int, study_uid: str, series_uid: str) -> pydicom.
     return ds
 
 
+def _anonymize_index_tarstats(index_path: str):
+    """Zeroes the tar's file stats the index records, except `st_size`, which is
+    the only one ratarmountcore checks before trusting an index."""
+    with sqlite3.connect(index_path) as db:
+        (raw,) = db.execute(
+            "SELECT value FROM metadata WHERE key = 'tarstats'"
+        ).fetchone()
+        recorded = json.loads(raw)
+        stats = {key: 0 for key in recorded}
+        stats["st_size"] = recorded["st_size"]
+        db.execute(
+            "UPDATE metadata SET value = ? WHERE key = 'tarstats'",
+            (json.dumps(stats),),
+        )
+
+
 def main():
     client = storage.Client(project=GCP_PROJECT)
     datastore_path = f"{SCRATCH_PREFIX}/{uuid.uuid4()}"
     study_uid, series_uid = _uid("study"), _uid("series")
-    with tempfile.TemporaryDirectory() as source_dir:
-        # relative source paths keep this machine's temp dir out of the metadata
-        os.chdir(source_dir)
-        instances = []
-        for index in range(NUM_INSTANCES):
-            path = f"{index}.dcm"
-            _synthetic_instance(index, study_uid, series_uid).save_as(path)
-            instances.append(Instance(dicom_uri=path, uid_hash_func=hash_uid))
-        with CODObject(
-            datastore_path=datastore_path,
-            client=client,
-            study_uid=hash_uid(study_uid),
-            series_uid=hash_uid(series_uid),
-            lock=True,
-            hashed_uids=True,
-        ) as cod:
-            cod.append(instances)
-            cod.sync()
-            tar_uri, index_uri, metadata_uri = (
-                cod.tar_uri,
-                cod.index_uri,
-                cod.metadata_uri,
-            )
-        os.chdir(FIXTURE_DIR)
     try:
+        with tempfile.TemporaryDirectory() as source_dir:
+            # relative source paths keep this machine's temp dir out of the metadata
+            os.chdir(source_dir)
+            instances = []
+            for index in range(NUM_INSTANCES):
+                path = f"{index}.dcm"
+                _synthetic_instance(index, study_uid, series_uid).save_as(path)
+                instances.append(Instance(dicom_uri=path, uid_hash_func=hash_uid))
+            with CODObject(
+                datastore_path=datastore_path,
+                client=client,
+                study_uid=hash_uid(study_uid),
+                series_uid=hash_uid(series_uid),
+                lock=True,
+                hashed_uids=True,
+            ) as cod:
+                cod.append(instances)
+                cod.sync()
+                tar_uri = cod.tar_uri
+                index_uri = cod.index_uri
+                metadata_uri = cod.metadata_uri
+            os.chdir(FIXTURE_DIR)
         for uri, name in [(tar_uri, "series.tar"), (index_uri, "index.sqlite")]:
             storage.Blob.from_string(uri, client=client).download_to_filename(
                 os.path.join(FIXTURE_DIR, name)
@@ -134,6 +166,7 @@ def main():
         with open(os.path.join(FIXTURE_DIR, "metadata.json"), "w") as f:
             json.dump(metadata, f, indent=2)
             f.write("\n")
+        _anonymize_index_tarstats(os.path.join(FIXTURE_DIR, "index.sqlite"))
     finally:
         bucket_name, prefix = datastore_path[len("gs://") :].split("/", 1)
         for blob in client.list_blobs(bucket_name, prefix=f"{prefix}/"):
