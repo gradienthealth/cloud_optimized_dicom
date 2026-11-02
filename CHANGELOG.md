@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.3.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v2.2.0...v2.3.0) (2026-11-02)
+
+
+### Features
+
+* **PROC-3762:** let append choose how much of the re-encode to verify ([#160](https://github.com/gradienthealth/cloud_optimized_dicom/issues/160)) ([a2c80c9](https://github.com/gradienthealth/cloud_optimized_dicom/commit/a2c80c9a774c53eecdbc4d6a3b11a05518878808))
+
+
+### Bug Fixes
+
+* **NO-ISSUE:** replace exact dependency pins with ranges so COD installs on Python 3.13 ([#155](https://github.com/gradienthealth/cloud_optimized_dicom/issues/155)) ([f43cd52](https://github.com/gradienthealth/cloud_optimized_dicom/commit/f43cd52884880fa3ba2ff95415bbda06cd7ddd0b))
+* **PROC-3762:** keep original bytes when pixel data uses bits above BitsStored ([#161](https://github.com/gradienthealth/cloud_optimized_dicom/issues/161)) ([ae45955](https://github.com/gradienthealth/cloud_optimized_dicom/commit/ae45955e2a01f734a507ac3151f104e29d106784))
+* **PROC-3762:** re-encode uncompressed images frame by frame with decode-back verification ([#159](https://github.com/gradienthealth/cloud_optimized_dicom/issues/159)) ([07134db](https://github.com/gradienthealth/cloud_optimized_dicom/commit/07134dbef32ece9a78d5982aea2db55e1ebfd105))
+
+
+### Performance Improvements
+
+* **PROC-3762:** hash pixel data without a temp file and check for it without loading it ([#157](https://github.com/gradienthealth/cloud_optimized_dicom/issues/157)) ([a3e217b](https://github.com/gradienthealth/cloud_optimized_dicom/commit/a3e217b8590f94330b9e1641f37313914a3796be))
+* **PROC-3762:** stream instance downloads and tar extraction to disk ([#156](https://github.com/gradienthealth/cloud_optimized_dicom/issues/156)) ([445ad8d](https://github.com/gradienthealth/cloud_optimized_dicom/commit/445ad8dfa58da48b25fed559eb2646bab6b10222))
+
 ## [2.2.0](https://github.com/gradienthealth/cloud_optimized_dicom/compare/v2.1.0...v2.2.0) (2026-09-03)
 
 
