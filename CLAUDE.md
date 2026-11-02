@@ -227,6 +227,8 @@ del cod  # Lock still exists remotely!
 - Test buckets: `siskin-172863-test-data`, `siskin-172863-temp`
 - Test data directory: `cloud_optimized_dicom/tests/test_data/`; tests upload what they need through `blob_store` rather than reading pre-existing bucket data
 - Write new tests against the `blob_store` fixture (not `gcs_client`) so they run in both modes
+- `test_gcs_client.py` holds the paths no `BlobStore` stands in for (a raw `storage.Client`, remote instances without a `blob_store`) and runs only online
+- `test_data/legacy_v1_series/` is a synthetic, de-identified series written by COD before metadata v2; `test_legacy_series.py` checks the current reader still serves it. Rebuild it with the `generate.py` beside it, never from real data
 - GCP project: `gradient-pacs-siskin-172863`
 
 ### Error Handling

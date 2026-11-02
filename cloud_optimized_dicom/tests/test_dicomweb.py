@@ -2,8 +2,10 @@ import os
 
 import pytest
 
+from cloud_optimized_dicom.blob_store import BlobStore
 from cloud_optimized_dicom.dicomweb import (
     STUDY_LEVEL_TAGS,
+    _get_series_uid_for_study,
     _get_series_uid_from_uris,
     handle_request,
     is_valid_uid,
@@ -147,3 +149,17 @@ def test_non_metadata_requests_raise_error(
     request_uri = os.path.join(_series_uri(seeded_series), "instances", instance_uid)
     with pytest.raises(AssertionError):
         handle_request(request_uri, seeded_series.client)
+
+
+def test_series_uid_lookup_ignores_series_segment_above_study(
+    blob_store: BlobStore, datastore_path: str
+):
+    """A datastore path with its own `/series/` segment must not be mistaken for
+    the series under the study."""
+    datastore = f"{datastore_path}/series/nested"
+    study_uid, series_uid = "1.2.3.4", "5.6.7.8"
+    blob_store.upload_bytes(
+        f"{datastore}/studies/{study_uid}/series/{series_uid}.tar", b""
+    )
+
+    assert _get_series_uid_for_study(datastore, study_uid, blob_store) == series_uid

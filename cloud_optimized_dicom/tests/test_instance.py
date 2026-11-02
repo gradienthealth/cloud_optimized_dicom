@@ -14,6 +14,7 @@ from pydicom.pixels import pixel_array
 
 import cloud_optimized_dicom.instance
 from cloud_optimized_dicom.append import _compress_instances, append
+from cloud_optimized_dicom.blob_store import BlobStore
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.tests.conftest import synthetic_image, write_encoded_image
 from cloud_optimized_dicom.transcode import (
@@ -588,3 +589,37 @@ def _tar_nested_instance(path: str, tmp_path) -> Instance:
     with tarfile.open(tar_path, "w") as tar:
         tar.add(path, arcname="instances/nested.dcm")
     return Instance(dicom_uri=f"{tmp_path / 'series'}.tar://instances/nested.dcm")
+
+
+def test_delete_dependencies_keeps_a_dependency_whose_crc32c_differs(
+    blob_store: BlobStore, datastore_path: str, local_instance_path: str
+):
+    """A lone dependency is taken to be the instance's own P10 file, so one whose
+    bytes no longer match the instance is left in place."""
+    dependency_uri = f"{datastore_path}/source/changed.dcm"
+    blob_store.upload_bytes(dependency_uri, b"not the instance's bytes")
+    instance = Instance(
+        dicom_uri=local_instance_path,
+        dependencies=[dependency_uri],
+        blob_store=blob_store,
+    )
+
+    instance.delete_dependencies(validate_blob_hash=True)
+
+    assert blob_store.exists(dependency_uri)
+
+
+def test_delete_dependencies_deletes_a_dependency_whose_crc32c_matches(
+    blob_store: BlobStore, datastore_path: str, local_instance_path: str
+):
+    dependency_uri = f"{datastore_path}/source/original.dcm"
+    blob_store.upload_file(dependency_uri, local_instance_path)
+    instance = Instance(
+        dicom_uri=local_instance_path,
+        dependencies=[dependency_uri],
+        blob_store=blob_store,
+    )
+
+    instance.delete_dependencies(validate_blob_hash=True)
+
+    assert not blob_store.exists(dependency_uri)

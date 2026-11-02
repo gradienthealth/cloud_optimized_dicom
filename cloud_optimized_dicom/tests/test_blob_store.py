@@ -10,9 +10,15 @@ import os
 
 import pytest
 from google.api_core.exceptions import NotFound, PreconditionFailed
+from google.cloud import storage
 from google.cloud.storage.constants import NEARLINE_STORAGE_CLASS
 
-from cloud_optimized_dicom.blob_store import BlobStore, FakeBlobStore, GcsBlobStore
+from cloud_optimized_dicom.blob_store import (
+    BlobStore,
+    FakeBlobStore,
+    GcsBlobStore,
+    as_blob_store,
+)
 from cloud_optimized_dicom.tests.conftest import DATASTORE_BASE, ONLINE
 from cloud_optimized_dicom.utils import delete_uploaded_blobs, generate_ptr_crc32c
 
@@ -143,3 +149,18 @@ def test_list_uris_filters_by_prefix(store: BlobStore, prefix: str):
         f"{prefix}/studies/a/series/1.tar",
         f"{prefix}/studies/a/series/2.tar",
     }
+
+
+def test_as_blob_store_wraps_a_gcs_client():
+    client = storage.Client.create_anonymous_client()
+
+    wrapped = as_blob_store(client)
+
+    assert isinstance(wrapped, GcsBlobStore)
+    assert wrapped.client is client
+
+
+def test_as_blob_store_passes_a_store_through():
+    store = FakeBlobStore()
+
+    assert as_blob_store(store) is store
