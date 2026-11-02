@@ -5,7 +5,7 @@ from google.cloud import storage
 
 from cloud_optimized_dicom.dicomweb import (
     STUDY_LEVEL_TAGS,
-    _get_series_uid_from_blob_iterator,
+    _get_series_uid_from_uris,
     handle_request,
     is_valid_uid,
 )
@@ -18,9 +18,9 @@ def dicomweb_datastore_path() -> str:
     return DICOMWEB_DATASTORE_PATH
 
 
-def test_get_series_uid_from_blob_iterator(dicomweb_datastore_path: str):
+def test_get_series_uid_from_uris(dicomweb_datastore_path: str):
     """
-    Test that the series uid can be extracted from all standard COD blobs
+    Test that the series uid can be extracted from the URIs of all standard COD blobs
     """
     # simulate iterators returning every possible blob first
     series_uid = "1.2.826.0.1.3680043.8.498.89840699185761593370876698622882853150"
@@ -31,35 +31,27 @@ def test_get_series_uid_from_blob_iterator(dicomweb_datastore_path: str):
         "series",
         series_uid,
     )
-    tar_iter = iter([storage.Blob.from_string(f"{series_uri}.tar")])
-    metadata_iter = iter(
-        [storage.Blob.from_string(os.path.join(series_uri, "metadata.json"))]
-    )
-    index_iter = iter(
-        [storage.Blob.from_string(os.path.join(series_uri, "index.sqlite"))]
-    )
-    thumbnail_iter = iter(
-        [storage.Blob.from_string(os.path.join(series_uri, "thumbnail.mp4"))]
-    )
-    lock_iter = iter(
-        [storage.Blob.from_string(os.path.join(series_uri, ".gradient.lock"))]
-    )
-    junk_iter = iter([storage.Blob.from_string(f"gs://this/is/a/junk/blob")])
+    tar_iter = iter([f"{series_uri}.tar"])
+    metadata_iter = iter([os.path.join(series_uri, "metadata.json")])
+    index_iter = iter([os.path.join(series_uri, "index.sqlite")])
+    thumbnail_iter = iter([os.path.join(series_uri, "thumbnail.mp4")])
+    lock_iter = iter([os.path.join(series_uri, ".gradient.lock")])
+    junk_iter = iter([f"gs://this/is/a/junk/blob"])
 
     # make sure that no matter which blob the iterator returns, the series uid is extracted correctly
-    assert _get_series_uid_from_blob_iterator(tar_iter) == series_uid
-    assert _get_series_uid_from_blob_iterator(metadata_iter) == series_uid
-    assert _get_series_uid_from_blob_iterator(index_iter) == series_uid
-    assert _get_series_uid_from_blob_iterator(thumbnail_iter) == series_uid
-    assert _get_series_uid_from_blob_iterator(lock_iter) == series_uid
+    assert _get_series_uid_from_uris(tar_iter) == series_uid
+    assert _get_series_uid_from_uris(metadata_iter) == series_uid
+    assert _get_series_uid_from_uris(index_iter) == series_uid
+    assert _get_series_uid_from_uris(thumbnail_iter) == series_uid
+    assert _get_series_uid_from_uris(lock_iter) == series_uid
 
     # expect a ValueError if the iterator has junk
     with pytest.raises(ValueError):
-        _get_series_uid_from_blob_iterator(junk_iter)
+        _get_series_uid_from_uris(junk_iter)
 
     # expect a ValueError if the iterator is empty
     with pytest.raises(ValueError):
-        _get_series_uid_from_blob_iterator(iter([]))
+        _get_series_uid_from_uris(iter([]))
 
 
 def test_get_study(gcs_client: storage.Client, dicomweb_datastore_path: str):

@@ -45,7 +45,7 @@ def test_error_log_upload(gcs_client: storage.Client, error_log_datastore_path: 
     assert "test error" in error_blob.download_as_bytes().decode("utf-8")
     # lock should have been released (non-sync exception doesn't leave hanging lock)
     # the error log alone is sufficient to brick the COD
-    assert not cod_obj._locker.get_lock_blob().exists()
+    assert not cod_obj.blob_store.exists(cod_obj._locker.lock_uri)
 
 
 def test_error_existence_bricks_cod_object_initialization(

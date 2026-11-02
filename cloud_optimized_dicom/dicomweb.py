@@ -7,21 +7,22 @@ from typing import Iterator, Optional
 import pydicom.encaps
 from google.cloud import storage
 
+from cloud_optimized_dicom.blob_store import BlobStore, GcsBlobStore
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import TAR_IDENTIFIER, Instance
 
 
-def _get_series_uid_from_blob_iterator(blobs: Iterator[storage.Blob]) -> str:
+def _get_series_uid_from_uris(uris: Iterator[str]) -> str:
+    """Returns the series UID of the first URI that has a `/series/` segment.
+
+    Raises:
+        ValueError: if no URI has one.
     """
-    Get the series UID from the blob names.
-    """
-    # iterate through the blobs and attempt to extract the series uid
-    while blob := next(blobs, None):
-        if "/series/" not in blob.name:
+    while uri := next(uris, None):
+        if "/series/" not in uri:
             continue
-        return _extract_from_uri(blob.name, "/series/").rstrip(".tar")
-    # if we get to the end of the iterator, raise an error
-    raise ValueError("No series UID found in blob names")
+        return _extract_from_uri(uri, "/series/").rstrip(".tar")
+    raise ValueError("No series UID found in URIs")
 
 
 def _validate_frame_request(instance: Instance, requested_frames: list[int]):
@@ -47,19 +48,14 @@ def _validate_frame_request(instance: Instance, requested_frames: list[int]):
 
 
 def _get_series_uid_for_study(
-    datastore_uri: str, study_uid: str, client: storage.Client
+    datastore_uri: str, study_uid: str, blob_store: BlobStore
 ) -> str:
-    """Helper method that uses list_blobs to find a series uid that exists in the study"""
-    # Parse the GCS URI into bucket and prefix
+    """Returns the uid of a series in the study, found by listing the study's objects."""
     study_uri = os.path.join(datastore_uri, "studies", study_uid)
-    # Remove gs:// prefix and split into bucket and prefix
-    path_without_prefix = study_uri.replace("gs://", "")
-    bucket_name = path_without_prefix.split("/")[0]
-    prefix = "/".join(path_without_prefix.split("/")[1:])
-
-    # Use list_blobs to find a series uid that exists in the study
-    bucket = client.bucket(bucket_name)
-    return _get_series_uid_from_blob_iterator(bucket.list_blobs(prefix=prefix))
+    # match /series/ only below the study, never in the datastore path above it
+    return _get_series_uid_from_uris(
+        uri[len(study_uri) :] for uri in blob_store.list_uris(study_uri)
+    )
 
 
 def is_valid_uid(uid: str) -> bool:
@@ -155,11 +151,10 @@ class DicomwebRequest:
         frame_indices = [i - 1 for i in self.frames]
         _validate_frame_request(instance, frame_indices)
         start_byte, end_byte = instance._byte_offsets
-        tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=client)
         # download just the bytes of the instance in question
         with NamedTemporaryFile(suffix=".dcm") as temp_file:
-            tar_blob.download_to_filename(
-                temp_file.name, start=start_byte, end=end_byte
+            cod_obj.blob_store.download_to_file(
+                cod_obj.tar_uri, temp_file.name, start=start_byte, end=end_byte
             )
             with pydicom.dcmread(temp_file.name) as ds:
                 # TODO: this returns raw frame bytes... do we want to support transcoding to jpg?
@@ -197,7 +192,7 @@ class DicomwebRequest:
 
     def _handle_study_level_request(self, client: storage.Client):
         series_uid = _get_series_uid_for_study(
-            self.datastore_uri, self.study_uid, client
+            self.datastore_uri, self.study_uid, GcsBlobStore(client)
         )
         cod_obj = CODObject(
             datastore_path=self.datastore_uri,

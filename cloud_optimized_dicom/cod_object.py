@@ -6,14 +6,13 @@ from tempfile import mkdtemp
 from typing import Literal, Optional, Union
 
 import numpy as np
-from google.api_core.exceptions import NotFound
 from google.cloud import storage
 from google.cloud.storage.constants import STANDARD_STORAGE_CLASS
-from google.cloud.storage.retry import DEFAULT_RETRY
 from ratarmountcore.mountsource.factory import open_mount_source as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.append import append
+from cloud_optimized_dicom.blob_store import GcsBlobStore
 from cloud_optimized_dicom.bounding_box import PixelRedaction
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.edit import EditState, _validate_and_repack_for_edit
@@ -119,6 +118,7 @@ class CODObject:
         self._sync_on_exit = sync_on_exit
         self.datastore_path = datastore_path
         self.client = client
+        self.blob_store = GcsBlobStore(client)
         self.study_uid = study_uid
         self.series_uid = series_uid
         self._validate_uids()
@@ -129,13 +129,9 @@ class CODObject:
         # by edit._validate_and_repack_for_edit). None for any other mode.
         self._edit_state: Optional[EditState] = None
         # check for error.log existence - if it exists, fail initialization
-        if (
-            error_log_blob := storage.Blob.from_string(
-                self.error_log_uri, client=self.client
-            )
-        ).exists():
+        if self.blob_store.exists(self.error_log_uri):
             if self.override_errors:
-                error_log_blob.delete()
+                self.blob_store.delete(self.error_log_uri)
                 logger.warning(f"Deleted existing error log: {self.error_log_uri}")
             else:
                 raise ErrorLogExistsError(
@@ -146,13 +142,11 @@ class CODObject:
         # Edit mode requires both remote metadata and tar to already exist. Verify
         # this BEFORE acquiring the lock so a missing series doesn't leave a lock hanging.
         if mode == "e":
-            if not storage.Blob.from_string(
-                self.metadata_uri, client=self.client
-            ).exists():
+            if not self.blob_store.exists(self.metadata_uri):
                 raise CODObjectNotFoundError(
                     f"COD:OBJECT_NOT_FOUND:{self.metadata_uri} (mode='e' requires existing series)"
                 )
-            if not storage.Blob.from_string(self.tar_uri, client=self.client).exists():
+            if not self.blob_store.exists(self.tar_uri):
                 raise CODObjectNotFoundError(
                     f"COD:OBJECT_NOT_FOUND:{self.tar_uri} (mode='e' requires existing tar)"
                 )
@@ -273,12 +267,10 @@ class CODObject:
         if self._metadata is not None:
             return self._metadata
         # fetch metadata from datastore
-        metadata_blob = storage.Blob.from_string(
-            uri=self.metadata_uri,
-            client=self.client,
-        )
-        if metadata_blob.exists():
-            self._metadata = SeriesMetadata.from_blob(metadata_blob)
+        if self.blob_store.exists(self.metadata_uri):
+            self._metadata = SeriesMetadata.from_bytes(
+                self.blob_store.read_bytes(self.metadata_uri)
+            )
         elif create_if_missing:
             self._metadata = SeriesMetadata(
                 study_uid=self.study_uid,
@@ -513,11 +505,13 @@ class CODObject:
             assert os.path.exists(
                 self.index_file_path
             ), "Tar sync attempted but CODObject has no index"
-            tar_blob = storage.Blob.from_string(self.tar_uri, client=self.client)
-            tar_blob.storage_class = tar_storage_class
-            index_blob = storage.Blob.from_string(self.index_uri, client=self.client)
-            upload_and_count_file(index_blob, self.index_file_path)
-            upload_and_count_file(tar_blob, self.tar_file_path)
+            upload_and_count_file(self.blob_store, self.index_uri, self.index_file_path)
+            upload_and_count_file(
+                self.blob_store,
+                self.tar_uri,
+                self.tar_file_path,
+                storage_class=tar_storage_class,
+            )
             self._tar_synced = True
         # handle thumbnail sync if necessary
         self._sync_thumbnail()
@@ -556,10 +550,7 @@ class CODObject:
             logger.info(f"Skipping thumbnail sync - thumbnail does not exist: {self}")
             return
         # upload thumbnail to datastore
-        thumbnail_blob = storage.Blob.from_string(
-            thumbnail_metadata["uri"], client=self.client
-        )
-        thumbnail_blob.upload_from_filename(thumbnail_local_path)
+        self.blob_store.upload_file(thumbnail_metadata["uri"], thumbnail_local_path)
         # we just synced the thumbnail, so it is guaranteed to be in the same state as the datastore
         self._thumbnail_synced = True
 
@@ -642,9 +633,7 @@ class CODObject:
             thumbnail_metadata is None
             or len(thumbnail_metadata["instances"])
             != len(self._get_instances(strict_sorting=False))
-            or not storage.Blob.from_string(
-                thumbnail_metadata["uri"], client=self.client
-            ).exists()
+            or not self.blob_store.exists(thumbnail_metadata["uri"])
         )
         if needs_generation:
             if not generate_if_missing:
@@ -682,15 +671,16 @@ class CODObject:
     @public_method(write_only=True)
     def upload_error_log(self, message: str):
         """To be used by caller in except block to upload an error.log to the datastore explaining what's wrong with this cod object"""
-        error_blob = storage.Blob.from_string(self.error_log_uri, client=self.client)
-        if error_blob.exists():
+        if self.blob_store.exists(self.error_log_uri):
             # because an error.log existing should cause cod objects to fail initialization,
             # it should be impossible for error.log to exist when this method is called
             msg = f"GRADIENT_STATE_LOGS:ERROR_LOG_ALREADY_EXISTS:{self}"
             logger.critical(msg)
             raise ErrorLogExistsError(msg)
         logger.warning(f"GRADIENT_STATE_LOGS:UPLOADING_ERROR_LOG:{self}:{message}")
-        error_blob.upload_from_string(message)
+        self.blob_store.upload_bytes(
+            self.error_log_uri, message.encode("utf-8"), content_type="text/plain"
+        )
 
     @public_method()
     def integrity_check(self):
@@ -803,13 +793,15 @@ class CODObject:
         In some cases, like ingestion, we may not need the index as it will be recalculated.
         This method circumvents COD caching logic, which is why it's not public. Only use it if you know what you're doing.
         """
-        tar_blob = storage.Blob.from_string(self.tar_uri, client=self.client)
-        tar_blob.download_to_filename(self.tar_file_path)
-        metrics.STORAGE_CLASS_COUNTERS["GET"][tar_blob.storage_class].inc()
+        tar_storage_class = self.blob_store.download_to_file(
+            self.tar_uri, self.tar_file_path
+        )
+        metrics.STORAGE_CLASS_COUNTERS["GET"][tar_storage_class].inc()
         if fetch_index:
-            index_blob = storage.Blob.from_string(self.index_uri, client=self.client)
-            index_blob.download_to_filename(self.index_file_path)
-            metrics.STORAGE_CLASS_COUNTERS["GET"][index_blob.storage_class].inc()
+            index_storage_class = self.blob_store.download_to_file(
+                self.index_uri, self.index_file_path
+            )
+            metrics.STORAGE_CLASS_COUNTERS["GET"][index_storage_class].inc()
         # we just fetched the tar, so it is guaranteed to be in the same state as the datastore
         self._tar_synced = True
 
@@ -851,18 +843,16 @@ class CODObject:
         return instance_uid_to_local_path
 
     def _gzip_and_upload_metadata(self):
-        """
-        Given a SeriesMetadata object and a blob to upload it to, convert the object to JSON, gzip it,
-        and upload it to the blob
-        """
+        """Uploads the series metadata to `metadata_uri` as gzipped JSON, with each
+        instance's `dicom_uri` pointing into the datastore tar."""
         instance_uid_to_local_path = self._set_dicom_uris_to_datastore()
-        metadata_blob = storage.Blob.from_string(self.metadata_uri, client=self.client)
-        metadata_blob.content_encoding = "gzip"
-        compressed_metadata = self._metadata.to_gzipped_json()
-        metadata_blob.upload_from_string(
-            compressed_metadata, content_type="application/json", retry=DEFAULT_RETRY
+        written = self.blob_store.upload_bytes(
+            self.metadata_uri,
+            self._metadata.to_gzipped_json(),
+            content_type="application/json",
+            content_encoding="gzip",
         )
-        metrics.STORAGE_CLASS_COUNTERS["CREATE"][metadata_blob.storage_class].inc()
+        metrics.STORAGE_CLASS_COUNTERS["CREATE"][written.storage_class].inc()
         # set the dicom_uri of each instance back to the local path
         for uid, local_path in instance_uid_to_local_path.items():
             self._metadata.instances[uid].dicom_uri = local_path

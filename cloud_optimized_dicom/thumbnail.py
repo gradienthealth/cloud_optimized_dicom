@@ -7,7 +7,6 @@ import cv2
 import ffmpeg
 import numpy as np
 import pydicom
-from google.cloud import storage
 from pydicom.pixels import (
     apply_color_lut,
     apply_modality_lut,
@@ -517,18 +516,17 @@ def fetch_thumbnail(cod_obj: "CODObject") -> str:
 
     Raises:
         ValueError: if the cod object has no thumbnail metadata
-        NotFound: if the thumbnail blob does not exist in GCS
+        NotFound: if the thumbnail does not exist in the datastore
     """
     thumbnail_metadata = cod_obj._get_metadata_field("thumbnail")
     if thumbnail_metadata is None:
         raise ValueError(f"Thumbnail metadata not found for {cod_obj}")
     thumbnail_uri = thumbnail_metadata["uri"]
     logger.info(f"Fetching thumbnail from {thumbnail_uri}")
-    thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=cod_obj.client)
     thumbnail_local_path = os.path.join(
         cod_obj.get_temp_dir(), thumbnail_uri.split("/")[-1]
     )
-    thumbnail_blob.download_to_filename(thumbnail_local_path)
+    cod_obj.blob_store.download_to_file(thumbnail_uri, thumbnail_local_path)
     # we just fetched the thumbnail, so it is guaranteed to be in the same state as the datastore
     cod_obj._thumbnail_synced = True
     return thumbnail_local_path
