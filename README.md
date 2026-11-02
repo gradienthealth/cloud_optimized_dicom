@@ -50,9 +50,28 @@ pip install -e ".[test]"
 
 ## Running Tests
 
+The suite runs offline by default, against an in-memory `FakeBlobStore`:
 ```bash
-SISKIN_ENV_ENABLED=1 python -m unittest discover -v cloud_optimized_dicom.tests
+python -m pytest -n auto cloud_optimized_dicom/tests
 ```
+
+To run it against the real GCS test buckets instead (needs GCP credentials):
+```bash
+SISKIN_ENV_ENABLED=1 python -m pytest -n auto cloud_optimized_dicom/tests
+```
+
+### Testing code that uses COD without GCS
+
+Anywhere COD takes a GCS `client`, it also takes a `BlobStore`. `FakeBlobStore` keeps objects in memory, so code built on COD can be tested with no network or credentials:
+```python
+from cloud_optimized_dicom.blob_store import FakeBlobStore
+
+store = FakeBlobStore()
+with CODObject(client=store, datastore_path="gs://any-bucket/datastore", study_uid=..., series_uid=..., mode="w") as cod:
+    cod.append([Instance(dicom_uri="local/file.dcm")])
+assert store.exists(cod.metadata_uri)
+```
+Remote instances are fetched through the store when `Instance(dicom_uri="gs://...", blob_store=store)` is given one.
 
 ## Project Structure
 

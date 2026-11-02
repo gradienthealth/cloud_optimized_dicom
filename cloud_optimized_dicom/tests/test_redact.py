@@ -11,8 +11,8 @@ import numpy as np
 import pydicom
 import pydicom.examples
 import pytest
-from google.cloud import storage
 
+from cloud_optimized_dicom.blob_store import BlobStore
 from cloud_optimized_dicom.bounding_box import BoundingBox, PixelRedaction
 from cloud_optimized_dicom.errors import (
     RedactionBoxOutOfBoundsError,
@@ -44,14 +44,14 @@ def multiframe_path(test_data_dir: str) -> str:
 
 @pytest.fixture
 def multiframe_seeded_series(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     multiframe_path: str,
 ) -> SeriesHandle:
     """A fresh series ingesting the YBR_RCT JPEG2000Lossless multiframe fixture."""
     probe = Instance(dicom_uri=multiframe_path)
     handle = SeriesHandle(
-        gcs_client, datastore_path, probe.study_uid(), probe.series_uid()
+        blob_store, datastore_path, probe.study_uid(), probe.series_uid()
     )
     with handle.open(mode="w") as cod:
         cod.append([Instance(dicom_uri=multiframe_path)])
@@ -60,7 +60,7 @@ def multiframe_seeded_series(
 
 @pytest.fixture
 def ybr_full_422_seeded_series(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     ybr_full_422_path: str,
 ) -> SeriesHandle:
@@ -72,7 +72,7 @@ def ybr_full_422_seeded_series(
     """
     probe = Instance(dicom_uri=ybr_full_422_path)
     handle = SeriesHandle(
-        gcs_client, datastore_path, probe.study_uid(), probe.series_uid()
+        blob_store, datastore_path, probe.study_uid(), probe.series_uid()
     )
     with handle.open(mode="w") as cod:
         cod.append([Instance(dicom_uri=ybr_full_422_path)])

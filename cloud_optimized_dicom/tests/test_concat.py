@@ -7,38 +7,24 @@ from dataclasses import dataclass
 import pydicom
 import pydicom.tag
 import pytest
-from google.cloud import storage
-from google.cloud.storage.retry import DEFAULT_RETRY
 
 import cloud_optimized_dicom.config as config
+from cloud_optimized_dicom.blob_store import BlobStore
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Hints, Instance
 from cloud_optimized_dicom.query_parsing import query_result_to_codobjects
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
-STUDY_UID = "1.2.826.0.1.3680043.8.498.85986080985748066693633351924707464088"
-SERIES_UID = "1.2.826.0.1.3680043.8.498.53950754827956461313105393044601247551"
-INSTANCE_UIDS = [
-    "1.2.826.0.1.3680043.8.498.10838996796699162364447867308902157301",
-    "1.2.826.0.1.3680043.8.498.13615419375856807118067401311662947193",
-    "1.2.826.0.1.3680043.8.498.14232321135552375992380719347498317286",
-]
 BUCKET_NAME = "siskin-172863-test-data"
-GOLDEN_URI_PREFIX = "gs://siskin-172863-test-data/golden"
-
-FILE_SIZES = [258118, 270186, 270058]
-FILE_CRC32CS = ["1VFoRg==", "21UzbQ==", "t+Jnkw=="]
-
-pytestmark = pytest.mark.skipif(
-    "SKIP_NETWORK_TESTS" in os.environ, reason="cloud storage"
-)
 
 
 @dataclass(frozen=True)
 class ConcatPaths:
     output_uri: str
     playground_prefix: str
+    # file_uri -> the local file uploaded there by _upload_grouping
+    sources: dict
     grouping_full: dict
     grouping_single: dict
     grouping_first_two: dict
@@ -53,12 +39,24 @@ def _enable_logging():
 
 
 @pytest.fixture(scope="module")
-def test_bucket(gcs_client: storage.Client) -> storage.Bucket:
-    return gcs_client.bucket(BUCKET_NAME)
+def source_instances(series_dir: str) -> list[Instance]:
+    """The first three instances of the local series fixture, validated so their
+    uid, size and crc32c are known."""
+    paths = sorted(
+        os.path.join(series_dir, f)
+        for f in os.listdir(series_dir)
+        if f.endswith(".dcm")
+    )[:3]
+    instances = [Instance(dicom_uri=path) for path in paths]
+    for instance in instances:
+        instance.validate()
+    return instances
 
 
 @pytest.fixture
-def concat_paths(gcs_client: storage.Client, worker_namespace: str) -> ConcatPaths:
+def concat_paths(
+    blob_store: BlobStore, worker_namespace: str, source_instances: list[Instance]
+) -> ConcatPaths:
     """URIs and groupings for concat tests, namespaced per (run, worker).
 
     Cleans the output and playground prefixes before yielding so each test
@@ -66,27 +64,34 @@ def concat_paths(gcs_client: storage.Client, worker_namespace: str) -> ConcatPat
     """
     playground = f"gs://{BUCKET_NAME}/{worker_namespace}/playground"
     output = f"gs://{BUCKET_NAME}/{worker_namespace}/concat-output"
-    delete_uploaded_blobs(gcs_client, [output, playground])
+    delete_uploaded_blobs(blob_store, [output, playground])
+    study_uid = source_instances[0].study_uid()
+    series_uid = source_instances[0].series_uid()
+    sources = {}
 
     def _file(idx: int, name_suffix: str = "") -> dict:
+        instance = source_instances[idx]
+        file_uri = (
+            f"{playground}/{study_uid}/series/{series_uid}/instances/"
+            f"{instance.instance_uid()}{name_suffix}.dcm"
+        )
+        sources[file_uri] = instance.dicom_uri
         return {
-            "file_uri": (
-                f"{playground}/{STUDY_UID}/series/{SERIES_UID}/instances/"
-                f"{INSTANCE_UIDS[idx]}{name_suffix}.dcm"
-            ),
-            "size": FILE_SIZES[idx],
-            "crc32c": FILE_CRC32CS[idx],
-            "instance_uid": INSTANCE_UIDS[idx],
+            "file_uri": file_uri,
+            "size": instance.size(),
+            "crc32c": instance.crc32c(),
+            "instance_uid": instance.instance_uid(),
         }
 
     file1 = _file(0)
     file1_v2 = _file(0, name_suffix="_v2")
     file2 = _file(1)
     file3 = _file(2)
-    base = {"study_uid": STUDY_UID, "series_uid": SERIES_UID}
+    base = {"study_uid": study_uid, "series_uid": series_uid}
     return ConcatPaths(
         output_uri=output,
         playground_prefix=playground,
+        sources=sources,
         grouping_full={**base, "files": [file1, file2, file3]},
         grouping_single={**base, "files": [file1]},
         grouping_first_two={**base, "files": [file1, file2]},
@@ -95,17 +100,13 @@ def concat_paths(gcs_client: storage.Client, worker_namespace: str) -> ConcatPat
     )
 
 
-def _copy_grouping_to_test_bucket(bucket: storage.Bucket, grouping: dict):
+def _upload_grouping(blob_store: BlobStore, concat_paths: ConcatPaths, grouping: dict):
     for file in grouping["files"]:
-        perm_uri = f"{GOLDEN_URI_PREFIX}/{grouping['study_uid']}/series/{grouping['series_uid']}/instances/{file['instance_uid']}.dcm"
-        _copy_within_bucket(bucket, perm_uri, file["file_uri"])
+        blob_store.upload_file(file["file_uri"], concat_paths.sources[file["file_uri"]])
 
 
-def _copy_within_bucket(bucket: storage.Bucket, source_uri: str, dest_uri: str):
-    _, source_blob_name = source_uri.replace("gs://", "").split("/", 1)
-    _, dest_blob_name = dest_uri.replace("gs://", "").split("/", 1)
-    source_blob = bucket.blob(source_blob_name)
-    bucket.copy_blob(source_blob, bucket, dest_blob_name, retry=DEFAULT_RETRY)
+def _read_metadata(blob_store: BlobStore, cod_obj: CODObject) -> SeriesMetadata:
+    return SeriesMetadata.from_bytes(blob_store.read_bytes(cod_obj.metadata_uri))
 
 
 def _assert_metadata_equal(a: SeriesMetadata, b: SeriesMetadata):
@@ -129,63 +130,63 @@ def _assert_metadata_equal(a: SeriesMetadata, b: SeriesMetadata):
         assert ainstance.size() in b_data["sizes"]
 
 
-def _assert_instances_dne(client: storage.Client, instances):
-    """assert the original uris of a group no longer exist"""
-    for instance in instances:
-        assert not storage.Blob.from_string(instance.dicom_uri, client=client).exists()
+def _assert_originals_deleted(blob_store: BlobStore, grouping: dict):
+    """assert the source files a grouping was ingested from no longer exist"""
+    for file in grouping["files"]:
+        assert not blob_store.exists(file["file_uri"]), file["file_uri"]
 
 
 def run_group(
-    gcs_client: storage.Client,
-    bucket: storage.Bucket,
+    blob_store: BlobStore,
+    concat_paths: ConcatPaths,
     grouping: dict,
-    output_uri: str,
     dryrun: bool = False,
 ) -> CODObject:
     """Upload a series, confirm it uploaded, confirm it deleted original"""
-    _copy_grouping_to_test_bucket(bucket, grouping)
+    _upload_grouping(blob_store, concat_paths, grouping)
     codobj_instance_pairs = query_result_to_codobjects(
-        gcs_client, grouping, output_uri, validate_datastore_path=False
+        blob_store, grouping, concat_paths.output_uri, validate_datastore_path=False
     )
     assert len(codobj_instance_pairs) == 1
     cod_obj, instances = codobj_instance_pairs[0]
     new, same, conflict, errors = cod_obj.append(instances)
     cod_obj._sync()
     assert len(errors) == 0
-    tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=gcs_client)
-    metadata_blob = storage.Blob.from_string(cod_obj.metadata_uri, client=gcs_client)
     # confirm blobs that should exist, exist
-    assert tar_blob.exists(), f"{cod_obj.tar_uri} does not exist"
-    assert metadata_blob.exists(), f"{cod_obj.metadata_uri} does not exist"
-    metadata = SeriesMetadata.from_blob(metadata_blob)
+    assert blob_store.exists(cod_obj.tar_uri), f"{cod_obj.tar_uri} does not exist"
+    assert blob_store.exists(
+        cod_obj.metadata_uri
+    ), f"{cod_obj.metadata_uri} does not exist"
     if not dryrun:
         for instance in new + same:
             instance.delete_dependencies()
-        _assert_instances_dne(gcs_client, metadata.instances.values())
+        _assert_originals_deleted(blob_store, grouping)
     return cod_obj
 
 
 def test_single_instance(
-    gcs_client: storage.Client,
-    test_bucket: storage.Bucket,
+    blob_store: BlobStore,
     concat_paths: ConcatPaths,
 ):
     """Upload single instance series, confirm it uploaded, confirm it deleted originals"""
     config.debug()
     with run_group(
-        gcs_client, test_bucket, concat_paths.grouping_single, concat_paths.output_uri
+        blob_store,
+        concat_paths,
+        concat_paths.grouping_single,
     ) as cod_obj:
         pass
 
 
 def test_pipeline_and_check_offsets(
-    gcs_client: storage.Client,
-    test_bucket: storage.Bucket,
+    blob_store: BlobStore,
     concat_paths: ConcatPaths,
 ):
     """Upload a 3-instance series, confirm it uploaded, confirm you can read instance from tar using byte offsets"""
     with run_group(
-        gcs_client, test_bucket, concat_paths.grouping_full, concat_paths.output_uri
+        blob_store,
+        concat_paths,
+        concat_paths.grouping_full,
     ) as cod_obj:
         with open(cod_obj.tar_file_path, "rb") as tar:
             for instance in cod_obj._metadata.instances.values():
@@ -197,8 +198,7 @@ def test_pipeline_and_check_offsets(
 
 
 def test_dupe_instance(
-    gcs_client: storage.Client,
-    test_bucket: storage.Bucket,
+    blob_store: BlobStore,
     concat_paths: ConcatPaths,
 ):
     """
@@ -208,64 +208,55 @@ def test_dupe_instance(
     """
     # get expected result of full upload
     with run_group(
-        gcs_client, test_bucket, concat_paths.grouping_full, concat_paths.output_uri
+        blob_store,
+        concat_paths,
+        concat_paths.grouping_full,
     ) as cod_obj:
-        # download normal bytes
-        tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=gcs_client)
-        tar_blob.download_as_bytes()
-        metadata_blob = storage.Blob.from_string(
-            cod_obj.metadata_uri, client=gcs_client
-        )
-        metadata = SeriesMetadata.from_blob(metadata_blob)
+        metadata = _read_metadata(blob_store, cod_obj)
     # wipe GCS
     delete_uploaded_blobs(
-        gcs_client, [concat_paths.output_uri, concat_paths.playground_prefix]
+        blob_store, [concat_paths.output_uri, concat_paths.playground_prefix]
     )
     # copy & upload first partial series
     with run_group(
-        gcs_client,
-        test_bucket,
+        blob_store,
+        concat_paths,
         concat_paths.grouping_first_two,
-        concat_paths.output_uri,
     ) as cod_obj_first_two:
         pass
     # copy & upload second partial series
     with run_group(
-        gcs_client,
-        test_bucket,
+        blob_store,
+        concat_paths,
         concat_paths.grouping_last_two,
-        concat_paths.output_uri,
     ) as cod_obj_last_two:
         # download duped bytes
         # duped_content = tar_blob.download_as_bytes()
-        metadata_blob = storage.Blob.from_string(
-            cod_obj_last_two.metadata_uri, client=gcs_client
-        )
-        duped_metadata = SeriesMetadata.from_blob(metadata_blob)
+        duped_metadata = _read_metadata(blob_store, cod_obj_last_two)
         # results are assumed to be identical if they are the same size and have equivalent metadata
         # self.assertEqual(len(upload_content), len(duped_content))
     _assert_metadata_equal(metadata, duped_metadata)
 
 
 def test_dupe_group(
-    gcs_client: storage.Client,
-    test_bucket: storage.Bucket,
+    blob_store: BlobStore,
     concat_paths: ConcatPaths,
     caplog,
 ):
     """Upload the same group twice, confirm that instances were not fetched in second tar attempt"""
     # Run a standard upload
     with run_group(
-        gcs_client, test_bucket, concat_paths.grouping_full, concat_paths.output_uri
+        blob_store,
+        concat_paths,
+        concat_paths.grouping_full,
     ) as cod_obj_full:
         pass
     # upload again, expecting 3 logs with "SKIP:DUPE_INSTANCE:SAME_HASH"
     with caplog.at_level(logging.INFO):
         with run_group(
-            gcs_client,
-            test_bucket,
+            blob_store,
+            concat_paths,
             concat_paths.grouping_full,
-            concat_paths.output_uri,
             dryrun=True,
         ) as cod_obj_full:
             pass
@@ -288,8 +279,7 @@ def test_dupe_group(
 
 
 def test_diff_hash(
-    gcs_client: storage.Client,
-    test_bucket: storage.Bucket,
+    blob_store: BlobStore,
     concat_paths: ConcatPaths,
     test_data_dir: str,
 ):
@@ -302,9 +292,7 @@ def test_diff_hash(
     # upload a version of the dicom
     v1_uri = f"{concat_paths.playground_prefix}/version1.dcm"
     v2_uri = f"{concat_paths.playground_prefix}/version2.dcm"
-    v1_blob = storage.Blob.from_string(v1_uri, client=gcs_client)
-    v2_blob = storage.Blob.from_string(v2_uri, client=gcs_client)
-    v1_blob.upload_from_filename(dcm_path)
+    v1_blob = blob_store.upload_file(v1_uri, dcm_path)
     # change something (cause hash mismatch)
     ds = pydicom.dcmread(dcm_path)
     study_uid = getattr(ds, "StudyInstanceUID")
@@ -313,7 +301,7 @@ def test_diff_hash(
     ds.add_new(pydicom.tag.Tag(0x6001, 0x0010), "LO", "Gradient Health")
     with tempfile.NamedTemporaryFile() as temp_file:
         ds.save_as(temp_file.name)
-        v2_blob.upload_from_filename(temp_file.name)
+        v2_blob = blob_store.upload_file(v2_uri, temp_file.name)
 
     # blobs should have different hashes
     assert v1_blob.crc32c != v2_blob.crc32c
@@ -322,24 +310,23 @@ def test_diff_hash(
         study_uid=study_uid,
         series_uid=series_uid,
         datastore_path=concat_paths.output_uri,
-        client=gcs_client,
+        client=blob_store,
         mode="w",
     ) as cod_obj:
         instance_v1 = Instance(
             dicom_uri=v1_uri,
             hints=Hints(instance_uid=instance_uid),
+            blob_store=blob_store,
         )
         instance_v2 = Instance(
             dicom_uri=v2_uri,
             hints=Hints(instance_uid=instance_uid),
+            blob_store=blob_store,
         )
         # append v1 and sync
         cod_obj.append([instance_v1])
         cod_obj._sync()
-        metadata_blob = storage.Blob.from_string(
-            cod_obj.metadata_uri, client=gcs_client
-        )
-        assert metadata_blob.exists()
+        assert blob_store.exists(cod_obj.metadata_uri)
         # append v2 and sync
         cod_obj.append([instance_v2])
         # metadata should be desynced (diff hash dupe found), but tar should be synced
@@ -347,12 +334,9 @@ def test_diff_hash(
         assert cod_obj._tar_synced
         cod_obj._sync()
         # file should still exist; deletion should be skipped due to same instance diff hash
-        assert v2_blob.exists()
+        assert blob_store.exists(v2_uri)
         # download the metadata and confirm diff hash duplicate was logged
-        metadata_blob = storage.Blob.from_string(
-            cod_obj.metadata_uri, client=gcs_client
-        )
-        duped_metadata = SeriesMetadata.from_blob(metadata_blob)
+        duped_metadata = _read_metadata(blob_store, cod_obj)
         populated_dupe_list = duped_metadata.instances.get(
             instance_v1.instance_uid(trust_hints_if_available=True)
         )._diff_hash_dupe_paths
@@ -361,8 +345,7 @@ def test_diff_hash(
 
 
 def test_diff_hash_pixeldata(
-    gcs_client: storage.Client,
-    test_bucket: storage.Bucket,
+    blob_store: BlobStore,
     concat_paths: ConcatPaths,
     test_data_dir: str,
 ):
@@ -375,9 +358,7 @@ def test_diff_hash_pixeldata(
     # upload a version of the dicom
     v1_uri = f"{concat_paths.playground_prefix}/version1.dcm"
     v2_uri = f"{concat_paths.playground_prefix}/version2.dcm"
-    v1_blob = storage.Blob.from_string(v1_uri, client=gcs_client)
-    v2_blob = storage.Blob.from_string(v2_uri, client=gcs_client)
-    v1_blob.upload_from_filename(dcm_path, retry=DEFAULT_RETRY)
+    v1_blob = blob_store.upload_file(v1_uri, dcm_path)
     # load ds & cause hash mismatch in pixel data
     ds = pydicom.dcmread(dcm_path)
     study_uid = getattr(ds, "StudyInstanceUID")
@@ -389,20 +370,20 @@ def test_diff_hash_pixeldata(
     ds.PixelData = bytes(pixel_bytes)
     with tempfile.NamedTemporaryFile() as temp_file:
         ds.save_as(temp_file.name)
-        v2_blob.upload_from_filename(temp_file.name, retry=DEFAULT_RETRY)
+        v2_blob = blob_store.upload_file(v2_uri, temp_file.name)
 
     # blobs should have different hashes
     assert v1_blob.crc32c != v2_blob.crc32c
 
     with CODObject(
         datastore_path=concat_paths.output_uri,
-        client=gcs_client,
+        client=blob_store,
         study_uid=study_uid,
         series_uid=series_uid,
         mode="w",
     ) as cod_obj:
-        instance_v1 = Instance(v1_uri)
-        instance_v2 = Instance(v2_uri)
+        instance_v1 = Instance(v1_uri, blob_store=blob_store)
+        instance_v2 = Instance(v2_uri, blob_store=blob_store)
         # append v1 and sync
         cod_obj.append([instance_v1])
         cod_obj._sync()
@@ -413,12 +394,9 @@ def test_diff_hash_pixeldata(
         assert cod_obj._tar_synced
         cod_obj._sync()
         # file should still exist; deletion should be skipped due to same instance diff hash
-        assert v2_blob.exists()
+        assert blob_store.exists(v2_uri)
         # download the metadata and confirm diff hash duplicate was logged
-        metadata_blob = storage.Blob.from_string(
-            cod_obj.metadata_uri, client=gcs_client
-        )
-        duped_metadata = SeriesMetadata.from_blob(metadata_blob)
+        duped_metadata = _read_metadata(blob_store, cod_obj)
         populated_dupe_list = duped_metadata.instances.get(
             instance_v1.instance_uid(trust_hints_if_available=True)
         )._diff_hash_dupe_paths
@@ -427,8 +405,7 @@ def test_diff_hash_pixeldata(
 
 
 def test_repeat_in_input(
-    gcs_client: storage.Client,
-    test_bucket: storage.Bucket,
+    blob_store: BlobStore,
     concat_paths: ConcatPaths,
 ):
     """
@@ -438,9 +415,9 @@ def test_repeat_in_input(
      - duplicates & singles: [instanceA, instanceB, instanceB]
      - only duplicates: [instanceA, instanceA]
     """
-    _copy_grouping_to_test_bucket(test_bucket, concat_paths.grouping_including_dupe)
+    _upload_grouping(blob_store, concat_paths, concat_paths.grouping_including_dupe)
     codobj_instance_pairs = query_result_to_codobjects(
-        gcs_client,
+        blob_store,
         concat_paths.grouping_including_dupe,
         concat_paths.output_uri,
         validate_datastore_path=False,
@@ -455,15 +432,14 @@ def test_repeat_in_input(
 
 
 def test_error_overlarge_instances(
-    gcs_client: storage.Client,
-    test_bucket: storage.Bucket,
+    blob_store: BlobStore,
     concat_paths: ConcatPaths,
 ):
     """Expect instances to be skipped if they are too large"""
     # set max size to 100 bytes; pipeline should raise ValueError
-    _copy_grouping_to_test_bucket(test_bucket, concat_paths.grouping_full)
+    _upload_grouping(blob_store, concat_paths, concat_paths.grouping_full)
     codobj_instance_pairs = query_result_to_codobjects(
-        gcs_client,
+        blob_store,
         concat_paths.grouping_full,
         concat_paths.output_uri,
         validate_datastore_path=False,
@@ -480,13 +456,12 @@ def test_error_overlarge_instances(
 
 
 def test_error_overlarge_series(
-    gcs_client: storage.Client,
-    test_bucket: storage.Bucket,
+    blob_store: BlobStore,
     concat_paths: ConcatPaths,
 ):
     """Expect a ValueError if series is too large"""
     codobj_instance_pairs = query_result_to_codobjects(
-        gcs_client,
+        blob_store,
         concat_paths.grouping_full,
         concat_paths.output_uri,
         validate_datastore_path=False,

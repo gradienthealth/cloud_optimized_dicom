@@ -3,16 +3,17 @@ from tempfile import NamedTemporaryFile
 
 import pydicom
 import pytest
-from google.cloud import storage
+from google.api_core.exceptions import NotFound
 
 from cloud_optimized_dicom.append import AppendResult, _assert_not_too_large
+from cloud_optimized_dicom.blob_store import BlobStore
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.hints import Hints
 from cloud_optimized_dicom.instance import Instance
 
 
 def test_instance_too_large(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -22,7 +23,7 @@ def test_instance_too_large(
     assert instance.size(trust_hints_if_available=True) == 1000000
     cod_object = CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
         mode="w",
@@ -60,14 +61,14 @@ def test_instance_too_large(
 
 
 def test_append(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
     test_series_uid: str,
 ):
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
@@ -81,7 +82,7 @@ def test_append(
 
 
 def test_two_part_append(
-    gcs_client: storage.Client, datastore_path: str, test_data_dir: str
+    blob_store: BlobStore, datastore_path: str, test_data_dir: str
 ):
     instance_a = Instance(
         os.path.join(
@@ -98,7 +99,7 @@ def test_two_part_append(
         )
     )
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=instance_a.study_uid(),
         series_uid=instance_a.series_uid(),
@@ -109,7 +110,7 @@ def test_two_part_append(
     assert len(new) == 1
     assert len(same + conflict + errors) == 0
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=instance_a.study_uid(),
         series_uid=instance_a.series_uid(),
@@ -122,14 +123,14 @@ def test_two_part_append(
 
 
 def test_append_true_dupe(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
     test_series_uid: str,
 ):
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
@@ -148,14 +149,14 @@ def test_append_true_dupe(
 
 
 def test_append_diff_hash_dupe(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
     test_series_uid: str,
 ):
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
@@ -186,14 +187,14 @@ def test_append_diff_hash_dupe(
 
 
 def test_append_and_sync(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
     test_series_uid: str,
 ):
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
@@ -205,22 +206,19 @@ def test_append_and_sync(
     assert len(same + conflict + errors) == 0
     assert not cod_obj._tar_synced
     assert not cod_obj._metadata_synced
-    tar_blob = storage.Blob.from_string(cod_obj.tar_uri, client=gcs_client)
-    assert not tar_blob.exists()
-    index_blob = storage.Blob.from_string(cod_obj.index_uri, client=gcs_client)
-    assert not index_blob.exists()
-    metadata_blob = storage.Blob.from_string(cod_obj.metadata_uri, client=gcs_client)
-    assert not metadata_blob.exists()
+    assert not blob_store.exists(cod_obj.tar_uri)
+    assert not blob_store.exists(cod_obj.index_uri)
+    assert not blob_store.exists(cod_obj.metadata_uri)
     cod_obj._sync()
     assert cod_obj._tar_synced
     assert cod_obj._metadata_synced
-    assert tar_blob.exists()
-    assert index_blob.exists()
-    assert metadata_blob.exists()
+    assert blob_store.exists(cod_obj.tar_uri)
+    assert blob_store.exists(cod_obj.index_uri)
+    assert blob_store.exists(cod_obj.metadata_uri)
 
 
 def test_append_and_sync_two_part(
-    gcs_client: storage.Client, datastore_path: str, test_data_dir: str
+    blob_store: BlobStore, datastore_path: str, test_data_dir: str
 ):
     instance_a = Instance(
         os.path.join(
@@ -237,7 +235,7 @@ def test_append_and_sync_two_part(
         )
     )
     with CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=instance_a.study_uid(),
         series_uid=instance_a.series_uid(),
@@ -248,7 +246,7 @@ def test_append_and_sync_two_part(
         assert len(same + conflict + errors) == 0
         # sync happens automatically on context exit
     with CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=instance_a.study_uid(),
         series_uid=instance_a.series_uid(),
@@ -261,11 +259,11 @@ def test_append_and_sync_two_part(
 
 
 def test_append_wrong_series(
-    gcs_client: storage.Client, datastore_path: str, local_instance_path: str
+    blob_store: BlobStore, datastore_path: str, local_instance_path: str
 ):
     """Expect instance from different series than CODObject to error"""
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid="some_other_study_uid",
         series_uid="some_other_series_uid",
@@ -280,7 +278,7 @@ def test_append_wrong_series(
 
 
 def test_append_bad_hint(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -288,7 +286,7 @@ def test_append_bad_hint(
 ):
     """Expect instance with bad hint to error"""
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
@@ -306,36 +304,38 @@ def test_append_bad_hint(
 
 
 def test_append_bad_uri_remote(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     test_study_uid: str,
     test_series_uid: str,
 ):
     """test nonexistent remote URI handling"""
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
         mode="w",
         sync_on_exit=False,
     )
-    instance = Instance(dicom_uri="gs://some-hospital/that/does/not/exist.dcm")
+    instance = Instance(
+        dicom_uri="gs://some-hospital/that/does/not/exist.dcm", blob_store=blob_store
+    )
     new, same, conflict, errors = cod_obj.append([instance])
     assert len(errors) == 1
     assert len(new + same + conflict) == 0
-    assert "not found" in str(errors[0][1])
+    assert isinstance(errors[0][1], NotFound)
 
 
 def test_append_bad_uri_local(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     test_study_uid: str,
     test_series_uid: str,
 ):
     """test nonexistent local URI handling"""
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
@@ -350,7 +350,7 @@ def test_append_bad_uri_local(
 
 
 def test_append_mix(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -358,7 +358,7 @@ def test_append_mix(
 ):
     """test mix of good and bad URIs"""
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
@@ -366,14 +366,16 @@ def test_append_mix(
         sync_on_exit=False,
     )
     good_instance = Instance(dicom_uri=local_instance_path)
-    bad_instance = Instance(dicom_uri="gs://some-hospital/that/does/not/exist.dcm")
+    bad_instance = Instance(
+        dicom_uri="gs://some-hospital/that/does/not/exist.dcm", blob_store=blob_store
+    )
     new, same, conflict, errors = cod_obj.append([good_instance, bad_instance])
     assert len(errors) == 1
     assert len(new + same + conflict) == 1
 
 
 def test_append_corrupt_dicom(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
 ):
@@ -406,7 +408,7 @@ def test_append_corrupt_dicom(
         )
         with CODObject(
             datastore_path=datastore_path,
-            client=gcs_client,
+            client=blob_store,
             study_uid=good_instance.study_uid(),
             series_uid=good_instance.series_uid(),
             mode="w",
@@ -420,7 +422,7 @@ def test_append_corrupt_dicom(
 
 
 def test_append_dupe_uri_input(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -428,7 +430,7 @@ def test_append_dupe_uri_input(
 ):
     """test duplicate URI handling"""
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
@@ -448,7 +450,7 @@ def test_append_dupe_uri_input(
 
 
 def test_append_compress(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -456,7 +458,7 @@ def test_append_compress(
 ):
     """test that compressing instances works"""
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
@@ -479,7 +481,7 @@ def test_append_compress(
 
 
 def test_append_no_compress(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -487,7 +489,7 @@ def test_append_no_compress(
 ):
     """test that compress=False preserves the original transfer syntax (PROC-1927)"""
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
@@ -510,14 +512,14 @@ def test_append_no_compress(
 
 
 def test_append_records_recompressed_transfer_syntax(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     jpeg_lossless_path: str,
 ):
     """Appended JPEG Lossless is recorded as JPEG 2000 Lossless."""
     instance = Instance(dicom_uri=jpeg_lossless_path)
     cod_obj = CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=instance.study_uid(),
         series_uid=instance.series_uid(),

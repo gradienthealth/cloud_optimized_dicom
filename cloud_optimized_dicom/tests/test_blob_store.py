@@ -13,11 +13,19 @@ from google.api_core.exceptions import NotFound, PreconditionFailed
 from google.cloud.storage.constants import NEARLINE_STORAGE_CLASS
 
 from cloud_optimized_dicom.blob_store import BlobStore, FakeBlobStore, GcsBlobStore
-from cloud_optimized_dicom.tests.conftest import DATASTORE_BASE
+from cloud_optimized_dicom.tests.conftest import DATASTORE_BASE, ONLINE
 from cloud_optimized_dicom.utils import delete_uploaded_blobs, generate_ptr_crc32c
 
 
-@pytest.fixture(params=["fake", "gcs"])
+@pytest.fixture(
+    params=[
+        "fake",
+        pytest.param(
+            "gcs",
+            marks=pytest.mark.skipif(not ONLINE, reason="needs SISKIN_ENV_ENABLED"),
+        ),
+    ]
+)
 def store(request: pytest.FixtureRequest) -> BlobStore:
     if request.param == "fake":
         return FakeBlobStore()
@@ -27,8 +35,7 @@ def store(request: pytest.FixtureRequest) -> BlobStore:
 @pytest.fixture
 def prefix(store: BlobStore, worker_namespace: str) -> str:
     path = f"{DATASTORE_BASE}/{worker_namespace}/blob_store"
-    if isinstance(store, GcsBlobStore):
-        delete_uploaded_blobs(store.client, [path])
+    delete_uploaded_blobs(store, [path])
     return path
 
 

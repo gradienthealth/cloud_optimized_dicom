@@ -2,8 +2,8 @@ from tempfile import NamedTemporaryFile
 
 import pydicom
 import pytest
-from google.cloud import storage
 
+from cloud_optimized_dicom.blob_store import BlobStore
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.errors import InstanceValidationError
 from cloud_optimized_dicom.hints import Hints
@@ -55,7 +55,7 @@ def test_instance_no_hash_func():
 
 
 def test_instance_belongs_to_cod_object(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -66,7 +66,7 @@ def test_instance_belongs_to_cod_object(
     # create cod_object with original uids
     cod_object = CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
         mode="w",
@@ -103,7 +103,7 @@ def test_instance_belongs_to_cod_object(
 
 
 def test_accidental_double_hash(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -116,7 +116,7 @@ def test_accidental_double_hash(
     twice_hashed_series_uid = example_hash_function(hashed_series_uid)
     cod_object = CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=twice_hashed_study_uid,
         series_uid=twice_hashed_series_uid,
         mode="w",
@@ -129,7 +129,7 @@ def test_accidental_double_hash(
 
 
 def test_cod_obj_metadata_hashed_uids(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -139,7 +139,7 @@ def test_cod_obj_metadata_hashed_uids(
     # append a DEID instance to a cod object
     cod_object = CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=example_hash_function(test_study_uid),
         series_uid=example_hash_function(test_series_uid),
         mode="w",
@@ -169,7 +169,7 @@ def test_cod_obj_metadata_hashed_uids(
 
 
 def test_append_diff_hash_dupe_with_hashed_uids(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -178,7 +178,7 @@ def test_append_diff_hash_dupe_with_hashed_uids(
     """Test that a diff hash dupe is detected with hashed uids"""
     cod_object = CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=example_hash_function(test_study_uid),
         series_uid=example_hash_function(test_series_uid),
         mode="w",

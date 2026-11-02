@@ -19,17 +19,17 @@ pre-commit install
 
 ### Testing
 ```bash
-# Run all tests
-SISKIN_ENV_ENABLED=1 python -m pytest -v cloud_optimized_dicom/tests
+# Run all tests offline, against the in-memory FakeBlobStore
+python -m pytest -v -n auto cloud_optimized_dicom/tests
 
-# Run specific test file
-SISKIN_ENV_ENABLED=1 python -m pytest -v cloud_optimized_dicom/tests/test_cod_object.py
+# Run all tests against the real GCS test buckets (needs GCP credentials)
+SISKIN_ENV_ENABLED=1 python -m pytest -v -n auto cloud_optimized_dicom/tests
 
 # Run specific test
 python -m pytest -v cloud_optimized_dicom/tests/test_metadata_serialization.py::test_v2_round_trip
 ```
 
-Note: `SISKIN_ENV_ENABLED=1` is required for tests that interact with GCP resources. Tests skip when this flag is absent.
+The `blob_store` fixture in `conftest.py` picks the backend: a fresh `FakeBlobStore` per test by default, or `GcsBlobStore` on the test buckets when `SISKIN_ENV_ENABLED` is set. CI runs the suite both ways.
 
 ### Code Formatting
 Pre-commit hooks automatically run:
@@ -68,6 +68,14 @@ Config lives in `release-please-config.json` and `.release-please-manifest.json`
 - Handles access modes and state synchronization
 - Key URI pattern: `<datastore_path>/studies/<study_uid>/series/<series_uid>.tar`
 - Must be used as context manager for `mode="w"` to ensure proper lock release and sync
+- `client` takes a `storage.Client` or any `BlobStore`; every datastore read and write goes through `cod.blob_store`
+
+**BlobStore** (`blob_store/`)
+- ABC for the object storage COD reads and writes through, addressed by URI (`interface.py`)
+- `GcsBlobStore` (`gcs.py`) wraps `google-cloud-storage`; `FakeBlobStore` (`fake.py`) is an in-memory stand-in for offline tests, shipped in the package so downstream repos can use it too
+- Both raise `google.api_core` `NotFound` / `PreconditionFailed`, so existing `except NotFound` callers work against either
+- `tests/test_blob_store.py` holds the contract both implementations must pass; extend it when the fake needs a new GCS behaviour
+- `Instance.blob_store` is optional: set, a remote instance is fetched and its `gs://` dependencies deleted through it; unset, `transport_params` and smart_open are used as before
 
 **Instance** (`instance.py`)
 - Represents a single DICOM file
@@ -134,6 +142,7 @@ Config lives in `release-please-config.json` and `.release-please-manifest.json`
 ```
 cloud_optimized_dicom/
 ├── cod_object.py          # Main CODObject class
+├── blob_store/            # BlobStore ABC, GcsBlobStore, FakeBlobStore
 ├── instance.py            # Instance representation
 ├── instance_metadata.py   # Instance-level metadata handling
 ├── series_metadata.py     # Series-level metadata handling
@@ -213,10 +222,11 @@ del cod  # Lock still exists remotely!
 
 ### Testing Notes
 
-- Tests require GCS authentication (service account JSON key in `GCP_SA_KEY` secret for CI)
+- Tests run offline against `FakeBlobStore` unless `SISKIN_ENV_ENABLED` is set
+- Online runs need GCS authentication (service account JSON key in `GCP_SA_KEY` secret for CI)
 - Test buckets: `siskin-172863-test-data`, `siskin-172863-temp`
-- Test data directory: `cloud_optimized_dicom/tests/test_data/`
-- Tests skip when `SISKIN_ENV_ENABLED` is not set
+- Test data directory: `cloud_optimized_dicom/tests/test_data/`; tests upload what they need through `blob_store` rather than reading pre-existing bucket data
+- Write new tests against the `blob_store` fixture (not `gcs_client`) so they run in both modes
 - GCP project: `gradient-pacs-siskin-172863`
 
 ### Error Handling

@@ -8,7 +8,6 @@ import os
 
 import pydicom
 import pytest
-from google.cloud import storage
 
 from cloud_optimized_dicom.errors import (
     CODObjectNotFoundError,
@@ -93,9 +92,7 @@ def _generate_thumbnail(handle: SeriesHandle) -> tuple[str, int]:
     with handle.open(mode="a") as cod:
         cod.get_thumbnail(generate_if_missing=True)
         thumb_uri = cod._get_metadata_field("thumbnail")["uri"]
-    thumb_blob = storage.Blob.from_string(thumb_uri, client=handle.client)
-    thumb_blob.reload()
-    return thumb_uri, thumb_blob.generation
+    return thumb_uri, handle.client.stat(thumb_uri).generation
 
 
 def test_edit_mode_thumbnail_regen_on_pd_change(seeded_series: SeriesHandle):
@@ -112,11 +109,9 @@ def test_edit_mode_thumbnail_regen_on_pd_change(seeded_series: SeriesHandle):
         ds.PatientName = "REDACTED^REGEN^TEST"
         ds.save_as(target.dicom_uri)
 
-    thumb_blob = storage.Blob.from_string(thumb_uri, client=seeded_series.client)
-    thumb_blob.reload()
     assert (
-        thumb_blob.generation != thumb_gen_before
-    ), "thumbnail blob should have been rewritten (new GCS generation)"
+        seeded_series.client.stat(thumb_uri).generation != thumb_gen_before
+    ), "thumbnail blob should have been rewritten (new generation)"
 
     with seeded_series.open(mode="r") as cod:
         assert cod._get_metadata_field("thumbnail") is not None
