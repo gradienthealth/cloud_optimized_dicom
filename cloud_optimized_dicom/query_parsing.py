@@ -4,6 +4,7 @@ from typing import Callable, Iterator
 from google.api_core.exceptions import NotFound
 from google.cloud import storage
 
+from cloud_optimized_dicom.blob_store import GcsBlobStore
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import LockAcquisitionError
@@ -122,9 +123,10 @@ def instances_to_codobj_tuples(
     mode: str = "a",
 ) -> Iterator[tuple[CODObject, list[Instance]]]:
     """Group instances by study/series, make codobjects, and yield (codobj, instances) pairs"""
-    # need to set client on instances before sorting (may have to fetch them)
+    # grouping fetches any instance without UID hints, which needs the store
+    blob_store = GcsBlobStore(client)
     for instance in instances:
-        instance.transport_params = dict(client=client)
+        instance.blob_store = blob_store
 
     # Need study/series uids to sort/group instances. Can use hints if provided, otherwise must fetch
     instances = fetch_instances_without_hints(instances)

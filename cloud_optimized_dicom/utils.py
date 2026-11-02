@@ -17,7 +17,6 @@ import filetype
 import google_crc32c
 import numpy as np
 from google.cloud import storage
-from google.cloud.storage.retry import DEFAULT_RETRY
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.blob_store import BlobStore
@@ -71,32 +70,26 @@ def upload_and_count_file(
     metrics.STORAGE_CLASS_COUNTERS["CREATE"][written.storage_class].inc()
 
 
-def _delete_gcs_dep(uri: str, client: storage.Client, expected_crc32c: str = None):
-    """
-    Delete a dependency from GCS.
-    Args:
-        uri: str - The URI of the dependency to delete.
-        client: storage.Client - The client to use to delete the blob.
-        expected_crc32c: str - The expected CRC32C of the blob. If provided, the blob will be validated against this value before deletion.
+def _delete_blob_dep(
+    uri: str, blob_store: BlobStore, expected_crc32c: Optional[str] = None
+) -> bool:
+    """Deletes the dependency at `uri`, unless it is missing or its CRC32C differs
+    from `expected_crc32c` (when one is given).
+
     Returns:
-        bool - Whether the blob was deleted.
+        Whether the dependency was deleted.
     """
-    blob = storage.Blob.from_string(uri, client=client)
-    if not blob.exists():
+    if (dependency := blob_store.stat(uri)) is None:
         metrics.DEP_DOES_NOT_EXIST.inc()
         logger.warning(f"Skipping deletion of {uri} due to non-existence")
         return False
-    # validate crc32c if expected hash was provided
-    if expected_crc32c:
-        blob.reload()
-        if blob.crc32c != expected_crc32c:
-            metrics.INSTANCE_BLOB_CRC32C_MISMATCH.inc()
-            logger.warning(
-                f"Skipping deletion of {uri} due to hash mismatch (expected {expected_crc32c}, got {blob.crc32c})"
-            )
-            return False
-    # If we get here, none of the early exit conditions were met, so we can delete the file
-    blob.delete(retry=DEFAULT_RETRY)
+    if expected_crc32c and dependency.crc32c != expected_crc32c:
+        metrics.INSTANCE_BLOB_CRC32C_MISMATCH.inc()
+        logger.warning(
+            f"Skipping deletion of {uri} due to hash mismatch (expected {expected_crc32c}, got {dependency.crc32c})"
+        )
+        return False
+    blob_store.delete(uri)
     metrics.NUM_DELETES.inc()
     return True
 

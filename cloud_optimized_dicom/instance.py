@@ -14,6 +14,7 @@ from ratarmountcore.mountsource.factory import open_mount_source as rmc_open
 from smart_open import open as smart_open
 
 import cloud_optimized_dicom.metrics as metrics
+from cloud_optimized_dicom.blob_store import BlobStore, GcsBlobStore
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.custom_offset_tables import get_multiframe_offset_tables
 from cloud_optimized_dicom.hints import Hints
@@ -28,7 +29,7 @@ from cloud_optimized_dicom.transcode import (
 )
 from cloud_optimized_dicom.utils import (
     DICOM_PREAMBLE,
-    _delete_gcs_dep,
+    _delete_blob_dep,
     file_is_dicom,
     find_pattern,
     generate_ptr_crc32c,
@@ -58,6 +59,9 @@ class Instance:
         `hints: Hints` - values already known or suspected about the instance (size, hash, etc. - see hints.py).
         `transport_params: dict` - A smart_open transport_params dict (if the instance is remote, and credentials are needed to retrieve it).
         `uid_hash_func: Callable[[str], str]` - A function that takes a UID and returns a new UID
+        `blob_store: BlobStore` - The store a `gs://` instance is fetched from and its `gs://` dependencies are deleted through.
+            Other remote URIs always go through smart_open with `transport_params`, as do `gs://` URIs when there is no store;
+            without a store, dependencies are deleted through `transport_params["client"]`.
     """
 
     # public fields that the user might provide
@@ -66,6 +70,7 @@ class Instance:
     hints: Hints = field(default_factory=Hints)
     transport_params: dict = field(default_factory=dict)
     uid_hash_func: Callable[[str], str] = None
+    blob_store: Optional[BlobStore] = None
 
     # private internal fields
     _temp_file_path: str = None
@@ -114,11 +119,16 @@ class Instance:
             self._temp_file_path = temp_file.name
 
         # read remote file into local temp file
-        with open(self._temp_file_path, "wb") as local_file:
-            with smart_open(
-                uri=self.dicom_uri, mode="rb", transport_params=self.transport_params
-            ) as source:
-                shutil.copyfileobj(source, local_file, _COPY_BUFFER_SIZE)
+        if self.blob_store is not None and self.dicom_uri.startswith("gs://"):
+            self.blob_store.download_to_file(self.dicom_uri, self._temp_file_path)
+        else:
+            with open(self._temp_file_path, "wb") as local_file:
+                with smart_open(
+                    uri=self.dicom_uri,
+                    mode="rb",
+                    transport_params=self.transport_params,
+                ) as source:
+                    shutil.copyfileobj(source, local_file, _COPY_BUFFER_SIZE)
         # after writing, dicom_uri is now local
         self.dicom_uri = self._temp_file_path
         self.validate()
@@ -529,19 +539,16 @@ class Instance:
             if TAR_IDENTIFIER in uri or ZIP_IDENTIFIER in uri:
                 raise NotImplementedError("Nested dependency deletion is not supported")
             if uri.startswith("gs://"):
-                assert (
-                    "client" in self.transport_params
-                ), "client must be provided for GCS dependencies"
-                client = self.transport_params["client"]
+                blob_store = self._dependency_blob_store()
                 # If only 1 dep, assume it's a dicom p10 -> check hash, ensure it matches
                 # TODO: turn deps list into {uri: crc32c} dict. Then this assumption can be avoided
                 # and we can check the hash of any dependency
                 if validate_blob_hash and len(self.dependencies) == 1:
-                    _delete_gcs_dep(
-                        uri=uri, client=client, expected_crc32c=self.crc32c()
+                    _delete_blob_dep(
+                        uri=uri, blob_store=blob_store, expected_crc32c=self.crc32c()
                     )
                 else:
-                    _delete_gcs_dep(uri=uri, client=client)
+                    _delete_blob_dep(uri=uri, blob_store=blob_store)
                 deleted_dependencies.append(uri)
             elif os.path.exists(uri):
                 os.remove(uri)
@@ -553,6 +560,15 @@ class Instance:
         metrics.BYTES_DELETED_COUNTER.inc(self.size())
         metrics.NUM_FILES_DELETED.inc()
         return deleted_dependencies
+
+    def _dependency_blob_store(self) -> BlobStore:
+        """Returns `blob_store`, or a `GcsBlobStore` on `transport_params["client"]` if there is none."""
+        if self.blob_store is not None:
+            return self.blob_store
+        assert (
+            "client" in self.transport_params
+        ), "blob_store or a transport_params client must be provided for GCS dependencies"
+        return GcsBlobStore(self.transport_params["client"])
 
     def append_diff_hash_dupe(self, duplicate_path: str) -> bool:
         """Append a diff hash dupe and update `modified_datetime`. Skips appending if any of the following conditions are met:
