@@ -23,7 +23,7 @@ import numpy as np
 import pydicom
 import pydicom.uid
 from openjpeg import decode as decode_jpeg2000
-from pydicom.encaps import encapsulate, encapsulate_extended
+from pydicom.encaps import encapsulate, encapsulate_extended, generate_frames
 from pydicom.pixels import as_pixel_options, get_encoder, iter_pixels
 from pydicom.valuerep import VR
 
@@ -59,6 +59,12 @@ _RECOMPRESSIBLE_PHOTOMETRIC_INTERPRETATIONS = frozenset(
     {"MONOCHROME1", "MONOCHROME2", "PALETTE COLOR", "RGB", "YBR_FULL"}
 )
 
+
+# The JPEG marker bytes the frame-header walk reads. Every marker opens with
+# the prefix, SOF3 is the lossless frame header, and SOS starts the scan data.
+_JPEG_MARKER_PREFIX = 0xFF
+_JPEG_SOF3 = 0xC3
+_JPEG_SOS = 0xDA
 
 # Offsets and lengths for an extended offset table, produced only when the
 # encapsulated frames outgrow the basic table's 32-bit offsets.
@@ -101,6 +107,8 @@ class TranscodeOutcome(enum.Enum):
     """What `recompress_to_jpeg2000_lossless` did with a dataset."""
 
     PASSTHROUGH_FAILED = "passthrough_failed"
+    PASSTHROUGH_HIGH_BITS = "passthrough_high_bits"
+    PASSTHROUGH_HIGH_BITS_UNCHECKED = "passthrough_high_bits_unchecked"
     PASSTHROUGH_NOT_SMALLER = "passthrough_not_smaller"
     PASSTHROUGH_PHOTOMETRIC = "passthrough_photometric"
     PASSTHROUGH_SERIES_VERIFY_MISMATCH = "passthrough_series_verify_mismatch"
@@ -125,9 +133,9 @@ class Verification(enum.StrEnum):
       without the check.
     - `OFF` checks nothing.
 
-    Every level keeps the other safeguards: the rule that a re-encode not
-    smaller than the source is discarded, and the fallback to the original
-    bytes when a codec raises.
+    Every level keeps the other safeguards: the high-bit guard, the rule that a
+    re-encode not smaller than the source is discarded, and the fallback to the
+    original bytes when a codec raises.
     """
 
     FULL = "full"
@@ -195,6 +203,19 @@ def recompress_to_jpeg2000_lossless(
     `ds` untouched, so incompressible data and pixels the codec cannot encode,
     such as 1-bit and 32-bit samples, keep their bytes.
 
+    Decoding discards the bits above `BitsStored`, and JPEG 2000 stores only
+    `BitsStored` bits, so a source that uses them (overlays kept in the high
+    bits, for instance) would lose them without any frame failing the check.
+    Such a source passes through as `PASSTHROUGH_HIGH_BITS` whether or not
+    `should_verify` is set. Signed samples whose high bits only extend the
+    sign, or are zero, carry no extra information and are re-encoded.
+
+    JPEG Lossless decodes with those bits already masked, so the check cannot
+    see them there. A JPEG Lossless frame coded with no more sample precision
+    than `BitsStored` cannot hold them. A source with any frame coded with more
+    precision, or whose precision cannot be read, passes through as
+    `PASSTHROUGH_HIGH_BITS_UNCHECKED`.
+
     RGB is stored as `YBR_RCT`, the interpretation under which the codec
     applies its reversible colour transform; every other interpretation is
     kept. Multi-sample output is colour-by-pixel (`PlanarConfiguration` 0),
@@ -225,6 +246,8 @@ def recompress_to_jpeg2000_lossless(
     )
 
     try:
+        if _may_hide_high_bits(ds):
+            return TranscodeOutcome.PASSTHROUGH_HIGH_BITS_UNCHECKED
         checking_decoder = (decoder or decode_jpeg2000) if should_verify else None
         encoded = _encode_frames(ds, target_photometric, decoder=checking_decoder)
     # Any codec or pydicom failure means the original bytes stay, so every
@@ -265,6 +288,7 @@ def _encode_frames(
     A `decoder` of `None` skips the check.
 
     Returns the codestreams, or the outcome that stopped the loop:
+    `PASSTHROUGH_HIGH_BITS` at a frame that uses bits above `BitsStored`,
     `PASSTHROUGH_VERIFY_MISMATCH` at a frame that does not decode back, or
     `PASSTHROUGH_NOT_SMALLER` once the encapsulated items reach the size of the
     source pixel data.
@@ -278,16 +302,25 @@ def _encode_frames(
     decoding_plugin = (
         "gdcm" if ds.file_meta.TransferSyntaxUID in _GDCM_DECODED_SYNTAXES else ""
     )
-    # `raw=True` returns the stored samples without pydicom's YBR to RGB
-    # conversion, which rounds. The clamp to `NumberOfFrames` drops the extra
-    # fragment groups pydicom otherwise yields for producers that write more
-    # items than frames.
-    frames = iter_pixels(ds, raw=True, decoding_plugin=decoding_plugin)
+    # `raw=True` skips pydicom's YBR to RGB conversion, which rounds.
+    # `correct_unused_bits=False` keeps the bits above `BitsStored` for
+    # `_without_unused_bits` to check. The clamp to `NumberOfFrames` drops the
+    # extra fragment groups pydicom yields for producers that write more items
+    # than frames.
+    frames = iter_pixels(
+        ds, raw=True, decoding_plugin=decoding_plugin, correct_unused_bits=False
+    )
+    bits_stored = int(ds.BitsStored)
+    is_signed = int(ds.PixelRepresentation) == 1
     number_of_frames = int(ds.get("NumberOfFrames", 1) or 1)
     source_length = len(ds.PixelData)
     codestreams = []
     items_length = 0
-    for frame in islice(frames, number_of_frames):
+    for stored_frame in islice(frames, number_of_frames):
+        frame = _without_unused_bits(stored_frame, bits_stored, is_signed)
+        if frame is None:
+            logger.warning("Keeping pixel data; bits above BitsStored are set")
+            return TranscodeOutcome.PASSTHROUGH_HIGH_BITS
         codestream = encoder.encode(frame, encoding_plugin="pylibjpeg", **options)
         if decoder is not None and not _round_trips(codestream, frame, decoder):
             return TranscodeOutcome.PASSTHROUGH_VERIFY_MISMATCH
@@ -297,6 +330,45 @@ def _encode_frames(
         if items_length >= source_length:
             return TranscodeOutcome.PASSTHROUGH_NOT_SMALLER
     return codestreams
+
+
+def _may_hide_high_bits(ds: pydicom.Dataset) -> bool:
+    """Whether a JPEG Lossless frame may hold bits that GDCM masks unseen."""
+    bits_stored = int(ds.BitsStored)
+    if (
+        ds.file_meta.TransferSyntaxUID not in _GDCM_DECODED_SYNTAXES
+        or bits_stored >= int(ds.BitsAllocated)
+    ):
+        return False
+    number_of_frames = int(ds.get("NumberOfFrames", 1) or 1)
+    frames = generate_frames(ds.PixelData, number_of_frames=number_of_frames)
+    for frame in islice(frames, number_of_frames):
+        precision = _jpeg_sample_precision(frame)
+        if precision is None or precision > bits_stored:
+            return True
+    return False
+
+
+def _jpeg_sample_precision(codestream: bytes) -> int | None:
+    """Returns the sample precision in a JPEG Lossless frame header (SOF3).
+
+    Returns `None` when the codestream has no frame header where one belongs.
+    """
+    position = 2  # past the SOI marker
+    while (
+        position + 5 <= len(codestream) and codestream[position] == _JPEG_MARKER_PREFIX
+    ):
+        marker = codestream[position + 1]
+        if marker == _JPEG_MARKER_PREFIX:  # a fill byte before the marker
+            position += 1
+            continue
+        if marker == _JPEG_SOF3:
+            return codestream[position + 4]
+        if marker == _JPEG_SOS:  # scan data follows, so no frame header
+            return None
+        segment_length = int.from_bytes(codestream[position + 2 : position + 4], "big")
+        position += 2 + segment_length
+    return None
 
 
 def _replace_pixel_data(
@@ -332,3 +404,22 @@ def _round_trips(codestream: bytes, frame: np.ndarray, decoder: _Decoder) -> boo
         f"differs from source {frame.shape} {frame.dtype}"
     )
     return False
+
+
+def _without_unused_bits(
+    frame: np.ndarray, bits_stored: int, is_signed: bool
+) -> np.ndarray | None:
+    """Clears or sign-extends the bits above `bits_stored`, as pydicom does.
+
+    Returns `None` when any of those bits are set, other than as the sign
+    extension of a signed sample.
+    """
+    unused_bits = frame.dtype.itemsize * 8 - bits_stored
+    if unused_bits <= 0:
+        return frame
+    frame = frame.astype(frame.dtype.newbyteorder("="), copy=False)
+    corrected = (frame << unused_bits) >> unused_bits
+    clear = (frame.view(f"u{frame.dtype.itemsize}") >> bits_stored) == 0
+    if not np.all(clear | (frame == corrected) if is_signed else clear):
+        return None
+    return corrected

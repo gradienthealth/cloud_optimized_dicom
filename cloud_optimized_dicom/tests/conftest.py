@@ -145,11 +145,16 @@ def ybr_full_422_path() -> str:
 
 @pytest.fixture(scope="session")
 def jpeg_lossless_path(tmp_path_factory: pytest.TempPathFactory) -> str:
-    """A 16-bit MONOCHROME2 instance encoded as JPEG Lossless SV1 (.4.70)."""
+    """A 16-bit `MONOCHROME2` instance encoded as JPEG Lossless SV1 (.4.70).
+
+    All 16 bits are stored: GDCM codes every frame with 16 bits of precision,
+    and the re-encode keeps a frame coded with more precision than `BitsStored`
+    unchecked.
+    """
     return write_encoded_image(
         tmp_path_factory.mktemp("jpeg_lossless") / "mono16_sv1.dcm",
         pydicom.uid.JPEGLosslessSV1,
-        synthetic_image(),
+        synthetic_image(bits_stored=16),
     )
 
 
