@@ -741,7 +741,7 @@ class CODObject:
         # If we get here all checks have passed and it is safe to delete the dependencies
         deleted_dependencies = []
         for instance in self._metadata.instances.values():
-            instance.transport_params = dict(client=self.client)
+            instance.blob_store = self.blob_store
             deleted_dependencies.extend(
                 instance.delete_dependencies(
                     dryrun=dryrun, validate_blob_hash=validate_blob_hash
