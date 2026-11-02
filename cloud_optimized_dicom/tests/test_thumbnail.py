@@ -6,8 +6,8 @@ import numpy as np
 import pydicom
 import pydicom.encaps
 import pytest
-from google.cloud import storage
 
+from cloud_optimized_dicom.blob_store import BlobStore
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.series_metadata import SeriesMetadata
@@ -31,16 +31,16 @@ def _enable_logging():
 
 
 @pytest.fixture
-def thumbnail_datastore_path(gcs_client: storage.Client, worker_namespace: str) -> str:
+def thumbnail_datastore_path(blob_store: BlobStore, worker_namespace: str) -> str:
     path = f"{THUMBNAIL_DATASTORE_BASE}/{worker_namespace}/dicomweb"
-    delete_uploaded_blobs(gcs_client, [path])
+    delete_uploaded_blobs(blob_store, [path])
     return path
 
 
 def ingest_and_generate_thumbnail(
     instance_paths: list[str],
     datastore_path: str,
-    client: storage.Client,
+    client: BlobStore,
     thumbnail_size: int = DEFAULT_SIZE,
 ) -> tuple[CODObject, np.ndarray]:
     instances = [Instance(dicom_uri=path) for path in instance_paths]
@@ -119,14 +119,14 @@ def validate_thumbnail(
 
 
 def test_gen_monochrome1(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     thumbnail_datastore_path: str,
     test_data_dir: str,
 ):
     """Test thumbnail generation for a single frame DICOM file (MONOCHROME1)"""
     dicom_path = os.path.join(test_data_dir, "monochrome1.dcm")
     cod_obj, thumbnail = ingest_and_generate_thumbnail(
-        [dicom_path], thumbnail_datastore_path, gcs_client
+        [dicom_path], thumbnail_datastore_path, blob_store
     )
     validate_thumbnail(thumbnail, cod_obj, expected_frame_count=1)
     reloaded_metadata = SeriesMetadata.from_bytes(cod_obj._metadata.to_bytes())
@@ -138,20 +138,20 @@ def test_gen_monochrome1(
 
 
 def test_gen_monochrome2(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     thumbnail_datastore_path: str,
     test_data_dir: str,
 ):
     """Test thumbnail generation for a single frame DICOM file (MONOCHROME2)"""
     dicom_path = os.path.join(test_data_dir, "monochrome2.dcm")
     cod_obj, thumbnail = ingest_and_generate_thumbnail(
-        [dicom_path], thumbnail_datastore_path, gcs_client
+        [dicom_path], thumbnail_datastore_path, blob_store
     )
     validate_thumbnail(thumbnail, cod_obj, expected_frame_count=1)
 
 
 def test_gen_mp4_mixed_phot_interp(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     thumbnail_datastore_path: str,
     test_data_dir: str,
 ):
@@ -163,20 +163,20 @@ def test_gen_mp4_mixed_phot_interp(
         if f.endswith(".dcm")
     ]
     cod_obj, thumbnail = ingest_and_generate_thumbnail(
-        dicom_paths, thumbnail_datastore_path, gcs_client
+        dicom_paths, thumbnail_datastore_path, blob_store
     )
     validate_thumbnail(thumbnail, cod_obj, expected_frame_count=10)
 
 
 def test_gen_mp4_ybr_rct_multiframe(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     thumbnail_datastore_path: str,
     test_data_dir: str,
 ):
     """Test thumbnail generation for a multiframe DICOM file (YBR_RCT)"""
     multiframe_path = os.path.join(test_data_dir, "ybr_rct_multiframe.dcm")
     cod_obj, thumbnail = ingest_and_generate_thumbnail(
-        [multiframe_path], thumbnail_datastore_path, gcs_client
+        [multiframe_path], thumbnail_datastore_path, blob_store
     )
     validate_thumbnail(thumbnail, cod_obj, expected_frame_count=78)
     reloaded_metadata = SeriesMetadata.from_bytes(cod_obj._metadata.to_bytes())
@@ -188,7 +188,7 @@ def test_gen_mp4_ybr_rct_multiframe(
 
 
 def test_custom_thumbnail_size(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     thumbnail_datastore_path: str,
     test_data_dir: str,
 ):
@@ -196,7 +196,7 @@ def test_custom_thumbnail_size(
     # single frame
     dicom_path = os.path.join(test_data_dir, "monochrome1.dcm")
     cod_obj, thumbnail = ingest_and_generate_thumbnail(
-        [dicom_path], thumbnail_datastore_path, gcs_client, thumbnail_size=256
+        [dicom_path], thumbnail_datastore_path, blob_store, thumbnail_size=256
     )
     validate_thumbnail(
         thumbnail,
@@ -207,7 +207,7 @@ def test_custom_thumbnail_size(
     # multiframe
     multiframe_path = os.path.join(test_data_dir, "ybr_rct_multiframe.dcm")
     cod_obj, thumbnail = ingest_and_generate_thumbnail(
-        [multiframe_path], thumbnail_datastore_path, gcs_client, thumbnail_size=256
+        [multiframe_path], thumbnail_datastore_path, blob_store, thumbnail_size=256
     )
     validate_thumbnail(
         thumbnail,
@@ -218,7 +218,7 @@ def test_custom_thumbnail_size(
 
 
 def test_sync_and_fetch(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     thumbnail_datastore_path: str,
     test_data_dir: str,
 ):
@@ -227,7 +227,7 @@ def test_sync_and_fetch(
     instance = Instance(dicom_uri=os.path.join(test_data_dir, "monochrome1.dcm"))
     with CODObject(
         datastore_path=thumbnail_datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=instance.study_uid(),
         series_uid=instance.series_uid(),
         mode="w",
@@ -238,7 +238,7 @@ def test_sync_and_fetch(
     # with a new cod object, fetch and validate thumbnail
     with CODObject(
         datastore_path=thumbnail_datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=instance.study_uid(),
         series_uid=instance.series_uid(),
         mode="r",
@@ -252,7 +252,7 @@ def test_sync_and_fetch(
 
 
 def test_update_existing_thumbnail(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     thumbnail_datastore_path: str,
     test_data_dir: str,
 ):
@@ -267,7 +267,7 @@ def test_update_existing_thumbnail(
     )
     with CODObject(
         datastore_path=thumbnail_datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=instance_a.hashed_study_uid(),
         series_uid=instance_a.hashed_series_uid(),
         hashed_uids=True,
@@ -287,7 +287,7 @@ def test_update_existing_thumbnail(
     )
     with CODObject(
         datastore_path=thumbnail_datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=instance_b.hashed_study_uid(),
         series_uid=instance_b.hashed_series_uid(),
         hashed_uids=True,
@@ -299,7 +299,7 @@ def test_update_existing_thumbnail(
 
 
 def test_regen_missing_thumbnail(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     thumbnail_datastore_path: str,
     test_data_dir: str,
 ):
@@ -307,7 +307,7 @@ def test_regen_missing_thumbnail(
     instance = Instance(dicom_uri=os.path.join(test_data_dir, "monochrome1.dcm"))
     with CODObject(
         datastore_path=thumbnail_datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=instance.study_uid(),
         series_uid=instance.series_uid(),
         mode="w",
@@ -317,12 +317,11 @@ def test_regen_missing_thumbnail(
         cod_obj._sync()
         thumbnail_uri = cod_obj.get_metadata_field("thumbnail")["uri"]
     # delete the thumbnail
-    thumbnail_blob = storage.Blob.from_string(thumbnail_uri, client=gcs_client)
-    thumbnail_blob.delete()
-    assert not thumbnail_blob.exists()
+    blob_store.delete(thumbnail_uri)
+    assert not blob_store.exists(thumbnail_uri)
     with CODObject(
         datastore_path=thumbnail_datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=instance.study_uid(),
         series_uid=instance.series_uid(),
         mode="a",
@@ -337,7 +336,7 @@ def test_regen_missing_thumbnail(
 
 
 def test_get_instance_slice(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     thumbnail_datastore_path: str,
     test_data_dir: str,
 ):
@@ -350,7 +349,7 @@ def test_get_instance_slice(
         if f.endswith(".dcm")
     ]
     cod_obj, thumbnail = ingest_and_generate_thumbnail(
-        dicom_paths, thumbnail_datastore_path, gcs_client
+        dicom_paths, thumbnail_datastore_path, blob_store
     )
     validate_thumbnail(thumbnail, cod_obj, expected_frame_count=10)
     some_instance_uid = cod_obj.get_instance_by_index(5).instance_uid()
@@ -360,7 +359,7 @@ def test_get_instance_slice(
     # make sure that getting a slice of a series with a single multiframe returns the same as the overall thumbnail
     multiframe_path = os.path.join(test_data_dir, "ybr_rct_multiframe.dcm")
     cod_obj, thumbnail = ingest_and_generate_thumbnail(
-        [multiframe_path], thumbnail_datastore_path, gcs_client
+        [multiframe_path], thumbnail_datastore_path, blob_store
     )
     validate_thumbnail(thumbnail, cod_obj, expected_frame_count=78)
     some_instance_uid = cod_obj.get_instance_by_index(0).instance_uid()
@@ -369,7 +368,7 @@ def test_get_instance_slice(
 
 
 def test_get_instance_by_thumbnail_index(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     thumbnail_datastore_path: str,
     test_data_dir: str,
 ):
@@ -382,7 +381,7 @@ def test_get_instance_by_thumbnail_index(
         if f.endswith(".dcm")
     ]
     cod_obj, thumbnail = ingest_and_generate_thumbnail(
-        dicom_paths, thumbnail_datastore_path, gcs_client
+        dicom_paths, thumbnail_datastore_path, blob_store
     )
     validate_thumbnail(thumbnail, cod_obj, expected_frame_count=10)
     # because this series is 10 single frame instances, we expect the check below to pass
@@ -392,7 +391,7 @@ def test_get_instance_by_thumbnail_index(
 
 
 def test_series_missing_pixel_data_error(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     thumbnail_datastore_path: str,
     test_data_dir: str,
 ):
@@ -416,7 +415,7 @@ def test_series_missing_pixel_data_error(
         instance = Instance(dicom_uri=temp_dicom_path)
         with CODObject(
             datastore_path=thumbnail_datastore_path,
-            client=gcs_client,
+            client=blob_store,
             study_uid=instance.study_uid(),
             series_uid=instance.series_uid(),
             mode="w",

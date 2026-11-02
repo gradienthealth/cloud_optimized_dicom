@@ -1,0 +1,560 @@
+{
+  "deid_study_uid": "1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816",
+  "deid_series_uid": "1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812",
+  "cod": {
+    "instances": {
+      "1.2.826.0.1.3680043.8.498.25249138499397901449112452045843232933": {
+        "metadata": {
+          "00080016": {
+            "vr": "UI",
+            "Value": [
+              "1.2.840.10008.5.1.4.1.1.7"
+            ]
+          },
+          "00080018": {
+            "vr": "UI",
+            "Value": [
+              "1.2.826.0.1.3680043.8.498.12836372623031730883508403472797323859"
+            ]
+          },
+          "00080020": {
+            "vr": "DA",
+            "Value": [
+              "20000101"
+            ]
+          },
+          "00080030": {
+            "vr": "TM",
+            "Value": [
+              "000000"
+            ]
+          },
+          "00080050": {
+            "vr": "SH",
+            "Value": [
+              "SYNTH0001"
+            ]
+          },
+          "00080060": {
+            "vr": "CS",
+            "Value": [
+              "OT"
+            ]
+          },
+          "00080090": {
+            "vr": "PN",
+            "Value": [
+              {
+                "Alphabetic": "Synthetic^Referrer"
+              }
+            ]
+          },
+          "00081030": {
+            "vr": "LO",
+            "Value": [
+              "Synthetic legacy COD fixture"
+            ]
+          },
+          "00100010": {
+            "vr": "PN",
+            "Value": [
+              {
+                "Alphabetic": "Synthetic^Legacy"
+              }
+            ]
+          },
+          "00100020": {
+            "vr": "LO",
+            "Value": [
+              "SYNTHETIC-LEGACY"
+            ]
+          },
+          "00100030": {
+            "vr": "DA",
+            "Value": [
+              "19000101"
+            ]
+          },
+          "00100040": {
+            "vr": "CS",
+            "Value": [
+              "O"
+            ]
+          },
+          "0020000D": {
+            "vr": "UI",
+            "Value": [
+              "1.2.826.0.1.3680043.8.498.85620399475371757437158586624091221255"
+            ]
+          },
+          "0020000E": {
+            "vr": "UI",
+            "Value": [
+              "1.2.826.0.1.3680043.8.498.10972883738034865741444591405828171341"
+            ]
+          },
+          "00200013": {
+            "vr": "IS",
+            "Value": [
+              1
+            ]
+          },
+          "00280002": {
+            "vr": "US",
+            "Value": [
+              1
+            ]
+          },
+          "00280004": {
+            "vr": "CS",
+            "Value": [
+              "MONOCHROME2"
+            ]
+          },
+          "00280010": {
+            "vr": "US",
+            "Value": [
+              32
+            ]
+          },
+          "00280011": {
+            "vr": "US",
+            "Value": [
+              32
+            ]
+          },
+          "00280100": {
+            "vr": "US",
+            "Value": [
+              16
+            ]
+          },
+          "00280101": {
+            "vr": "US",
+            "Value": [
+              12
+            ]
+          },
+          "00280102": {
+            "vr": "US",
+            "Value": [
+              11
+            ]
+          },
+          "00280103": {
+            "vr": "US",
+            "Value": [
+              0
+            ]
+          },
+          "7FE00010": {
+            "vr": "OB",
+            "BulkDataURI": {
+              "uri": "gs://siskin-172863-temp/cod_fixture_gen/91731b50-b846-4781-a3b2-9d0e12e044fd/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.25249138499397901449112452045843232933.dcm",
+              "head": "\ufffd\ufffd\u0000\ufffd\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000\ufffd\ufffd\u0000\ufffd\ufffd\u0005\u0000\u0000\u0002\u0000\u0000\u0000@\u0000\u0000\u0000x\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\u0000\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\u0000\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\u0000\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\u0000\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\u0000\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\u0000\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\u0000\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\u0000\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\u001f\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u001f @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000\u001f@`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 \u001f`\ufffd\ufffd\ufffd\ufffd\u0000 @`\ufffd\ufffd\ufffd\ufffd\u0000 @"
+            }
+          },
+          "00020002": {
+            "vr": "UI",
+            "Value": [
+              "1.2.840.10008.5.1.4.1.1.7"
+            ]
+          },
+          "00020003": {
+            "vr": "UI",
+            "Value": [
+              "1.2.826.0.1.3680043.8.498.12836372623031730883508403472797323859"
+            ]
+          },
+          "00020010": {
+            "vr": "UI",
+            "Value": [
+              "1.2.840.10008.1.2.5"
+            ]
+          }
+        },
+        "uri": "gs://siskin-172863-temp/cod_fixture_gen/91731b50-b846-4781-a3b2-9d0e12e044fd/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.25249138499397901449112452045843232933.dcm",
+        "headers": {
+          "start_byte": 512,
+          "end_byte": 2794
+        },
+        "offset_tables": {},
+        "crc32c": "oHuhQw==",
+        "size": 2282,
+        "original_path": "0.dcm",
+        "dependencies": [],
+        "diff_hash_dupe_paths": [],
+        "version": "1.0",
+        "modified_datetime": "2026-11-02T16:33:59.465358"
+      },
+      "1.2.826.0.1.3680043.8.498.87426828860226687295223846515813945582": {
+        "metadata": {
+          "00080016": {
+            "vr": "UI",
+            "Value": [
+              "1.2.840.10008.5.1.4.1.1.7"
+            ]
+          },
+          "00080018": {
+            "vr": "UI",
+            "Value": [
+              "1.2.826.0.1.3680043.8.498.27881438680172908645713479365003439006"
+            ]
+          },
+          "00080020": {
+            "vr": "DA",
+            "Value": [
+              "20000101"
+            ]
+          },
+          "00080030": {
+            "vr": "TM",
+            "Value": [
+              "000000"
+            ]
+          },
+          "00080050": {
+            "vr": "SH",
+            "Value": [
+              "SYNTH0001"
+            ]
+          },
+          "00080060": {
+            "vr": "CS",
+            "Value": [
+              "OT"
+            ]
+          },
+          "00080090": {
+            "vr": "PN",
+            "Value": [
+              {
+                "Alphabetic": "Synthetic^Referrer"
+              }
+            ]
+          },
+          "00081030": {
+            "vr": "LO",
+            "Value": [
+              "Synthetic legacy COD fixture"
+            ]
+          },
+          "00100010": {
+            "vr": "PN",
+            "Value": [
+              {
+                "Alphabetic": "Synthetic^Legacy"
+              }
+            ]
+          },
+          "00100020": {
+            "vr": "LO",
+            "Value": [
+              "SYNTHETIC-LEGACY"
+            ]
+          },
+          "00100030": {
+            "vr": "DA",
+            "Value": [
+              "19000101"
+            ]
+          },
+          "00100040": {
+            "vr": "CS",
+            "Value": [
+              "O"
+            ]
+          },
+          "0020000D": {
+            "vr": "UI",
+            "Value": [
+              "1.2.826.0.1.3680043.8.498.85620399475371757437158586624091221255"
+            ]
+          },
+          "0020000E": {
+            "vr": "UI",
+            "Value": [
+              "1.2.826.0.1.3680043.8.498.10972883738034865741444591405828171341"
+            ]
+          },
+          "00200013": {
+            "vr": "IS",
+            "Value": [
+              2
+            ]
+          },
+          "00280002": {
+            "vr": "US",
+            "Value": [
+              1
+            ]
+          },
+          "00280004": {
+            "vr": "CS",
+            "Value": [
+              "MONOCHROME2"
+            ]
+          },
+          "00280010": {
+            "vr": "US",
+            "Value": [
+              32
+            ]
+          },
+          "00280011": {
+            "vr": "US",
+            "Value": [
+              32
+            ]
+          },
+          "00280100": {
+            "vr": "US",
+            "Value": [
+              16
+            ]
+          },
+          "00280101": {
+            "vr": "US",
+            "Value": [
+              12
+            ]
+          },
+          "00280102": {
+            "vr": "US",
+            "Value": [
+              11
+            ]
+          },
+          "00280103": {
+            "vr": "US",
+            "Value": [
+              0
+            ]
+          },
+          "7FE00010": {
+            "vr": "OB",
+            "BulkDataURI": {
+              "uri": "gs://siskin-172863-temp/cod_fixture_gen/91731b50-b846-4781-a3b2-9d0e12e044fd/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.87426828860226687295223846515813945582.dcm",
+              "head": "\ufffd\ufffd\u0000\ufffd\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000\ufffd\ufffd\u0000\ufffd\ufffd\u0005\u0000\u0000\u0002\u0000\u0000\u0000@\u0000\u0000\u0000x\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\u0000\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\u0000\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\u0000\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\u0000\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\u0000\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\u0000\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\u0000\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\u0000\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\u001f\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u001f!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001\u001fAa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!\u001fa\ufffd\ufffd\ufffd\ufffd\u0001!Aa\ufffd\ufffd\ufffd\ufffd\u0001!A"
+            }
+          },
+          "00020002": {
+            "vr": "UI",
+            "Value": [
+              "1.2.840.10008.5.1.4.1.1.7"
+            ]
+          },
+          "00020003": {
+            "vr": "UI",
+            "Value": [
+              "1.2.826.0.1.3680043.8.498.27881438680172908645713479365003439006"
+            ]
+          },
+          "00020010": {
+            "vr": "UI",
+            "Value": [
+              "1.2.840.10008.1.2.5"
+            ]
+          }
+        },
+        "uri": "gs://siskin-172863-temp/cod_fixture_gen/91731b50-b846-4781-a3b2-9d0e12e044fd/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.87426828860226687295223846515813945582.dcm",
+        "headers": {
+          "start_byte": 3584,
+          "end_byte": 5866
+        },
+        "offset_tables": {},
+        "crc32c": "h30j0A==",
+        "size": 2282,
+        "original_path": "1.dcm",
+        "dependencies": [],
+        "diff_hash_dupe_paths": [],
+        "version": "1.0",
+        "modified_datetime": "2026-11-02T16:33:59.465358"
+      },
+      "1.2.826.0.1.3680043.8.498.57857798435719771631396806296746810866": {
+        "metadata": {
+          "00080016": {
+            "vr": "UI",
+            "Value": [
+              "1.2.840.10008.5.1.4.1.1.7"
+            ]
+          },
+          "00080018": {
+            "vr": "UI",
+            "Value": [
+              "1.2.826.0.1.3680043.8.498.43909953444683859914929237858869220217"
+            ]
+          },
+          "00080020": {
+            "vr": "DA",
+            "Value": [
+              "20000101"
+            ]
+          },
+          "00080030": {
+            "vr": "TM",
+            "Value": [
+              "000000"
+            ]
+          },
+          "00080050": {
+            "vr": "SH",
+            "Value": [
+              "SYNTH0001"
+            ]
+          },
+          "00080060": {
+            "vr": "CS",
+            "Value": [
+              "OT"
+            ]
+          },
+          "00080090": {
+            "vr": "PN",
+            "Value": [
+              {
+                "Alphabetic": "Synthetic^Referrer"
+              }
+            ]
+          },
+          "00081030": {
+            "vr": "LO",
+            "Value": [
+              "Synthetic legacy COD fixture"
+            ]
+          },
+          "00100010": {
+            "vr": "PN",
+            "Value": [
+              {
+                "Alphabetic": "Synthetic^Legacy"
+              }
+            ]
+          },
+          "00100020": {
+            "vr": "LO",
+            "Value": [
+              "SYNTHETIC-LEGACY"
+            ]
+          },
+          "00100030": {
+            "vr": "DA",
+            "Value": [
+              "19000101"
+            ]
+          },
+          "00100040": {
+            "vr": "CS",
+            "Value": [
+              "O"
+            ]
+          },
+          "0020000D": {
+            "vr": "UI",
+            "Value": [
+              "1.2.826.0.1.3680043.8.498.85620399475371757437158586624091221255"
+            ]
+          },
+          "0020000E": {
+            "vr": "UI",
+            "Value": [
+              "1.2.826.0.1.3680043.8.498.10972883738034865741444591405828171341"
+            ]
+          },
+          "00200013": {
+            "vr": "IS",
+            "Value": [
+              3
+            ]
+          },
+          "00280002": {
+            "vr": "US",
+            "Value": [
+              1
+            ]
+          },
+          "00280004": {
+            "vr": "CS",
+            "Value": [
+              "MONOCHROME2"
+            ]
+          },
+          "00280010": {
+            "vr": "US",
+            "Value": [
+              32
+            ]
+          },
+          "00280011": {
+            "vr": "US",
+            "Value": [
+              32
+            ]
+          },
+          "00280100": {
+            "vr": "US",
+            "Value": [
+              16
+            ]
+          },
+          "00280101": {
+            "vr": "US",
+            "Value": [
+              12
+            ]
+          },
+          "00280102": {
+            "vr": "US",
+            "Value": [
+              11
+            ]
+          },
+          "00280103": {
+            "vr": "US",
+            "Value": [
+              0
+            ]
+          },
+          "7FE00010": {
+            "vr": "OB",
+            "BulkDataURI": {
+              "uri": "gs://siskin-172863-temp/cod_fixture_gen/91731b50-b846-4781-a3b2-9d0e12e044fd/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.57857798435719771631396806296746810866.dcm",
+              "head": "\ufffd\ufffd\u0000\ufffd\u0004\u0000\u0000\u0000\u0000\u0000\u0000\u0000\ufffd\ufffd\u0000\ufffd\ufffd\u0005\u0000\u0000\u0002\u0000\u0000\u0000@\u0000\u0000\u0000x\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\u0000\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\u0000\u0000\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\u0000\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\u0000\u0001\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\u0000\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\u0000\u0002\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\u0000\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\ufffd\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\u0000\u0003\ufffd\u0004\ufffd\u0005\ufffd\u0006\ufffd\u0007\u001f\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u001f\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\u001fBb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"\u001fb\ufffd\ufffd\ufffd\ufffd\u0002\"Bb\ufffd\ufffd\ufffd\ufffd\u0002\"B"
+            }
+          },
+          "00020002": {
+            "vr": "UI",
+            "Value": [
+              "1.2.840.10008.5.1.4.1.1.7"
+            ]
+          },
+          "00020003": {
+            "vr": "UI",
+            "Value": [
+              "1.2.826.0.1.3680043.8.498.43909953444683859914929237858869220217"
+            ]
+          },
+          "00020010": {
+            "vr": "UI",
+            "Value": [
+              "1.2.840.10008.1.2.5"
+            ]
+          }
+        },
+        "uri": "gs://siskin-172863-temp/cod_fixture_gen/91731b50-b846-4781-a3b2-9d0e12e044fd/studies/1.2.826.0.1.3680043.8.498.10708017487302794035501893320522994816/series/1.2.826.0.1.3680043.8.498.82949435074080399123158987325292743812.tar://instances/1.2.826.0.1.3680043.8.498.57857798435719771631396806296746810866.dcm",
+        "headers": {
+          "start_byte": 6656,
+          "end_byte": 8938
+        },
+        "offset_tables": {},
+        "crc32c": "SB1EPQ==",
+        "size": 2282,
+        "original_path": "2.dcm",
+        "dependencies": [],
+        "diff_hash_dupe_paths": [],
+        "version": "1.0",
+        "modified_datetime": "2026-11-02T16:33:59.465358"
+      }
+    }
+  }
+}

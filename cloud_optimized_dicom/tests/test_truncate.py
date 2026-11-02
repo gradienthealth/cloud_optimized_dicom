@@ -3,8 +3,8 @@ import os
 import tarfile
 
 import pytest
-from google.cloud import storage
 
+from cloud_optimized_dicom.blob_store import BlobStore
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
 
@@ -15,7 +15,7 @@ def _enable_logging():
 
 
 def test_truncate(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     test_data_dir: str,
 ):
@@ -38,7 +38,7 @@ def test_truncate(
     )
     cod_obj = CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=instance1.study_uid(),
         series_uid=instance1.series_uid(),
         mode="w",
@@ -59,7 +59,7 @@ def test_truncate(
 
 
 def test_truncate_remote(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     test_data_dir: str,
 ):
@@ -82,7 +82,7 @@ def test_truncate_remote(
     )
     with CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=instance1.study_uid(),
         series_uid=instance1.series_uid(),
         mode="w",
@@ -95,7 +95,7 @@ def test_truncate_remote(
     # mode="w" will overwrite the remote tar/metadata on sync
     with CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=instance1.study_uid(),
         series_uid=instance1.series_uid(),
         mode="w",
@@ -108,7 +108,7 @@ def test_truncate_remote(
 
 
 def test_truncate_preexisting(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     test_data_dir: str,
 ):
@@ -131,7 +131,7 @@ def test_truncate_preexisting(
     )
     cod_obj = CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=instance1.study_uid(),
         series_uid=instance1.series_uid(),
         mode="w",

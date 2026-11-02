@@ -1,17 +1,17 @@
 import pytest
-from google.cloud import storage
 from pydicom import dcmread
 
+from cloud_optimized_dicom.blob_store import BlobStore
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.utils import is_remote
 
 
-def test_properties(gcs_client: storage.Client, datastore_path: str):
+def test_properties(blob_store: BlobStore, datastore_path: str):
     """Test tar_uri, metadata_uri, index_uri, and __str__"""
     cod_object = CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid="1.2.3.4.5.6.7.8.9.0",
         series_uid="1.2.3.4.5.6.7.8.9.0",
         mode="r",
@@ -35,12 +35,12 @@ def test_properties(gcs_client: storage.Client, datastore_path: str):
     )
 
 
-def test_validate_uids(gcs_client: storage.Client, datastore_path: str):
+def test_validate_uids(blob_store: BlobStore, datastore_path: str):
     """Test that COD instantiation fails if UIDs are not valid"""
     with pytest.raises(AssertionError):
         CODObject(
             datastore_path=datastore_path,
-            client=gcs_client,
+            client=blob_store,
             study_uid="1.2.3.4.5",
             series_uid="1.2.3.4.5",
             mode="r",
@@ -48,7 +48,7 @@ def test_validate_uids(gcs_client: storage.Client, datastore_path: str):
 
 
 def test_pull_tar(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -60,7 +60,7 @@ def test_pull_tar(
     instance = Instance(dicom_uri=local_instance_path)
     with CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
         mode="w",
@@ -69,7 +69,7 @@ def test_pull_tar(
         # sync happens automatically on context exit
     cod_obj = CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
         mode="r",
@@ -92,7 +92,7 @@ def test_pull_tar(
 
 
 def test_extract_locally(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -104,7 +104,7 @@ def test_extract_locally(
     instance = Instance(dicom_uri=local_instance_path)
     with CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
         mode="w",
@@ -113,7 +113,7 @@ def test_extract_locally(
         # sync happens automatically on context exit
     cod_obj = CODObject(
         datastore_path=datastore_path,
-        client=gcs_client,
+        client=blob_store,
         study_uid=test_study_uid,
         series_uid=test_series_uid,
         mode="r",
@@ -133,7 +133,7 @@ def test_extract_locally(
 
 
 def test_instance_read_after_sync(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     local_instance_path: str,
     test_study_uid: str,
@@ -141,7 +141,7 @@ def test_instance_read_after_sync(
 ):
     """Test that an instance can be read after a sync"""
     with CODObject(
-        client=gcs_client,
+        client=blob_store,
         datastore_path=datastore_path,
         study_uid=test_study_uid,
         series_uid=test_series_uid,

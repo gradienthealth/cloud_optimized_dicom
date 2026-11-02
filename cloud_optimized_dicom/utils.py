@@ -10,16 +10,17 @@ import collections
 import io
 import warnings
 from base64 import b64encode
-from typing import Optional
+from typing import Optional, Union
 
 import cv2
 import filetype
 import google_crc32c
 import numpy as np
+from google.api_core.exceptions import NotFound
 from google.cloud import storage
 
 import cloud_optimized_dicom.metrics as metrics
-from cloud_optimized_dicom.blob_store import BlobStore
+from cloud_optimized_dicom.blob_store import BlobStore, as_blob_store
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import WriteOperationInReadModeError
 
@@ -102,20 +103,18 @@ def file_is_dicom(instance_path: str) -> bool:
     return True
 
 
-def delete_uploaded_blobs(client: storage.Client, uris_to_delete: list[str]):
+def delete_uploaded_blobs(
+    client: Union[storage.Client, BlobStore], uris_to_delete: list[str]
+):
+    """Deletes every object under each folder URI in `uris_to_delete`
+    (e.g. `gs://siskin-172863-test-data/concat-output`), so a test starts from an
+    empty prefix. `client` is a GCS client or a `BlobStore`.
     """
-    Helper method used by tests to delete blobs they have created, resetting the test
-    environment for a subsequent test. Takes a GCS client and a list of GCS uris to delete.
-    These URIs should be folders (e.g. 'gs://siskin-172863-test-data/concat-output'), and
-    this method will delete everything in the folder
-    """
-    from google.api_core.exceptions import NotFound
-
-    for gcs_uri in uris_to_delete:
-        bucket_name, folder_name = gcs_uri.replace("gs://", "").split("/", 1)
-        for blob in client.list_blobs(bucket_name, prefix=f"{folder_name}/"):
+    blob_store = as_blob_store(client)
+    for folder_uri in uris_to_delete:
+        for uri in list(blob_store.list_uris(f"{folder_uri}/")):
             try:
-                blob.delete()
+                blob_store.delete(uri)
             except NotFound:
                 # Blob already deleted or doesn't exist - this is fine since
                 # the goal is to ensure the blob doesn't exist

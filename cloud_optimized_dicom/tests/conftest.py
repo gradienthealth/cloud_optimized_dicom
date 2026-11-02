@@ -11,12 +11,16 @@ import pytest
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 
+from cloud_optimized_dicom.blob_store import BlobStore, FakeBlobStore, GcsBlobStore
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.instance import Instance
 from cloud_optimized_dicom.utils import delete_uploaded_blobs
 
 GCP_PROJECT = "gradient-pacs-siskin-172863"
 DATASTORE_BASE = "gs://siskin-172863-temp/cod_tests"
+# Tests run against FakeBlobStore unless this is set, in which case they run
+# against the real test buckets and need GCP credentials.
+ONLINE = bool(os.environ.get("SISKIN_ENV_ENABLED"))
 
 TEST_INSTANCE_UID = "1.2.276.0.50.192168001092.11156604.14547392.313"
 TEST_SERIES_UID = "1.2.276.0.50.192168001092.11156604.14547392.303"
@@ -41,6 +45,14 @@ def gcs_client() -> storage.Client:
     )
 
 
+@pytest.fixture
+def blob_store(request: pytest.FixtureRequest) -> BlobStore:
+    """A fresh `FakeBlobStore` per test, or the real test buckets when `ONLINE`."""
+    if not ONLINE:
+        return FakeBlobStore()
+    return GcsBlobStore(request.getfixturevalue("gcs_client"))
+
+
 @pytest.fixture(scope="session")
 def worker_namespace() -> str:
     """Per-(run, worker) path segment so concurrent CI runs, matrix jobs, and
@@ -51,9 +63,9 @@ def worker_namespace() -> str:
 
 
 @pytest.fixture()
-def datastore_path(gcs_client: storage.Client, worker_namespace: str) -> str:
+def datastore_path(blob_store: BlobStore, worker_namespace: str) -> str:
     path = f"{DATASTORE_BASE}/{worker_namespace}/dicomweb"
-    delete_uploaded_blobs(gcs_client, [path])
+    delete_uploaded_blobs(blob_store, [path])
     return path
 
 
@@ -77,7 +89,7 @@ class SeriesHandle:
     """Bundles the four sticky CODObject args so tests can `.open(mode=...)`
     without re-typing client/datastore_path/study_uid/series_uid every call."""
 
-    client: storage.Client
+    client: BlobStore
     datastore_path: str
     study_uid: str
     series_uid: str
@@ -117,13 +129,13 @@ def series_uids(series_files: list[str]) -> tuple[str, str]:
 
 @pytest.fixture
 def fresh_series(
-    gcs_client: storage.Client,
+    blob_store: BlobStore,
     datastore_path: str,
     series_uids: tuple[str, str],
 ) -> SeriesHandle:
     """A SeriesHandle pointing at the (cleared) datastore — no instances yet."""
     study_uid, series_uid = series_uids
-    return SeriesHandle(gcs_client, datastore_path, study_uid, series_uid)
+    return SeriesHandle(blob_store, datastore_path, study_uid, series_uid)
 
 
 @pytest.fixture

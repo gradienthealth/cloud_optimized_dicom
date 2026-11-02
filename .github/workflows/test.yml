@@ -8,6 +8,30 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Runs with no GCP credentials, so a test that reaches GCS without going
+  # through the blob_store fixture fails here.
+  test-offline:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+
+    - uses: actions/setup-python@v7
+      with:
+        python-version: "3.11"
+
+    - name: Install Python dependencies
+      run: |
+        pip install uv
+        uv pip install --system -e ".[test]"
+
+    - name: Run tests against FakeBlobStore
+      run: python -m pytest -v -n auto cloud_optimized_dicom/tests
+
   test-matrix:
     name: test (py${{ matrix.python-version }}, ${{ matrix.resolution }})
     runs-on: ubuntu-latest
@@ -89,10 +113,11 @@ jobs:
         PY
 
   # The Main ruleset requires a check named "test", so this job reports the
-  # matrix result under that name.
+  # offline and matrix results under that name.
   test:
-    needs: test-matrix
+    needs: [test-offline, test-matrix]
     if: always()
     runs-on: ubuntu-latest
     steps:
+    - run: test "${{ needs.test-offline.result }}" = success
     - run: test "${{ needs.test-matrix.result }}" = success
