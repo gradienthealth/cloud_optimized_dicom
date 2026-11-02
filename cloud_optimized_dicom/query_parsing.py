@@ -1,10 +1,10 @@
 from itertools import groupby
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Union
 
 from google.api_core.exceptions import NotFound
 from google.cloud import storage
 
-from cloud_optimized_dicom.blob_store import GcsBlobStore
+from cloud_optimized_dicom.blob_store import BlobStore, as_blob_store
 from cloud_optimized_dicom.cod_object import CODObject
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import LockAcquisitionError
@@ -15,7 +15,7 @@ SERIES_RATIO_WARNING_THRESHOLD = 0.5
 
 
 def query_result_to_codobjects(
-    client: storage.Client,
+    client: Union[storage.Client, BlobStore],
     query_result: dict,
     datastore_path: str,
     validate_datastore_path: bool = True,
@@ -116,7 +116,7 @@ def fetch_instances_without_hints(raw_instances: list[Instance]) -> list[Instanc
 
 
 def instances_to_codobj_tuples(
-    client: storage.Client,
+    client: Union[storage.Client, BlobStore],
     instances: list[Instance],
     datastore_path: str,
     empty_lock_override_age: float = None,
@@ -124,7 +124,7 @@ def instances_to_codobj_tuples(
 ) -> Iterator[tuple[CODObject, list[Instance]]]:
     """Group instances by study/series, make codobjects, and yield (codobj, instances) pairs"""
     # grouping fetches any instance without UID hints, which needs the store
-    blob_store = GcsBlobStore(client)
+    blob_store = as_blob_store(client)
     for instance in instances:
         instance.blob_store = blob_store
 

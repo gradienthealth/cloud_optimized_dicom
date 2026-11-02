@@ -12,7 +12,7 @@ from ratarmountcore.mountsource.factory import open_mount_source as rmc_open
 
 import cloud_optimized_dicom.metrics as metrics
 from cloud_optimized_dicom.append import append
-from cloud_optimized_dicom.blob_store import GcsBlobStore
+from cloud_optimized_dicom.blob_store import BlobStore, as_blob_store
 from cloud_optimized_dicom.bounding_box import PixelRedaction
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.edit import EditState, _validate_and_repack_for_edit
@@ -55,7 +55,8 @@ class CODObject:
 
     Parameters:
         datastore_path: str - The path to the datastore file for this series.
-        client: storage.Client - The client to use to interact with the datastore.
+        client: storage.Client | BlobStore - The GCS client to reach the datastore with, or a `BlobStore`
+            (such as `FakeBlobStore`) to use in its place.
         study_uid: str - The study_uid of the series.
         series_uid: str - The series_uid of the series.
         mode: str - Access mode: "r" for read-only, "w" for write (overwrite), "a" for append, "e" for edit.
@@ -83,7 +84,7 @@ class CODObject:
         self,
         # fields user must set
         datastore_path: str,
-        client: storage.Client,
+        client: Union[storage.Client, BlobStore],
         study_uid: str,
         series_uid: str,
         mode: Literal["r", "w", "a", "e"] = None,
@@ -118,7 +119,7 @@ class CODObject:
         self._sync_on_exit = sync_on_exit
         self.datastore_path = datastore_path
         self.client = client
-        self.blob_store = GcsBlobStore(client)
+        self.blob_store = as_blob_store(client)
         self.study_uid = study_uid
         self.series_uid = series_uid
         self._validate_uids()
@@ -969,7 +970,7 @@ class CODObject:
     def from_uri(
         cls,
         uri: str,
-        client: storage.Client,
+        client: Union[storage.Client, BlobStore],
         mode: Literal["r", "w", "a", "e"],
         hashed_uids: bool,
         create_if_missing: bool,
@@ -980,7 +981,7 @@ class CODObject:
 
         Args:
             uri: str - The URI of the CODObject.
-            client: storage.Client - The GCS client.
+            client: storage.Client | BlobStore - The GCS client, or a `BlobStore` to use in its place.
             mode: str - Access mode: "r" for read-only, "w" for write (overwrite), "a" for append, "e" for edit.
             hashed_uids: bool - Whether UIDs are hashed.
             create_if_missing: bool - Whether to create if missing.
