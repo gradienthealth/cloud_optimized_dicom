@@ -188,7 +188,7 @@ def test_lock_gone_on_cleanup(
             series_uid=lock_series_uid,
             mode="w",
         ) as cod:
-            cod._locker.get_lock_blob().delete()
+            cod.blob_store.delete(cod._locker.lock_uri)
         # when the with block exits, cod will attempt to release the lock and will find it missing
 
 
@@ -208,7 +208,7 @@ def test_lock_gone_on_sync(
         series_uid=lock_series_uid,
         mode="w",
     )
-    cod_obj.get_lock_blob().delete()
+    cod_obj.blob_store.delete(cod_obj._locker.lock_uri)
     with pytest.raises(LockVerificationError):
         cod_obj._sync()
 
@@ -229,9 +229,7 @@ def test_lock_changes(
             mode="w",
         ) as cod:
             # simulate some other cod somehow stealing the lock
-            cod._locker.get_lock_blob().upload_from_string(
-                "", content_type="application/octet-stream"
-            )
+            cod.blob_store.upload_bytes(cod._locker.lock_uri, b"")
         # when the with block exits, cod will attempt to release the lock and will find it changed
     # cod will have failed to delete the lock since it assumes it belongs to another cod, so we need to clean up after ourselves
     delete_uploaded_blobs(gcs_client, [datastore_path])
@@ -251,8 +249,9 @@ def test_lock_stolen_during_metadata_fetch(
         # First get the metadata normally
         result = original_get_metadata(self, create_if_missing=create_if_missing)
         # Then simulate another process creating the lock file
-        self._locker.get_lock_blob().upload_from_string(
-            "competing lock",
+        self.blob_store.upload_bytes(
+            self._locker.lock_uri,
+            b"competing lock",
             content_type="application/json",
             if_generation_match=0,
         )
@@ -302,7 +301,7 @@ def test_lock_released_after_non_sync_exception(
     assert not cod._tar_synced
     assert not cod._metadata_synced
     # The lock should have been released (only sync failures leave hanging locks)
-    assert not cod._locker.get_lock_blob().exists()
+    assert not cod.blob_store.exists(cod._locker.lock_uri)
 
 
 def test_release_failure_preserves_original_exception(
@@ -321,9 +320,7 @@ def test_release_failure_preserves_original_exception(
             mode="w",
         ) as cod:
             # tamper with the lock so release() will fail
-            cod._locker.get_lock_blob().upload_from_string(
-                "", content_type="application/octet-stream"
-            )
+            cod.blob_store.upload_bytes(cod._locker.lock_uri, b"")
             raise ValueError("original error")
     # caller should see ValueError, not LockVerificationError
     # lock is left hanging (tampered), clean up
@@ -347,11 +344,11 @@ def test_override_stale_lock(
             mode="w",
         ) as cod:
             # re-upload lock with same metadata but new generation → verify fails on exit
-            lock_blob = cod._locker.get_lock_blob()
-            lock_blob.content_encoding = "gzip"
-            lock_blob.upload_from_string(
+            cod.blob_store.upload_bytes(
+                cod._locker.lock_uri,
                 cod._metadata.to_gzipped_json(),
                 content_type="application/json",
+                content_encoding="gzip",
             )
     # because there's a hanging lock, we should get an error
     with pytest.raises(LockAcquisitionError):
@@ -375,7 +372,7 @@ def test_override_stale_lock(
     ) as cod:
         pass
     # The lock should have been overridden and released
-    assert not cod._locker.get_lock_blob().exists()
+    assert not cod.blob_store.exists(cod._locker.lock_uri)
     # clean up any locks that might have been created
     delete_uploaded_blobs(gcs_client, [datastore_path])
 
@@ -408,16 +405,17 @@ def test_cannot_override_non_empty_lock(
             mode="a",
         ) as cod:
             # re-upload lock with current metadata (has instances) but new generation
-            lock_blob = cod._locker.get_lock_blob()
-            lock_blob.content_encoding = "gzip"
-            lock_blob.upload_from_string(
+            cod.blob_store.upload_bytes(
+                cod._locker.lock_uri,
                 cod._metadata.to_gzipped_json(),
                 content_type="application/json",
+                content_encoding="gzip",
             )
     # assert lock exists
-    assert cod._locker.get_lock_blob().exists()
+    assert cod.blob_store.exists(cod._locker.lock_uri)
     # assert lock is non empty
-    assert len(SeriesMetadata.from_blob(cod._locker.get_lock_blob()).instances) > 0
+    lock_bytes = cod.blob_store.read_bytes(cod._locker.lock_uri)
+    assert len(SeriesMetadata.from_bytes(lock_bytes).instances) > 0
     # we should not be able to override the lock, even with a sufficiently small age threshold
     with pytest.raises(LockAcquisitionError):
         with CODObject(

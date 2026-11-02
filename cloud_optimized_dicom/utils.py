@@ -20,6 +20,7 @@ from google.cloud import storage
 from google.cloud.storage.retry import DEFAULT_RETRY
 
 import cloud_optimized_dicom.metrics as metrics
+from cloud_optimized_dicom.blob_store import BlobStore
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import WriteOperationInReadModeError
 
@@ -59,16 +60,15 @@ def is_remote(uri: str) -> bool:
     return any(uri.startswith(prefix) for prefix in REMOTE_IDENTIFIERS)
 
 
-def upload_and_count_file(blob: storage.Blob, file_path: str):
-    """Wraps `blob.upload_from_filename` with the proper beam creation counter metric"""
-    blob.upload_from_filename(file_path, retry=DEFAULT_RETRY)
-    metrics.STORAGE_CLASS_COUNTERS["CREATE"][blob.storage_class].inc()
-
-
-def upload_and_count_bytes(blob: storage.Blob, bytes: bytes):
-    """Wraps `blob.upload_from_string` with the proper beam creation counter metric"""
-    blob.upload_from_string(bytes, retry=DEFAULT_RETRY)
-    metrics.STORAGE_CLASS_COUNTERS["CREATE"][blob.storage_class].inc()
+def upload_and_count_file(
+    blob_store: BlobStore,
+    uri: str,
+    file_path: str,
+    storage_class: Optional[str] = None,
+):
+    """Uploads `file_path` to `uri` and counts the creation under its storage class."""
+    written = blob_store.upload_file(uri, file_path, storage_class=storage_class)
+    metrics.STORAGE_CLASS_COUNTERS["CREATE"][written.storage_class].inc()
 
 
 def _delete_gcs_dep(uri: str, client: storage.Client, expected_crc32c: str = None):

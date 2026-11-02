@@ -3,7 +3,6 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from google.api_core.exceptions import PreconditionFailed
-from google.cloud import storage
 
 from cloud_optimized_dicom.config import logger
 from cloud_optimized_dicom.errors import LockAcquisitionError, LockVerificationError
@@ -34,42 +33,41 @@ class CODLocker:
             create_if_missing (bool): Passthrough for CODObject.get_metadata (see documentation there)
             empty_lock_override_age (float): The age (in hours) of a lock file to consider "stale" and override (if it is empty)
         """
-        if (lock_blob := self.get_lock_blob()).exists():
-            lock_blob.reload()
-            lock_uri = f"gs://{lock_blob.bucket.name}/{lock_blob.name}"
+        blob_store = self.cod_object.blob_store
+        lock_uri = self.lock_uri
+        if (existing_lock := blob_store.stat(lock_uri)) is not None:
             # No override case
             if not empty_lock_override_age:
                 raise LockAcquisitionError(
-                    f"COD:LOCK:ACQUISITION_FAILED:DIFF_GEN_LOCK_ALREADY_EXISTS:{lock_uri} (generation: {lock_blob.generation})"
+                    f"COD:LOCK:ACQUISITION_FAILED:DIFF_GEN_LOCK_ALREADY_EXISTS:{lock_uri} (generation: {existing_lock.generation})"
                 )
             # Attempt override -> check whether lock old enough to override
-            if datetime.now(timezone.utc) - lock_blob.updated < timedelta(
+            if datetime.now(timezone.utc) - existing_lock.updated < timedelta(
                 hours=empty_lock_override_age
             ):
                 raise LockAcquisitionError(
-                    f"COD:LOCK:ACQUISITION_FAILED:LOCK_TOO_RECENT_TO_OVERRIDE:{lock_uri} (updated: {lock_blob.updated})"
+                    f"COD:LOCK:ACQUISITION_FAILED:LOCK_TOO_RECENT_TO_OVERRIDE:{lock_uri} (updated: {existing_lock.updated})"
                 )
             # Attempt override -> check whether lock is empty
-            lock_data = SeriesMetadata.from_blob(lock_blob)
+            lock_data = SeriesMetadata.from_bytes(blob_store.read_bytes(lock_uri))
             if len(lock_data.instances) > 0:
                 raise LockAcquisitionError(
                     f"COD:LOCK:ACQUISITION_FAILED:CANNOT_OVERRIDE_NON_EMPTY_LOCK:{lock_uri} (instances: {len(lock_data.instances)})"
                 )
             # If we make it here, we can safely override the lock
-            lock_blob.delete()
-            logger.warning(
-                f"COD:LOCK:OVERRIDING_STALE_LOCK:gs://{lock_blob.bucket.name}/{lock_blob.name}"
-            )
+            blob_store.delete(lock_uri)
+            logger.warning(f"COD:LOCK:OVERRIDING_STALE_LOCK:{lock_uri}")
 
         # Step 1: fetch metadata
         self.cod_object.get_metadata(create_if_missing=create_if_missing)
 
         # Step 2: Try to create the lock file
-        lock_blob.content_encoding = "gzip"
         try:
-            lock_blob.upload_from_string(
+            written = blob_store.upload_bytes(
+                lock_uri,
                 self.cod_object._metadata.to_gzipped_json(),
                 content_type="application/json",
+                content_encoding="gzip",
                 if_generation_match=0,
             )
         except PreconditionFailed:
@@ -78,40 +76,34 @@ class CODLocker:
             )
 
         # Step 3: record lock generation
-        self.cod_object.lock_generation = lock_blob.generation
+        self.cod_object.lock_generation = written.generation
         logger.info(
-            f"COD:LOCK:ACQUIRED:gs://{lock_blob.bucket.name}/{lock_blob.name} (generation: {self.cod_object.lock_generation})"
+            f"COD:LOCK:ACQUIRED:{lock_uri} (generation: {self.cod_object.lock_generation})"
         )
 
-    def verify(self) -> storage.Blob:
+    def verify(self):
         """Verify that the lock file still exists and has the same generation."""
-        if not (lock_blob := self.get_lock_blob()).exists():
+        if (lock := self.cod_object.blob_store.stat(self.lock_uri)) is None:
             msg = "COD:LOCK:MISSING_ON_VERIFY"
             logger.critical(msg)
             raise LockVerificationError(msg)
-        lock_blob.reload()
-        if lock_blob.generation != self.cod_object.lock_generation:
-            msg = f"COD:LOCK:GEN_MISMATCH_ON_VERIFY:FOUND:{lock_blob.generation} != EXPECTED:{self.cod_object.lock_generation}"
+        if lock.generation != self.cod_object.lock_generation:
+            msg = f"COD:LOCK:GEN_MISMATCH_ON_VERIFY:FOUND:{lock.generation} != EXPECTED:{self.cod_object.lock_generation}"
             logger.critical(msg)
             raise LockVerificationError(msg)
-        return lock_blob
 
     def release(self):
         """Release the lock by deleting the lock file."""
         try:
-            lock_blob = self.verify()
+            self.verify()
         except LockVerificationError as e:
             logger.critical(f"COD:LOCK:RELEASE:VERIFICATION_ERROR:{e}")
             raise e
-        lock_blob.delete()
+        self.cod_object.blob_store.delete(self.lock_uri)
         self.cod_object.lock_generation = None
-        logger.info(
-            f"COD:LOCK:RELEASE:SUCCESS:gs://{lock_blob.bucket.name}/{lock_blob.name}"
-        )
+        logger.info(f"COD:LOCK:RELEASE:SUCCESS:{self.lock_uri}")
 
-    def get_lock_blob(self) -> storage.Blob:
-        """Get the lock blob for this series."""
-        return storage.Blob.from_string(
-            uri=f"{self.cod_object.datastore_series_uri}/{LOCK_FILE_NAME}",
-            client=self.cod_object.client,
-        )
+    @property
+    def lock_uri(self) -> str:
+        """The URI of the lock file for this series."""
+        return f"{self.cod_object.datastore_series_uri}/{LOCK_FILE_NAME}"
